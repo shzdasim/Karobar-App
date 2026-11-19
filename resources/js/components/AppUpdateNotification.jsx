@@ -104,17 +104,20 @@ export default function AppUpdateNotification() {
       // 3. Direct browser fallback to GitHub Releases API (CORS enabled: access-control-allow-origin: *)
       if (!data) {
         try {
-          const [verRes, ghRes] = await Promise.all([
-            axios.get("/api/system/version").catch(() => ({ data: { version: "2.0.1", build_number: 1 } })),
-            fetch("https://api.github.com/repos/shzdasim/Karobar-App/releases/latest", {
-              headers: { Accept: "application/vnd.github+json" },
-            }),
-          ]);
+          const verRes = await axios.get("/api/system/version").catch(() => ({ data: { version: "2.0.1", build_number: 1 } }));
+          const isNativeRuntime = String(verRes.data?.app_name || "").toLowerCase().includes("native") ||
+            String(verRes.data?.runtime || "").toLowerCase().includes("dotnet");
+          const ghEndpoint = isNativeRuntime
+            ? "https://api.github.com/repos/shzdasim/Karobar-App/releases/tags/native-latest"
+            : "https://api.github.com/repos/shzdasim/Karobar-App/releases/latest";
+          const ghRes = await fetch(ghEndpoint, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
           if (ghRes.ok) {
             const release = await ghRes.json();
             const localVer = String(verRes.data?.version || "2.0.1").replace(/^[vV]/, "");
             const localBuild = Number(verRes.data?.build_number || 1);
-            const remoteVer = String(release.tag_name || "").replace(/^[vV]/, "");
+            const remoteVer = String(release.tag_name || "").replace(/^(native-)?[vV]/, "");
             const buildMatch = remoteVer.match(/^2\.0\.(\d+)$/);
             const remoteBuild = buildMatch ? parseInt(buildMatch[1], 10) : 0;
             const isNewer =
@@ -122,22 +125,28 @@ export default function AppUpdateNotification() {
                 ? remoteBuild > localBuild
                 : remoteVer > localVer;
 
+            const setupName = isNativeRuntime ? "Karobar-Native-Setup.exe" : "Karobar-App-Setup.exe";
+            const bundleName = isNativeRuntime ? "Karobar-Native-Setup-Bundle.zip" : "Karobar-App-Setup-Bundle.zip";
+            const dlBase = isNativeRuntime
+              ? "https://github.com/shzdasim/Karobar-App/releases/download/native-latest"
+              : "https://github.com/shzdasim/Karobar-App/releases/latest/download";
+
             data = {
               ok: true,
               update_available: isNewer,
-              app_name: "Karobar-App",
+              app_name: isNativeRuntime ? "Karobar-App Native" : "Karobar-App",
               current_version: localVer,
               current_build: localBuild,
               latest_version: remoteVer,
               latest_build: remoteBuild,
-              release_name: release.name || `Karobar-App v${remoteVer}`,
+              release_name: release.name || `${isNativeRuntime ? "Karobar-App Native" : "Karobar-App"} v${remoteVer}`,
               released_at: release.published_at || "",
               notes: release.body || "New Karobar-App release available.",
-              download_url:
-                "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe",
-              bundle_url:
-                "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup-Bundle.zip",
-              release_url: release.html_url || "https://github.com/shzdasim/Karobar-App/releases/latest",
+              download_url: `${dlBase}/${setupName}`,
+              bundle_url: `${dlBase}/${bundleName}`,
+              release_url: release.html_url || (isNativeRuntime
+                ? "https://github.com/shzdasim/Karobar-App/releases/tag/native-latest"
+                : "https://github.com/shzdasim/Karobar-App/releases/latest"),
               zero_data_loss: true,
             };
           }

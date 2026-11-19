@@ -6,6 +6,10 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ZXing;
+using ZXing.Common;
+using ZXing.QrCode;
+using ZXing.QrCode.Internal;
 
 namespace Karobar.Printing;
 
@@ -338,6 +342,7 @@ public sealed class PrintTemplateRenderer
 
         if (calPaperWidthMm > 0)
         {
+            sb.AppendLine($"  @media print {{ @page {{ size: {calPaperWidthMm}mm auto; margin: 0; }} }}");
             sb.AppendLine($"  .receipt {{ width: {calPaperWidthMm}mm !important; max-width: 100% !important; }}");
             sb.AppendLine($"  .page {{ width: {calPaperWidthMm}mm !important; max-width: 100% !important; }}");
             sb.AppendLine($"  .labels-wrapper {{ max-width: {calPaperWidthMm}mm !important; }}");
@@ -424,7 +429,7 @@ public sealed class PrintTemplateRenderer
         var usinNo = (doc?.FbrUsin ?? doc?.PostedNumber ?? "").Trim();
 
         var qrSeed = !string.IsNullOrEmpty(fbrQrData) ? fbrQrData : displayInvNo;
-        var qrHash = ComputeSha256Hex(qrSeed) + ComputeMd5Hex(qrSeed + "_fbr");
+        var qrSvg = GenerateQrSvg(qrSeed, 74);
 
         var sb = new StringBuilder();
         sb.AppendLine("<div class=\"fbr-fiscal-block\" style=\"margin: 8px 0 6px; padding: 7px 8px; border: 1.5px solid #000000; border-radius: 5px; background: #ffffff; color: #000000; font-family: 'Inter', 'Segoe UI', Arial, sans-serif; page-break-inside: avoid; max-width: 340px; margin-left: auto; margin-right: auto;\">");
@@ -480,38 +485,8 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine("      </td>");
 
         sb.AppendLine("      <td style=\"width: 48%; text-align: center; vertical-align: middle; padding: 2px 4px; border: none !important;\">");
-        sb.AppendLine("        <div style=\"display: inline-block; padding: 4px; background: #ffffff; border: 1.5px solid #000000; border-radius: 4px;\">");
-        sb.AppendLine("          <svg width=\"72\" height=\"72\" viewBox=\"0 0 25 25\" xmlns=\"http://www.w3.org/2000/svg\" shape-rendering=\"crispEdges\" style=\"display: block;\">");
-        sb.AppendLine("            <rect width=\"25\" height=\"25\" fill=\"#ffffff\"/>");
-        sb.AppendLine("            <rect x=\"0\" y=\"0\" width=\"7\" height=\"7\" fill=\"#000000\"/><rect x=\"1\" y=\"1\" width=\"5\" height=\"5\" fill=\"#ffffff\"/><rect x=\"2\" y=\"2\" width=\"3\" height=\"3\" fill=\"#000000\"/>");
-        sb.AppendLine("            <rect x=\"18\" y=\"0\" width=\"7\" height=\"7\" fill=\"#000000\"/><rect x=\"19\" y=\"1\" width=\"5\" height=\"5\" fill=\"#ffffff\"/><rect x=\"20\" y=\"2\" width=\"3\" height=\"3\" fill=\"#000000\"/>");
-        sb.AppendLine("            <rect x=\"0\" y=\"18\" width=\"7\" height=\"7\" fill=\"#000000\"/><rect x=\"1\" y=\"19\" width=\"5\" height=\"5\" fill=\"#ffffff\"/><rect x=\"2\" y=\"20\" width=\"3\" height=\"3\" fill=\"#000000\"/>");
-        sb.AppendLine("            <rect x=\"16\" y=\"16\" width=\"5\" height=\"5\" fill=\"#000000\"/><rect x=\"17\" y=\"17\" width=\"3\" height=\"3\" fill=\"#ffffff\"/><rect x=\"18\" y=\"18\" width=\"1\" height=\"1\" fill=\"#000000\"/>");
-        for (var ti = 8; ti <= 16; ti += 2)
-        {
-            sb.AppendLine($"            <rect x=\"{ti}\" y=\"6\" width=\"1\" height=\"1\" fill=\"#000000\"/><rect x=\"6\" y=\"{ti}\" width=\"1\" height=\"1\" fill=\"#000000\"/>");
-        }
-        for (var r = 0; r < 25; r++)
-        {
-            for (var c = 0; c < 25; c++)
-            {
-                var inFinderTL = r < 8 && c < 8;
-                var inFinderTR = r < 8 && c > 16;
-                var inFinderBL = r > 16 && c < 8;
-                var inAlign = r >= 16 && r <= 20 && c >= 16 && c <= 20;
-                var inTiming = r == 6 || c == 6;
-                var reserved = inFinderTL || inFinderTR || inFinderBL || inAlign || inTiming;
-                if (reserved) continue;
-
-                var charIdx = (r * 25 + c) % qrHash.Length;
-                var hexVal = Convert.ToInt32(qrHash[charIdx].ToString(), 16);
-                if ((hexVal + (r * 3) + (c * 5)) % 2 == 0)
-                {
-                    sb.AppendLine($"            <rect x=\"{c}\" y=\"{r}\" width=\"1\" height=\"1\" fill=\"#000000\"/>");
-                }
-            }
-        }
-        sb.AppendLine("          </svg>");
+        sb.AppendLine("        <div style=\"display: inline-block; padding: 3px; background: #ffffff; border: 1.5px solid #000000; border-radius: 4px;\">");
+        sb.AppendLine(qrSvg);
         sb.AppendLine("        </div>");
         sb.AppendLine("      </td>");
         sb.AppendLine("    </tr>");
@@ -679,9 +654,9 @@ public sealed class PrintTemplateRenderer
             {
                 sb.AppendLine($"<tr><td class=\"col-name\">{H(it.ProductName)}</td><td class=\"col-qty\">{F0(it.Quantity)}</td><td class=\"col-price\">{F2(it.SubTotal)}</td></tr>");
             }
-            sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"hr\"></div><div class=\"pair\"><span>Gross:{F2(gross)}</span></div><div class=\"pair\"><span>Disc:{F2(disc)}</span></div><div class=\"pair total\"><span>TOTAL:{F2(total)}</span></div>");
-            if (remainThis > 0) sb.AppendLine($"<div class=\"pair\"><span>Paid:{F2(totalReceive)}</span></div><div class=\"pair\"><span>Due:{F2(remainThis)}</span></div>");
-            if (showTotalDue) sb.AppendLine($"<div class=\"pair total\"><span>TOTAL DUE:{F2(customerTotalDue!.Value)}</span></div>");
+            sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"hr\"></div><div class=\"pair\"><span>Gross</span><span>{F2(gross)}</span></div><div class=\"pair\"><span>Disc</span><span>-{F2(disc)}</span></div>{(tax > 0 ? $"<div class=\"pair\"><span>Tax</span><span>{F2(tax)}</span></div>" : "")}<div class=\"pair total\"><span>TOTAL</span><span>{F2(total)}</span></div>");
+            if (remainThis > 0) sb.AppendLine($"<div class=\"pair\"><span>Paid</span><span>{F2(totalReceive)}</span></div><div class=\"pair\"><span>Due</span><span>{F2(remainThis)}</span></div>");
+            if (showTotalDue) sb.AppendLine($"<div class=\"pair total\"><span>TOTAL DUE</span><span>{F2(customerTotalDue!.Value)}</span></div>");
             sb.AppendLine("</div>");
             if (!string.IsNullOrEmpty(footerNote)) sb.AppendLine($"<div class=\"hr\"></div><div class=\"note\">{H(footerNote)}</div>");
             sb.AppendLine(fbrFooterHtml);
@@ -731,7 +706,6 @@ public sealed class PrintTemplateRenderer
         {
             var dateStr = invoice.Date?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) ?? "";
             var timeStr = invoice.Date?.ToString("hh:mm tt", CultureInfo.InvariantCulture) ?? "";
-            var barHash = ComputeMd5Hex($"{invoice.PostedNumber}|{dateStr}|{total}|{setting.StoreName}");
             var sb = new StringBuilder();
             sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>");
             sb.AppendLine($"<title>Sale Invoice (Barcode Thermal) - {H(invoice.PostedNumber)}</title>");
@@ -771,15 +745,8 @@ public sealed class PrintTemplateRenderer
             {
                 sb.AppendLine($"<div class=\"payment-info\" style=\"background:#ffe0b2;border-color:#ff9800;\"><div class=\"pair total\"><span>TOTAL DUE:</span><span>{F2(customerTotalDue!.Value)}</span></div></div>");
             }
-            sb.AppendLine("<div class=\"qr-section\"><svg width=\"150\" height=\"38\" viewBox=\"0 0 150 38\" xmlns=\"http://www.w3.org/2000/svg\" style=\"display:inline-block;width:46mm;height:12mm;\"><rect width=\"150\" height=\"38\" fill=\"#ffffff\"/>");
-            for (var bi = 0; bi < 32; bi++)
-            {
-                var bVal = Convert.ToInt32(barHash[bi].ToString(), 16);
-                var bX = (5 + (bi * 4.4)).ToString("0.##", CultureInfo.InvariantCulture);
-                var bW = (bVal % 3 == 0 ? 3.0 : (bVal % 2 == 0 ? 2.0 : 1.1)).ToString("0.##", CultureInfo.InvariantCulture);
-                sb.AppendLine($"<rect x=\"{bX}\" y=\"3\" width=\"{bW}\" height=\"32\" fill=\"#000000\"/>");
-            }
-            sb.AppendLine($"</svg><div style=\"font-size:7px;margin-top:2px;\">{H(invoice.PostedNumber)}</div></div>");
+            var barSvg = GenerateCode128Svg(string.IsNullOrWhiteSpace(invoice.PostedNumber) ? "INV-0001" : invoice.PostedNumber, 160, 38);
+            sb.AppendLine($"<div class=\"qr-section\">{barSvg}<div style=\"font-size:7px;margin-top:2px;\">{H(invoice.PostedNumber)}</div></div>");
             if (!string.IsNullOrEmpty(footerNote)) sb.AppendLine($"<div class=\"note\">{H(footerNote)}</div>");
             sb.AppendLine(fbrFooterHtml);
             sb.AppendLine("<div class=\"foot\">Software by Asim Shahzad<br/>PH:0304-7674787</div></div></body></html>");
@@ -792,7 +759,7 @@ public sealed class PrintTemplateRenderer
         var sbStd = new StringBuilder();
         sbStd.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>");
         sbStd.AppendLine($"<title>Sale Invoice ({(isBaseThermal ? "Thermal" : "Standard Thermal")}) - {H(invoice.PostedNumber)}</title>");
-        sbStd.AppendLine("<style>@page{margin:0;}*{box-sizing:border-box;}html,body{margin:0;padding:0;color:#000;background:#fff;}body{font-family:'Courier New',monospace;font-weight:700;font-size:12px;line-height:1.3;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.print-actions{margin:8px;text-align:right;}.print-actions button{padding:6px 10px;cursor:pointer;}@media print{.print-actions{display:none;}.receipt{margin:0;}}.receipt{width:78mm;max-width:100%;margin:0 auto;padding:0 6px 6px;position:relative;overflow:hidden;}.center{text-align:center;}.right{text-align:right;}.logo{max-width:56mm;max-height:30mm;object-fit:contain;display:block;margin:0 auto 4px;}.hr{border-top:1px dashed #000;margin:5px 0;}.double-hr{border-top:2px double #000;margin:5px 0;}.pair{display:flex;justify-content:space-between;}.pair+.pair{margin-top:2px;}.wm{position:absolute;top:2mm;left:0;right:0;z-index:0;text-align:center;pointer-events:none;user-select:none;}.wm img{width:58mm;max-width:90%;opacity:0.8;filter:grayscale(100%) contrast(90%);}.content{position:relative;z-index:1;}table{width:100%;border-collapse:collapse;}thead th{text-align:left;padding:2px 2px;border:1px solid #000;}tbody td{padding:0;border-bottom:1px solid #000;vertical-align:top;}th.right,td.right{text-align:right;white-space:nowrap;}td.center{text-align:center;}th.col-name{width:45%;}th.col-qty{width:13%;}th.col-price{width:17%;}th.col-disc{width:10%;}th.col-subtotal{width:15%;}.totals .pair.total{font-size:13px;font-weight:bold;margin-top:4px;}.note{margin-top:5px;white-space:pre-wrap;font-size:10px;}.foot{margin-top:8px;text-align:center;font-size:9px;}</style>");
+        sbStd.AppendLine("<style>@page{margin:0;}*{box-sizing:border-box;}html,body{margin:0;padding:0;color:#000;background:#fff;}body{font-family:'Courier New',monospace;font-weight:700;font-size:12px;line-height:1.3;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.print-actions{margin:8px;text-align:right;}.print-actions button{padding:6px 10px;cursor:pointer;}@media print{.print-actions{display:none;}.receipt{margin:0;}}.receipt{width:78mm;max-width:100%;margin:0 auto;padding:0 6px 6px;position:relative;overflow:hidden;}.center{text-align:center;}.right{text-align:right;}.logo{max-width:56mm;max-height:30mm;object-fit:contain;display:block;margin:0 auto 4px;}.hr{border-top:1px dashed #000;margin:5px 0;}.double-hr{border-top:2px double #000;margin:5px 0;}.pair{display:flex;justify-content:space-between;}.pair+.pair{margin-top:2px;}.wm{position:absolute;top:2mm;left:0;right:0;z-index:0;text-align:center;pointer-events:none;user-select:none;}.wm img{width:58mm;max-width:90%;opacity:0.15;filter:grayscale(100%) contrast(90%);}.content{position:relative;z-index:1;}table{width:100%;border-collapse:collapse;}thead th{text-align:left;padding:2px 2px;border:1px solid #000;}tbody td{padding:0;border-bottom:1px solid #000;vertical-align:top;}th.right,td.right{text-align:right;white-space:nowrap;}td.center{text-align:center;}th.col-name{width:45%;}th.col-qty{width:13%;}th.col-price{width:17%;}th.col-disc{width:10%;}th.col-subtotal{width:15%;}.totals .pair.total{font-size:13px;font-weight:bold;margin-top:4px;}.note{margin-top:5px;white-space:pre-wrap;font-size:10px;}.foot{margin-top:8px;text-align:center;font-size:9px;}</style>");
         sbStd.AppendLine(calibrationHtml);
         sbStd.AppendLine($"</head><body onload=\"{AutoPrintBodyOnload}\">");
         sbStd.AppendLine("<div class=\"print-actions\"><button onclick=\"window.print()\">Print</button></div><div class=\"receipt\">");
@@ -1056,6 +1023,7 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine($".sticker-product{{font-size:{ptProduct.ToString(CultureInfo.InvariantCulture)}pt;font-weight:{cfg.FontWeightProduct};line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0.5mm 0;}}");
         sb.AppendLine($".sticker-dosage-box{{border:{(template == "minimal" ? "0.25mm solid #cbd5e1" : (template == "urdu_focus" ? "0.45mm solid #000" : "0.35mm solid #000"))};border-radius:1mm;padding:{(template == "urdu_focus" ? "1.1mm 1.4mm" : "0.7mm 1.2mm")};text-align:center;font-size:{ptDosage.ToString(CultureInfo.InvariantCulture)}pt;font-weight:{cfg.FontWeightDosage};line-height:1.35;background:{(template == "minimal" ? "#fff" : "#f8fafc")};font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq','Segoe UI',Tahoma,Arial,sans-serif;}}");
         sb.AppendLine($".sticker-foot{{display:flex;align-items:center;justify-content:space-between;gap:1mm;font-size:{ptFooter.ToString(CultureInfo.InvariantCulture)}pt;font-weight:{cfg.FontWeightFooter};margin-top:0.4mm;white-space:nowrap;overflow:hidden;}}.roll-cutter-guard{{display:none;}}");
+        sb.AppendLine("@media print{.no-print-bar{display:none!important;}html,body{background:#fff!important;}.labels-wrapper{gap:0!important;padding:0!important;}.sticker{border:none!important;}.roll-cutter-guard{display:block!important;}}");
         sb.AppendLine("</style></head><body>");
         sb.AppendLine($"<div class=\"no-print-bar\"><div><strong>Patient Dosage Stickers ({w}mm × {h}mm)</strong><span style=\"margin-left:8px;opacity:0.8;\">Invoice: {H(invoice.PostedNumber)}</span></div><div class=\"no-print-actions\"><button type=\"button\" onclick=\"if(window.karobarDesktop&&window.karobarDesktop.silentPrint){{window.karobarDesktop.silentPrint();}}else{{window.print();}}\">Print Stickers</button></div></div>");
         sb.AppendLine("<div class=\"labels-wrapper\">");
@@ -1408,12 +1376,30 @@ public sealed class PrintTemplateRenderer
 
         if (queryParams != null)
         {
+            static bool ParseQBool(string? v, bool fallback) => string.IsNullOrWhiteSpace(v) ? fallback : v.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
             if (queryParams.TryGetValue("width_mm", out var wStr) && int.TryParse(wStr, out var wVal)) cfg.WidthMm = Math.Clamp(wVal, 25, 150);
             if (queryParams.TryGetValue("height_mm", out var hStr) && int.TryParse(hStr, out var hVal)) cfg.HeightMm = Math.Clamp(hVal, 15, 120);
             if (queryParams.TryGetValue("printer_mode", out var pm) && pm is "receipt_roll" or "label_printer") cfg.PrinterMode = pm;
             if (queryParams.TryGetValue("font_scale", out var fs)) cfg.FontScale = fs;
             if (queryParams.TryGetValue("contrast_mode", out var cm)) cfg.ContrastMode = cm;
             if (queryParams.TryGetValue("footer_note", out var fn)) cfg.FooterNote = fn;
+            if (queryParams.TryGetValue("show_shop_name", out var ssn)) cfg.ShowShopName = ParseQBool(ssn, cfg.ShowShopName);
+            if (queryParams.TryGetValue("show_invoice_meta", out var sim)) cfg.ShowInvoiceMeta = ParseQBool(sim, cfg.ShowInvoiceMeta);
+            if (queryParams.TryGetValue("show_patient", out var sp)) cfg.ShowPatient = ParseQBool(sp, cfg.ShowPatient);
+            if (queryParams.TryGetValue("show_quantity", out var sq)) cfg.ShowQuantity = ParseQBool(sq, cfg.ShowQuantity);
+            if (queryParams.TryGetValue("show_batch", out var sbVal)) cfg.ShowBatch = ParseQBool(sbVal, cfg.ShowBatch);
+            if (queryParams.TryGetValue("show_expiry", out var se)) cfg.ShowExpiry = ParseQBool(se, cfg.ShowExpiry);
+            if (queryParams.TryGetValue("show_doctor", out var sd)) cfg.ShowDoctor = ParseQBool(sd, cfg.ShowDoctor);
+            if (queryParams.TryGetValue("font_size_header", out var fsh) && double.TryParse(fsh, CultureInfo.InvariantCulture, out var fshV)) cfg.FontSizeHeader = fshV;
+            if (queryParams.TryGetValue("font_size_patient", out var fsp) && double.TryParse(fsp, CultureInfo.InvariantCulture, out var fspV)) cfg.FontSizePatient = fspV;
+            if (queryParams.TryGetValue("font_size_product", out var fspr) && double.TryParse(fspr, CultureInfo.InvariantCulture, out var fsprV)) cfg.FontSizeProduct = fsprV;
+            if (queryParams.TryGetValue("font_size_dosage", out var fsd) && double.TryParse(fsd, CultureInfo.InvariantCulture, out var fsdV)) cfg.FontSizeDosage = fsdV;
+            if (queryParams.TryGetValue("font_size_footer", out var fsf) && double.TryParse(fsf, CultureInfo.InvariantCulture, out var fsfV)) cfg.FontSizeFooter = fsfV;
+            if (queryParams.TryGetValue("font_weight_header", out var fwh) && int.TryParse(fwh, out var fwhV)) cfg.FontWeightHeader = fwhV;
+            if (queryParams.TryGetValue("font_weight_patient", out var fwp) && int.TryParse(fwp, out var fwpV)) cfg.FontWeightPatient = fwpV;
+            if (queryParams.TryGetValue("font_weight_product", out var fwpr) && int.TryParse(fwpr, out var fwprV)) cfg.FontWeightProduct = fwprV;
+            if (queryParams.TryGetValue("font_weight_dosage", out var fwd) && int.TryParse(fwd, out var fwdV)) cfg.FontWeightDosage = fwdV;
+            if (queryParams.TryGetValue("font_weight_footer", out var fwf) && int.TryParse(fwf, out var fwfV)) cfg.FontWeightFooter = fwfV;
         }
 
         var sampleInvoice = CreateSamplePreviewInvoice(setting);
@@ -1458,15 +1444,25 @@ public sealed class PrintTemplateRenderer
 
         var isThermal = normSize == "thermal";
         var fbrFooter = RenderFbrFiscalFooter(sampleInvoice, setting);
+        var (accentHex, accentBgHex) = normTpl switch
+        {
+            "minimal" => ("#334155", "#ffffff"),
+            "detailed" => ("#1e3a8a", "#eff6ff"),
+            "compact" => ("#0f766e", "#f0fdfa"),
+            "bold" => ("#000000", "#f8fafc"),
+            "barcode" => ("#18181b", "#f4f4f5"),
+            _ => ("#0f172a", "#f8fafc")
+        };
+        var showLogoImg = setting.ShareShowLogo && !string.IsNullOrWhiteSpace(setting.LogoUrl);
 
         var sb = new StringBuilder();
         sb.AppendLine($"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Sale Invoice {H(sampleInvoice.PostedNumber)}</title>");
-        sb.AppendLine("<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#1e293b;line-height:1.45;margin:0;padding:0;}table{width:100%;border-collapse:collapse;}.header-table{border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;}.store-name{font-size:18px;font-weight:bold;color:#0f172a;margin:0 0 3px 0;}.store-meta{font-size:10px;color:#475569;margin:1px 0;}.doc-badge{display:inline-block;background:#0f172a;color:#fff;font-size:13px;font-weight:bold;padding:4px 12px;border-radius:3px;text-transform:uppercase;}.meta-box{background:#f8fafc;border:1px solid #cbd5e1;border-radius:4px;padding:8px 10px;margin-bottom:14px;}.meta-label{font-size:9px;font-weight:bold;color:#64748b;text-transform:uppercase;}.meta-value{font-size:11px;font-weight:bold;color:#0f172a;}.items-table th{background:#0f172a;color:#fff;font-size:9.5px;font-weight:bold;text-transform:uppercase;padding:6px 7px;border:1px solid #0f172a;text-align:left;}.items-table td{padding:6px 7px;border:1px solid #cbd5e1;font-size:10.5px;}.text-right{text-align:right!important;}.text-center{text-align:center!important;}.totals-table{width:270px;margin-left:auto;margin-top:12px;}.totals-table td{padding:4px 8px;font-size:11px;border-bottom:1px solid #e2e8f0;}.totals-table .grand-row td{background:#0f172a;color:#fff;font-weight:bold;font-size:12px;border:none;padding:6px 8px;}.footer-note{margin-top:24px;padding-top:8px;border-top:1px solid #cbd5e1;font-size:9.5px;color:#64748b;text-align:center;}</style>");
+        sb.AppendLine($"<style>body{{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#1e293b;line-height:1.45;margin:0;padding:0;}}table{{width:100%;border-collapse:collapse;}}.header-table{{border-bottom:2px solid {accentHex};padding-bottom:10px;margin-bottom:14px;}}.store-logo{{max-height:42px;max-width:120px;object-fit:contain;margin-bottom:4px;display:block;}}.store-name{{font-size:18px;font-weight:bold;color:{accentHex};margin:0 0 3px 0;}}.store-meta{{font-size:10px;color:#475569;margin:1px 0;}}.doc-badge{{display:inline-block;background:{accentHex};color:#fff;font-size:13px;font-weight:bold;padding:4px 12px;border-radius:3px;text-transform:uppercase;}}.meta-box{{background:{accentBgHex};border:1px solid #cbd5e1;border-radius:4px;padding:8px 10px;margin-bottom:14px;}}.meta-label{{font-size:9px;font-weight:bold;color:#64748b;text-transform:uppercase;}}.meta-value{{font-size:11px;font-weight:bold;color:{accentHex};}}.items-table th{{background:{accentHex};color:#fff;font-size:9.5px;font-weight:bold;text-transform:uppercase;padding:6px 7px;border:1px solid {accentHex};text-align:left;}}.items-table td{{padding:6px 7px;border:1px solid #cbd5e1;font-size:10.5px;}}.text-right{{text-align:right!important;}}.text-center{{text-align:center!important;}}.totals-table{{width:270px;margin-left:auto;margin-top:12px;}}.totals-table td{{padding:4px 8px;font-size:11px;border-bottom:1px solid #e2e8f0;}}.totals-table .grand-row td{{background:{accentHex};color:#fff;font-weight:bold;font-size:12px;border:none;padding:6px 8px;}}.footer-note{{margin-top:24px;padding-top:8px;border-top:1px solid #cbd5e1;font-size:9.5px;color:#64748b;text-align:center;}}</style>");
         sb.AppendLine(isThermal
-            ? "<style>html{background:#f1f5f9;padding:12px 0;}body{width:58mm;min-height:80mm;max-width:94%;margin:0 auto!important;padding:8px 7px!important;background:#ffffff;box-shadow:0 4px 16px rgba(15,23,42,0.12);border-radius:4px;font-size:7px!important;}</style>"
+            ? "<style>html{background:#f1f5f9;padding:12px 0;}body{width:58mm;min-height:80mm;max-width:94%;margin:0 auto!important;padding:8px 7px!important;background:#ffffff;box-shadow:0 4px 16px rgba(15,23,42,0.12);border-radius:4px;font-size:7px!important;}.totals-table{width:100%!important;}</style>"
             : "<style>html{background:#f1f5f9;padding:12px;}body{max-width:210mm;margin:0 auto!important;padding:18px 22px!important;background:#ffffff;box-shadow:0 4px 16px rgba(15,23,42,0.08);border-radius:4px;}</style>");
         sb.AppendLine("</head><body>");
-        sb.AppendLine($"<table class=\"header-table\"><tr><td style=\"width:60%;vertical-align:top;\"><div class=\"store-name\">{H(setting.StoreName)}</div><div class=\"store-meta\">{H(setting.Address)}</div><div class=\"store-meta\">Phone: {H(setting.PhoneNumber)}</div></td><td style=\"width:40%;vertical-align:top;text-align:right;\"><div class=\"doc-badge\">Sale Invoice</div><div style=\"margin-top:6px;font-size:12px;font-weight:bold;\">#{H(sampleInvoice.PostedNumber)}</div><div class=\"store-meta\">Date: {DateTime.Now:dd MMM yyyy}</div></td></tr></table>");
+        sb.AppendLine($"<table class=\"header-table\"><tr><td style=\"width:60%;vertical-align:top;\">{(showLogoImg ? $"<img src=\"{H(setting.LogoUrl)}\" alt=\"Logo\" class=\"store-logo\"/>" : "")}<div class=\"store-name\">{H(setting.StoreName)}</div><div class=\"store-meta\">{H(setting.Address)}</div><div class=\"store-meta\">Phone: {H(setting.PhoneNumber)}</div></td><td style=\"width:40%;vertical-align:top;text-align:right;\"><div class=\"doc-badge\">Sale Invoice</div><div style=\"margin-top:6px;font-size:12px;font-weight:bold;\">#{H(sampleInvoice.PostedNumber)}</div><div class=\"store-meta\">Date: {DateTime.Now:dd MMM yyyy}</div></td></tr></table>");
         sb.AppendLine($"<div class=\"meta-box\"><table><tr><td><div class=\"meta-label\">Billed To Customer</div><div class=\"meta-value\">{H(sampleInvoice.CustomerName)}</div></td><td class=\"text-right\"><div class=\"meta-label\">Invoice Details</div><div class=\"store-meta\">Design: <strong>{H(normTpl.ToUpperInvariant())}</strong> ({H(normSize.ToUpperInvariant())})</div></td></tr></table></div>");
         sb.AppendLine("<table class=\"items-table\"><thead><tr><th>Item</th><th class=\"text-right\">Qty</th><th class=\"text-right\">Rate</th><th class=\"text-right\">Total</th></tr></thead><tbody>");
         foreach (var it in sampleInvoice.Items)
@@ -1477,6 +1473,55 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine(fbrFooter);
         sb.AppendLine($"<div class=\"footer-note\"><div>{H(setting.Note)}</div><div>Generated on {DateTime.Now:dd MMM yyyy, hh:mm tt}</div></div></body></html>");
         return sb.ToString();
+    }
+
+    public static string GenerateQrSvg(string payload, int sizePx = 74)
+    {
+        try
+        {
+            var writer = new BarcodeWriterSvg
+            {
+                Format = BarcodeFormat.QR_CODE,
+                Options = new QrCodeEncodingOptions
+                {
+                    Width = sizePx,
+                    Height = sizePx,
+                    Margin = 1,
+                    ErrorCorrection = ErrorCorrectionLevel.M,
+                    CharacterSet = "UTF-8"
+                }
+            };
+            var svg = writer.Write(string.IsNullOrWhiteSpace(payload) ? "FBR" : payload);
+            return svg.Content;
+        }
+        catch
+        {
+            return $"<svg width=\"{sizePx}\" height=\"{sizePx}\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"{sizePx}\" height=\"{sizePx}\" fill=\"#fff\" stroke=\"#000\"/></svg>";
+        }
+    }
+
+    public static string GenerateCode128Svg(string payload, int widthPx = 160, int heightPx = 38)
+    {
+        try
+        {
+            var writer = new BarcodeWriterSvg
+            {
+                Format = BarcodeFormat.CODE_128,
+                Options = new EncodingOptions
+                {
+                    Width = widthPx,
+                    Height = heightPx,
+                    Margin = 2,
+                    PureBarcode = true
+                }
+            };
+            var svg = writer.Write(string.IsNullOrWhiteSpace(payload) ? "0000" : payload);
+            return svg.Content;
+        }
+        catch
+        {
+            return $"<svg width=\"{widthPx}\" height=\"{heightPx}\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"{widthPx}\" height=\"{heightPx}\" fill=\"#fff\"/></svg>";
+        }
     }
 
     #endregion

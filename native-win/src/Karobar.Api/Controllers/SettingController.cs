@@ -1,9 +1,17 @@
 using System.Text.Json;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Background;
+using Karobar.Data;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using MailKit.Net.Smtp;
+using MailKit.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MimeKit;
 
 namespace Karobar.Api.Controllers;
 
@@ -12,10 +20,30 @@ namespace Karobar.Api.Controllers;
 public class SettingController : ApiControllerBase
 {
     private readonly LicenseService _licenseService;
+    private readonly LocalWhatsAppSidecarManager _waSidecar;
+    private readonly DocumentShareEngine _shareEngine;
+    private readonly PdfDocumentGenerator _pdfGenerator;
+    private readonly GroqProvider _groqProvider;
+    private readonly GeminiProvider _geminiProvider;
+    private readonly KarobarDbContext? _dbContext;
 
-    public SettingController(KarobarDb db, LicenseService licenseService) : base(db)
+    public SettingController(
+        KarobarDb db,
+        LicenseService licenseService,
+        LocalWhatsAppSidecarManager? waSidecar = null,
+        DocumentShareEngine? shareEngine = null,
+        PdfDocumentGenerator? pdfGenerator = null,
+        GroqProvider? groqProvider = null,
+        GeminiProvider? geminiProvider = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
         _licenseService = licenseService;
+        _waSidecar = waSidecar ?? new LocalWhatsAppSidecarManager();
+        _pdfGenerator = pdfGenerator ?? new PdfDocumentGenerator();
+        _shareEngine = shareEngine ?? new DocumentShareEngine(null, _pdfGenerator);
+        _groqProvider = groqProvider ?? new GroqProvider();
+        _geminiProvider = geminiProvider ?? new GeminiProvider();
+        _dbContext = dbContext;
     }
 
     [HttpGet("settings")]
@@ -465,20 +493,59 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.update")) return Forbidden();
         var body = await ReadJsonBodyAsync();
-        var host = GetString(body, "smtp_host") ?? "";
-        var testEmail = GetString(body, "test_email") ?? "";
+        var existing = await GetOrCreateSettingAsync();
+
+        var host = (GetString(body, "smtp_host") ?? existing.GetValueOrDefault("smtp_host")?.ToString() ?? "").Trim();
+        var port = SafeInt(GetString(body, "smtp_port") ?? existing.GetValueOrDefault("smtp_port"), 587);
+        var username = GetString(body, "smtp_username") ?? existing.GetValueOrDefault("smtp_username")?.ToString() ?? "";
+        var password = GetString(body, "smtp_password");
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            password = existing.GetValueOrDefault("smtp_password")?.ToString() ?? "";
+        }
+        var encryption = (GetString(body, "smtp_encryption") ?? existing.GetValueOrDefault("smtp_encryption")?.ToString() ?? "tls").Trim().ToLowerInvariant();
+        var fromAddr = (GetString(body, "smtp_from_address") ?? existing.GetValueOrDefault("smtp_from_address")?.ToString() ?? username).Trim();
+        var fromName = (GetString(body, "smtp_from_name") ?? existing.GetValueOrDefault("smtp_from_name")?.ToString() ?? existing.GetValueOrDefault("store_name")?.ToString() ?? "Karobar App").Trim();
+        var testEmail = (GetString(body, "test_email") ?? "").Trim();
 
         if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(testEmail))
         {
             return Unprocessable("SMTP host and test email are required.");
         }
 
-        await Task.CompletedTask;
-        return Ok(new
+        try
         {
-            status = "sent",
-            message = $"Test email sent successfully to {testEmail}"
-        });
+            var mime = new MimeMessage();
+            mime.From.Add(new MailboxAddress(fromName, string.IsNullOrWhiteSpace(fromAddr) ? "noreply@karobar.local" : fromAddr));
+            mime.To.Add(MailboxAddress.Parse(testEmail));
+            mime.Subject = $"Karobar-App SMTP Test — {fromName}";
+            mime.Body = new TextPart("plain") { Text = $"SMTP email delivery from {fromName} is verified and working." };
+
+            using var smtp = new SmtpClient { Timeout = 10000 };
+            var sec = encryption switch
+            {
+                "ssl" => SecureSocketOptions.SslOnConnect,
+                "none" or "off" => SecureSocketOptions.None,
+                _ => SecureSocketOptions.StartTlsWhenAvailable
+            };
+            await smtp.ConnectAsync(host, port, sec, HttpContext.RequestAborted);
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                await smtp.AuthenticateAsync(username, password ?? "", HttpContext.RequestAborted);
+            }
+            await smtp.SendAsync(mime, HttpContext.RequestAborted);
+            await smtp.DisconnectAsync(true, HttpContext.RequestAborted);
+
+            return Ok(new
+            {
+                status = "sent",
+                message = $"Test email sent successfully to {testEmail}"
+            });
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable($"SMTP test failed ({host}:{port}): {ex.Message}");
+        }
     }
 
     [HttpPost("settings/test-whatsapp")]
@@ -486,21 +553,71 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.update")) return Forbidden();
         var body = await ReadJsonBodyAsync();
-        var provider = GetString(body, "whatsapp_provider") ?? "local_agent";
-        var testPhone = GetString(body, "test_phone") ?? "";
+        var existing = await GetOrCreateSettingAsync();
 
+        var provider = (GetString(body, "whatsapp_provider") ?? existing.GetValueOrDefault("whatsapp_provider")?.ToString() ?? "local_agent").Trim();
+        var testPhone = (GetString(body, "test_phone") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(testPhone))
         {
             return Unprocessable("Test phone number is required.");
         }
 
-        await Task.CompletedTask;
-        return Ok(new
+        var token = GetString(body, "whatsapp_access_token");
+        if (string.IsNullOrWhiteSpace(token)) token = existing.GetValueOrDefault("whatsapp_access_token")?.ToString() ?? "";
+
+        var waConfig = new WhatsAppConfiguration
         {
-            status = "sent",
-            provider,
-            message = $"Test WhatsApp message queued for {testPhone}"
-        });
+            Enabled = true,
+            Provider = provider,
+            AccessToken = token,
+            PhoneNumberId = GetString(body, "whatsapp_phone_number_id") ?? existing.GetValueOrDefault("whatsapp_phone_number_id")?.ToString() ?? "",
+            BusinessAccountId = GetString(body, "whatsapp_business_account_id") ?? existing.GetValueOrDefault("whatsapp_business_account_id")?.ToString() ?? "",
+            ApiVersion = GetString(body, "whatsapp_api_version") ?? existing.GetValueOrDefault("whatsapp_api_version")?.ToString() ?? "v21.0",
+            ApiUrl = GetString(body, "whatsapp_api_url") ?? existing.GetValueOrDefault("whatsapp_api_url")?.ToString() ?? "http://127.0.0.1:3001",
+            DefaultCountryCode = GetString(body, "whatsapp_default_country_code") ?? existing.GetValueOrDefault("whatsapp_default_country_code")?.ToString() ?? "92",
+            AutoFallback = false
+        };
+
+        var normalized = _shareEngine.NormalizePhone(testPhone, waConfig.DefaultCountryCode);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return Unprocessable("Invalid WhatsApp phone number.");
+        }
+
+        try
+        {
+            var settingVm = PrintViewModelMapper.MapPrintSetting(existing);
+            var pdfBytes = _pdfGenerator.GenerateSharedDocumentPdf(new SharedDocumentPdfRequest
+            {
+                DocumentType = "sale_invoice",
+                DocumentTitle = "WHATSAPP TEST DOCUMENT",
+                DocumentNumber = "TEST-WA-01",
+                Setting = settingVm,
+                PartyHeading = "Recipient",
+                PartyName = normalized,
+                Remarks = "Karobar-App WhatsApp PDF delivery connectivity test."
+            });
+            var (usedProvider, msgId) = await _shareEngine.DispatchPdfViaWhatsAppApiAsync(
+                waConfig, normalized, pdfBytes, "Karobar_WhatsApp_Test.pdf",
+                $"Test WhatsApp PDF from {settingVm.StoreName}", null, HttpContext.RequestAborted);
+            return Ok(new
+            {
+                status = "sent",
+                provider = usedProvider,
+                message_id = msgId,
+                message = $"Test WhatsApp PDF sent successfully to {normalized} via {usedProvider}"
+            });
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable($"WhatsApp test failed ({provider}): {ex.Message}");
+        }
+    }
+
+    private async Task<Karobar.Core.Entities.Setting?> LoadEfSettingAsync()
+    {
+        if (_dbContext == null) return null;
+        return await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted);
     }
 
     [HttpGet("settings/whatsapp-agent/status")]
@@ -508,17 +625,9 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.view", "settings.update", "sale-invoice.view", "customer-ledger.view"))
             return Forbidden();
-        return Ok(new
-        {
-            ok = true,
-            agent_running = false,
-            status = "stopped",
-            qr_data_url = (string?)null,
-            pairing_code = (string?)null,
-            user = (object?)null,
-            last_error = (string?)null,
-            agent_url = "http://127.0.0.1:3001"
-        });
+        var efSetting = await LoadEfSettingAsync();
+        var res = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+        return Ok(res);
     }
 
     [HttpPost("settings/whatsapp-agent/start")]
@@ -526,13 +635,10 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
             return Forbidden();
-        return Ok(new
-        {
-            ok = true,
-            agent_running = true,
-            status = "starting",
-            agent_url = "http://127.0.0.1:3001"
-        });
+        var efSetting = await LoadEfSettingAsync();
+        var res = await _waSidecar.StartAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+        var ok = !res.TryGetValue("ok", out var okVal) || okVal is true;
+        return StatusCode(ok ? 200 : 422, res);
     }
 
     [HttpPost("settings/whatsapp-agent/pair-code")]
@@ -541,32 +647,34 @@ public class SettingController : ApiControllerBase
         if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
             return Forbidden();
         var body = await ReadJsonBodyAsync();
-        var phone = GetString(body, "phone") ?? "";
+        var phone = (GetString(body, "phone") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(phone))
         {
             return Unprocessable("Phone number is required.");
         }
 
-        return Ok(new
-        {
-            ok = true,
-            pairing_code = "KRB1-2026",
-            phone
-        });
+        var efSetting = await LoadEfSettingAsync();
+        var res = await _waSidecar.RequestPairingCodeAsync(phone, _dbContext, efSetting, HttpContext.RequestAborted);
+        var ok = res.TryGetValue("ok", out var okVal) && okVal is true;
+        return StatusCode(ok ? 200 : 422, res);
     }
 
     [HttpPost("settings/whatsapp-agent/logout")]
     public async Task<IActionResult> WhatsAppAgentLogout()
     {
         if (!await CanAsync("settings.update")) return Forbidden();
-        return Ok(new { ok = true, status = "logged_out" });
+        var efSetting = await LoadEfSettingAsync();
+        var res = await _waSidecar.LogoutAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+        return Ok(res);
     }
 
     [HttpPost("settings/whatsapp-agent/stop")]
     public async Task<IActionResult> WhatsAppAgentStop()
     {
         if (!await CanAsync("settings.update")) return Forbidden();
-        return Ok(new { ok = true, agent_running = false, status = "stopped" });
+        var efSetting = await LoadEfSettingAsync();
+        var res = await _waSidecar.StopAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+        return Ok(res);
     }
 
     [HttpPost("settings/test-cube-ai")]
@@ -574,16 +682,16 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.update")) return Forbidden();
         var body = await ReadJsonBodyAsync();
-        var provider = (GetString(body, "provider") ?? "groq").ToLowerInvariant();
-        var model = GetString(body, "model") ?? "llama-3.3-70b-versatile";
-        var apiKey = GetString(body, "api_key") ?? "";
+        var provider = (GetString(body, "provider") ?? "groq").Trim().ToLowerInvariant();
+        var model = (GetString(body, "model") ?? (provider == "gemini" ? "gemini-2.5-flash" : "llama-3.3-70b-versatile")).Trim();
+        var apiKey = (GetString(body, "api_key") ?? "").Trim();
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             var existing = await GetOrCreateSettingAsync();
             apiKey = provider == "groq"
-                ? (existing.GetValueOrDefault("cube_groq_api_key")?.ToString() ?? "")
-                : (existing.GetValueOrDefault("cube_gemini_api_key")?.ToString() ?? "");
+                ? (existing.GetValueOrDefault("cube_groq_api_key")?.ToString() ?? Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? "")
+                : (existing.GetValueOrDefault("cube_gemini_api_key")?.ToString() ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "");
         }
 
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -591,13 +699,23 @@ public class SettingController : ApiControllerBase
             return Unprocessable($"Please enter your {provider} API key.");
         }
 
+        const string sysPrompt = "You are a connectivity test assistant. Reply with valid JSON: {\"title_en\":\"OK\",\"title_ur\":\"OK\",\"answer_en\":\"Connected\",\"answer_ur\":\"Connected\",\"evidence_classification\":\"documented_info\",\"source_ids\":[]}";
+        var callResult = provider == "gemini"
+            ? await _geminiProvider.GenerateAsync(apiKey, model, sysPrompt, "Ping", HttpContext.RequestAborted)
+            : await _groqProvider.GenerateAsync(apiKey, model, sysPrompt, "Ping", HttpContext.RequestAborted);
+
+        if (!callResult.Ok)
+        {
+            return Unprocessable($"{char.ToUpperInvariant(provider[0]) + provider[1..]} connection failed: {callResult.ErrorMessage ?? "Invalid API key or unreachable endpoint."}");
+        }
+
         return Ok(new
         {
             status = "connected",
             provider,
-            model,
-            available_models = new[] { model },
-            message = $"{char.ToUpperInvariant(provider[0]) + provider.Substring(1)} ({model}) connected and verified!"
+            model = callResult.Model ?? model,
+            available_models = new[] { callResult.Model ?? model },
+            message = $"{char.ToUpperInvariant(provider[0]) + provider[1..]} ({callResult.Model ?? model}) connected and verified!"
         });
     }
 
@@ -667,7 +785,7 @@ public class SettingController : ApiControllerBase
         {
             var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
             var uRows = await Db.QueryListAsync(
-                "SELECT provider, request_count, success_count, failure_count FROM cube_provider_usages WHERE usage_date = @todayStr",
+                "SELECT provider, request_count, success_count, failure_count FROM cube_provider_usages WHERE substr(usage_date, 1, 10) = @todayStr",
                 new { todayStr });
             foreach (var ur in uRows)
             {
@@ -744,6 +862,21 @@ public class SettingController : ApiControllerBase
                 {
                     defaults[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
                 }
+            }
+            else if (raw is string jsonStr && !string.IsNullOrWhiteSpace(jsonStr))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(jsonStr);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var prop in doc.RootElement.EnumerateObject())
+                        {
+                            defaults[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                        }
+                    }
+                }
+                catch { }
             }
             else if (raw is IDictionary<string, object?> dict)
             {

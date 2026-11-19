@@ -85,7 +85,7 @@ public static class Program
                     if (!ping.Ok)
                     {
                         isOfflineTerminal = true;
-                        await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).ConfigureAwait(false);
+                        await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token, forceStart: true).ConfigureAwait(false);
                     }
                 }
                 else
@@ -251,16 +251,29 @@ public static class Program
 
         try
         {
-            var hwnd = Win32Native.FindWindowW(null, ApplicationDisplayName);
-            if (hwnd == IntPtr.Zero)
+            var foundHwnd = IntPtr.Zero;
+            Win32Native.EnumWindows((hWnd, _) =>
             {
-                hwnd = Win32Native.FindWindowW(null, "Karobar-App");
-            }
+                if (!Win32Native.IsWindowVisible(hWnd)) return true;
+                var sb = new System.Text.StringBuilder(256);
+                if (Win32Native.GetWindowTextW(hWnd, sb, sb.Capacity) > 0)
+                {
+                    var title = sb.ToString();
+                    if (title.Equals(ApplicationDisplayName, StringComparison.OrdinalIgnoreCase) ||
+                        title.EndsWith($"— {ApplicationDisplayName}", StringComparison.OrdinalIgnoreCase) ||
+                        title.EndsWith($"- {ApplicationDisplayName}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        foundHwnd = hWnd;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
 
-            if (hwnd != IntPtr.Zero)
+            if (foundHwnd != IntPtr.Zero)
             {
-                Win32Native.ShowWindow(hwnd, Win32Native.SW_RESTORE);
-                Win32Native.SetForegroundWindow(hwnd);
+                Win32Native.ShowWindow(foundHwnd, Win32Native.SW_RESTORE);
+                Win32Native.SetForegroundWindow(foundHwnd);
                 return true;
             }
         }

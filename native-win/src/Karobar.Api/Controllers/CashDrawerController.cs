@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
 using Karobar.Api.Middleware;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -10,15 +12,18 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
+[Authorize]
 public class CashDrawerController : ApiControllerBase
 {
     private readonly CashDrawerService _cashDrawerService;
     private readonly AccountService _accountService;
+    private readonly PrintTemplateRenderer _renderer;
 
-    public CashDrawerController(KarobarDb db) : base(db)
+    public CashDrawerController(KarobarDb db, PrintTemplateRenderer? renderer = null) : base(db)
     {
         _cashDrawerService = new CashDrawerService(db);
         _accountService = new AccountService(db);
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     private long? CurrentTerminalId
@@ -387,37 +392,61 @@ public class CashDrawerController : ApiControllerBase
         }
 
         var summary = await _cashDrawerService.GetSessionSummaryAsync(session);
-        var setting = await Db.HasTableAsync("settings")
-            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
-            : null;
+        var settingVm = await PrintViewModelMapper.LoadPrintSettingAsync(Db);
 
-        var storeName = WebUtility.HtmlEncode(setting?.GetValueOrDefault("store_name")?.ToString() ?? "KAROBAR PHARMACY & STORE");
-        var reportType = WebUtility.HtmlEncode(summary.GetValueOrDefault("report_type")?.ToString() ?? "X-REPORT");
-        var cashierName = WebUtility.HtmlEncode((summary.GetValueOrDefault("user") as Dictionary<string, object?>)?.GetValueOrDefault("name")?.ToString() ?? "Cashier");
-        var openedAt = WebUtility.HtmlEncode(summary.GetValueOrDefault("opened_at")?.ToString() ?? "");
-        var closedAt = WebUtility.HtmlEncode(summary.GetValueOrDefault("closed_at")?.ToString() ?? "Active Shift");
+        DateTime? ParseDt(object? v) => DateTime.TryParse(v?.ToString(), out var dt) ? dt : null;
+        var openedAt = ParseDt(summary.GetValueOrDefault("opened_at") ?? session.GetValueOrDefault("opened_at"));
+        var closedAt = ParseDt(summary.GetValueOrDefault("closed_at") ?? session.GetValueOrDefault("closed_at"));
+        var span = ((closedAt ?? DateTime.Now) - (openedAt ?? DateTime.Now));
+        var duration = span.TotalMinutes >= 1 ? $"{(int)span.TotalHours}h {span.Minutes}m" : "< 1m";
 
-        var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>Cash Drawer Slip</title>");
-        sb.AppendLine("<style>body{font-family:monospace;width:76mm;margin:0 auto;padding:8px;font-size:12px;color:#000;} .row{display:flex;justify-content:space-between;margin:3px 0;} .hr{border-top:1px dashed #000;margin:6px 0;} h2,h3{text-align:center;margin:4px 0;}</style>");
-        sb.AppendLine("</head><body>");
-        sb.AppendLine($"<h2>{storeName}</h2>");
-        sb.AppendLine($"<h3>{reportType} (Session #{sessionId})</h3>");
-        sb.AppendLine("<div class=\"hr\"></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Cashier:</span><span>{cashierName}</span></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Opened:</span><span>{openedAt}</span></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Closed:</span><span>{closedAt}</span></div>");
-        sb.AppendLine("<div class=\"hr\"></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Opening Float:</span><span>{AccountService.ToDecimal(summary.GetValueOrDefault("opening_balance")):N2}</span></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Total Cash In:</span><span>{AccountService.ToDecimal(summary.GetValueOrDefault("total_cash_in")):N2}</span></div>");
-        sb.AppendLine($"<div class=\"row\"><span>Total Cash Out:</span><span>{AccountService.ToDecimal(summary.GetValueOrDefault("total_cash_out")):N2}</span></div>");
-        sb.AppendLine($"<div class=\"row\"><strong>Expected Balance:</strong><strong>{AccountService.ToDecimal(summary.GetValueOrDefault("expected_balance")):N2}</strong></div>");
-        if (summary.GetValueOrDefault("actual_balance") != null)
+        var model = new PrintCashDrawerZReportViewModel
         {
-            sb.AppendLine($"<div class=\"row\"><span>Actual Counted:</span><span>{AccountService.ToDecimal(summary.GetValueOrDefault("actual_balance")):N2}</span></div>");
-            sb.AppendLine($"<div class=\"row\"><span>Variance:</span><span>{AccountService.ToDecimal(summary.GetValueOrDefault("difference")):N2}</span></div>");
+            SessionId = (int)sessionId,
+            Status = summary.GetValueOrDefault("status")?.ToString() ?? session.GetValueOrDefault("status")?.ToString() ?? "open",
+            CashierName = (summary.GetValueOrDefault("user") as Dictionary<string, object?>)?.GetValueOrDefault("name")?.ToString() ?? "Cashier",
+            OpenedAt = openedAt,
+            ClosedAt = closedAt,
+            Duration = duration,
+            OpeningBalance = AccountService.ToDecimal(summary.GetValueOrDefault("opening_balance")),
+            TotalCashIn = AccountService.ToDecimal(summary.GetValueOrDefault("total_cash_in")),
+            TotalCashOut = AccountService.ToDecimal(summary.GetValueOrDefault("total_cash_out")),
+            ExpectedBalance = AccountService.ToDecimal(summary.GetValueOrDefault("expected_balance")),
+            ClosingBalanceActual = summary.GetValueOrDefault("actual_balance") != null ? AccountService.ToDecimal(summary.GetValueOrDefault("actual_balance")) : null,
+            Difference = summary.GetValueOrDefault("difference") != null ? AccountService.ToDecimal(summary.GetValueOrDefault("difference")) : null,
+            Notes = session.GetValueOrDefault("notes")?.ToString()
+        };
+
+        if (summary.GetValueOrDefault("sales_summary") is Dictionary<string, object?> ss)
+        {
+            model.TotalInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("total_invoices"));
+            model.RetailInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("retail_invoices"));
+            model.WholesaleInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("wholesale_invoices"));
+            model.GrossSales = AccountService.ToDecimal(ss.GetValueOrDefault("gross_sales"));
+            model.DiscountTotal = AccountService.ToDecimal(ss.GetValueOrDefault("discount_total"));
+            model.TaxTotal = AccountService.ToDecimal(ss.GetValueOrDefault("tax_total"));
+            model.NetSales = AccountService.ToDecimal(ss.GetValueOrDefault("net_sales"));
+            model.CashTenderSales = AccountService.ToDecimal(ss.GetValueOrDefault("cash_sales"));
+            model.NonCashSales = AccountService.ToDecimal(ss.GetValueOrDefault("non_cash_sales"));
+            model.CreditUdharSales = AccountService.ToDecimal(ss.GetValueOrDefault("credit_sales"));
         }
-        sb.AppendLine("</body></html>");
-        return sb.ToString();
+
+        if (summary.GetValueOrDefault("inflow_breakdown") is Dictionary<string, object?> inf)
+        {
+            model.CashSalesAmount = AccountService.ToDecimal(inf.GetValueOrDefault("cash_sales"));
+            model.CustomerPaymentsAmount = AccountService.ToDecimal(inf.GetValueOrDefault("customer_payments"));
+            model.ManualCashInAmount = AccountService.ToDecimal(inf.GetValueOrDefault("manual_in"));
+        }
+
+        if (summary.GetValueOrDefault("outflow_breakdown") is Dictionary<string, object?> outf)
+        {
+            model.CashPurchasesAmount = AccountService.ToDecimal(outf.GetValueOrDefault("cash_purchases"));
+            model.CashReturnsAmount = AccountService.ToDecimal(outf.GetValueOrDefault("cash_returns"));
+            model.SupplierPaymentsAmount = AccountService.ToDecimal(outf.GetValueOrDefault("supplier_payments"));
+            model.ExpensesAmount = AccountService.ToDecimal(outf.GetValueOrDefault("expenses"));
+            model.ManualCashOutAmount = AccountService.ToDecimal(outf.GetValueOrDefault("manual_out"));
+        }
+
+        return _renderer.RenderCashDrawerThermalZReport(model, settingVm, PrintViewModelMapper.QueryToDict(Request.Query));
     }
 }

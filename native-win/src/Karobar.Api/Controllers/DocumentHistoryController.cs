@@ -3,10 +3,12 @@ using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
+[Authorize]
 [Route("api/document-histories")]
 public class DocumentHistoryController : ApiControllerBase
 {

@@ -82,7 +82,8 @@ public sealed class Win32RawPrinterService
             return Path.GetFullPath(explicitRoot);
         }
 
-        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
+        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
+            ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
         if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot))
         {
             return Path.GetFullPath(envRoot);
@@ -733,9 +734,8 @@ public sealed class Win32RawPrinterService
             }
         }
 
-        // Fallback: Send raw PDF bytes via WinSpool RAW channel if SumatraPDF binary is not bundled
-        var rawBytes = await File.ReadAllBytesAsync(pdfFilePath);
-        var (ok, _, err) = SendRawBytesToPrinter(targetPrinter, rawBytes, "Karobar PDF Document");
-        return (ok, targetPrinter, "winspool", err);
+        // Do NOT spool raw %PDF bytes via RAW WinSpool (prints gibberish on GDI/thermal printers);
+        // return a clean fallback signal so the desktop host can print via WebView2 instead.
+        return (false, targetPrinter, "sumatra-missing", "SumatraPDF spooler is not bundled; fall back to WebView2 printing.");
     }
 }

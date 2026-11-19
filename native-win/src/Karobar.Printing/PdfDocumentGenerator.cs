@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -169,11 +170,17 @@ public sealed class PdfDocumentGenerator
                 page.PageColor(Colors.White);
                 page.DefaultTextStyle(x => x.FontSize(baseFontSize).FontColor(textHex));
 
+                var logoBytes = request.Setting.ShareShowLogo ? TryLoadLogoBytes(request.Setting.LogoUrl) : null;
+
                 // Header
                 page.Header().Column(headerCol =>
                 {
                     if (isThermal)
                     {
+                        if (logoBytes != null)
+                        {
+                            headerCol.Item().AlignCenter().MaxHeight(26).MaxWidth(90).Image(logoBytes).FitArea();
+                        }
                         headerCol.Item().AlignCenter().Text(request.Setting.StoreName).Bold().FontSize(9.5f).FontColor(primaryHex);
                         if (!string.IsNullOrWhiteSpace(request.Setting.Address))
                             headerCol.Item().AlignCenter().Text(request.Setting.Address).FontSize(6f);
@@ -190,6 +197,10 @@ public sealed class PdfDocumentGenerator
                         {
                             row.RelativeItem(6).Column(left =>
                             {
+                                if (logoBytes != null)
+                                {
+                                    left.Item().PaddingBottom(4).MaxHeight(38).MaxWidth(130).Image(logoBytes).FitArea();
+                                }
                                 left.Item().Text(request.Setting.StoreName).Bold().FontSize(18).FontColor(primaryHex);
                                 if (!string.IsNullOrWhiteSpace(request.Setting.Address))
                                     left.Item().Text(request.Setting.Address).FontSize(9.5f).FontColor(secondaryHex);
@@ -305,7 +316,9 @@ public sealed class PdfDocumentGenerator
                     // Totals Table
                     if (request.Totals.Count > 0)
                     {
-                        contentCol.Item().PaddingTop(isThermal ? 3 : 8).AlignRight().Width(isThermal ? 150 : 250).Table(totTable =>
+                        var totalsContainer = contentCol.Item().PaddingTop(isThermal ? 3 : 8);
+                        var sizedContainer = isThermal ? totalsContainer : totalsContainer.AlignRight().Width(250);
+                        sizedContainer.Table(totTable =>
                         {
                             totTable.ColumnsDefinition(c =>
                             {
@@ -346,12 +359,15 @@ public sealed class PdfDocumentGenerator
                         var fbrNo = !string.IsNullOrWhiteSpace(request.FbrInvoiceNumber)
                             ? request.FbrInvoiceNumber
                             : $"{request.Setting.FbrPosId ?? "966130"}{DateTime.Now:yyMMddHHmmss}01";
+                        var qrPayload = !string.IsNullOrWhiteSpace(request.FbrQrData) ? request.FbrQrData! : fbrNo;
+                        var qrSvg = PrintTemplateRenderer.GenerateQrSvg(qrPayload, isThermal ? 64 : 76);
 
                         contentCol.Item().PaddingTop(8).Border(1).BorderColor("#000000").Padding(5).Column(fbrCol =>
                         {
                             fbrCol.Item().Background("#000000").Padding(2).AlignCenter()
                                 .Text("FBR POS INVOICING SYSTEM").Bold().FontSize(isThermal ? 6f : 8f).FontColor(Colors.White);
-                            fbrCol.Item().PaddingTop(2).AlignCenter().Text($"FBR Invoice #: {fbrNo}").Bold().FontSize(isThermal ? 6.5f : 9.5f);
+                            fbrCol.Item().PaddingTop(3).AlignCenter().Text($"FBR Invoice #: {fbrNo}").Bold().FontSize(isThermal ? 6.5f : 9.5f);
+                            fbrCol.Item().PaddingVertical(3).AlignCenter().Width(isThermal ? 48 : 64).Height(isThermal ? 48 : 64).Svg(qrSvg);
                             fbrCol.Item().AlignCenter().Text("Verify via FBR Tax Asaan App or SMS to 9966").FontSize(isThermal ? 5.5f : 7.5f);
                         });
                     }
@@ -543,5 +559,41 @@ public sealed class PdfDocumentGenerator
         });
 
         return doc.GeneratePdf();
+    }
+
+    private static byte[]? TryLoadLogoBytes(string? logoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(logoUrl)) return null;
+        try
+        {
+            var trimmed = logoUrl.Trim();
+            if (trimmed.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var comma = trimmed.IndexOf(',');
+                if (comma > 0) return Convert.FromBase64String(trimmed[(comma + 1)..]);
+                return null;
+            }
+            if (File.Exists(trimmed)) return File.ReadAllBytes(trimmed);
+
+            var rel = trimmed;
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) rel = uri.AbsolutePath;
+            rel = rel.TrimStart('/');
+            if (rel.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)) rel = rel[8..];
+
+            var appRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
+                ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT")
+                ?? Directory.GetCurrentDirectory();
+            var candidates = new[]
+            {
+                Path.Combine(appRoot, "storage", "app", "public", rel.Replace('/', Path.DirectorySeparatorChar)),
+                Path.Combine(appRoot, "public", "storage", rel.Replace('/', Path.DirectorySeparatorChar))
+            };
+            foreach (var c in candidates)
+            {
+                if (File.Exists(c)) return File.ReadAllBytes(c);
+            }
+        }
+        catch { }
+        return null;
     }
 }

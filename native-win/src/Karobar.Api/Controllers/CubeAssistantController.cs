@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Karobar.Api.Infrastructure;
+using Karobar.Background;
+using Karobar.Data;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +13,9 @@ namespace Karobar.Api.Controllers;
 [Authorize]
 public class CubeAssistantController : ApiControllerBase
 {
+    private readonly CubeAssistantService? _cubeAssistant;
+    private readonly KarobarDbContext? _dbContext;
+
     private const string DefaultProductVersion = "2026.10";
 
     private static readonly string[] ProhibitedAskKeys = new[]
@@ -92,8 +97,13 @@ public class CubeAssistantController : ApiControllerBase
         ["sunny d"] = "Cholecalciferol (Vitamin D3)"
     };
 
-    public CubeAssistantController(KarobarDb db) : base(db)
+    public CubeAssistantController(
+        KarobarDb db,
+        CubeAssistantService? cubeAssistant = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
+        _cubeAssistant = cubeAssistant;
+        _dbContext = dbContext;
     }
 
     [HttpPost("ask")]
@@ -182,7 +192,33 @@ public class CubeAssistantController : ApiControllerBase
             ));
         }
 
-        // Route-aware deterministic knowledge fallback
+        if (_cubeAssistant != null && _dbContext != null)
+        {
+            var askPayload = new Dictionary<string, object?>
+            {
+                ["question"] = question,
+                ["language"] = language,
+                ["current_route"] = currentRoute,
+                ["explain_mode"] = explainMode,
+                ["matched_intent_id"] = GetString(body, "matched_intent_id"),
+                ["screen_guide_id"] = GetString(body, "screen_guide_id")
+            };
+            if (body.TryGetValue("element_context", out var rawElCtx) && rawElCtx.ValueKind == JsonValueKind.Object)
+            {
+                var ecDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in rawElCtx.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.ValueKind != JsonValueKind.Undefined)
+                    {
+                        ecDict[prop.Name] = prop.Value.ToString();
+                    }
+                }
+                askPayload["element_context"] = ecDict;
+            }
+            return Ok(await _cubeAssistant.AskAsync(_dbContext, askPayload, HttpContext.RequestAborted));
+        }
+
+        // Route-aware deterministic knowledge fallback when CubeAssistantService is unavailable
         var (titleEn, titleUr, ansEn, ansUr, links) = BuildLocalGuideAnswer(question, currentRoute);
 
         return Ok(FormatQaResponse(
@@ -240,7 +276,10 @@ public class CubeAssistantController : ApiControllerBase
             return Ok(await ExecuteCreateMasterEntityAsync(taskType, body));
         }
 
-        return Ok(BuildDeleteBlockedResponse());
+        return Unprocessable($"Unsupported Cube AI task type: '{taskType}'.", new Dictionary<string, string[]>
+        {
+            ["task_type"] = new[] { $"Unsupported task type '{taskType}'." }
+        });
     }
 
     private async Task<Dictionary<string, object?>> ExecuteBulkAutofillFormulationsAsync(Dictionary<string, JsonElement> body)

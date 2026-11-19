@@ -387,7 +387,19 @@ Remove-Item -Recurse -Force $PatchStageDir -ErrorAction SilentlyContinue
 $PatchSize   = (Get-Item $PatchZipPath).Length
 $PatchSizeMB = [Math]::Round($PatchSize / 1MB, 2)
 $PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
-Write-Host "    Differential OTA Patch packaged: Karobar-Native-Patch.zip ($PatchSizeMB MB, SHA256=$PatchSha256)" -ForegroundColor Green
+$InstallerExePath = Join-Path $InstallerOutDir "Karobar-Native-Setup.exe"
+$InstallerSha256 = if (Test-Path $InstallerExePath) { (Get-FileHash -Path $InstallerExePath -Algorithm SHA256).Hash.ToLower() } else { "" }
+
+# Compute deterministic third-party DLL fingerprint so any NuGet dependency change automatically forces a full installer upgrade
+$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
+$Sha = [System.Security.Cryptography.SHA256]::Create()
+$DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ThirdPartyDllList))
+$DepsHash8 = ([System.BitConverter]::ToString($DepsHashBytes) -replace "-", "").ToLower().Substring(0, 8)
+$RuntimeLayoutTag = "split-v2-$DepsHash8"
+$Sha.Dispose()
+
+# Stamp runtime_layout into staged public/version.json? (already built into patch, so keep split-v2 compatible unless bumped)
+Write-Host "    Differential OTA Patch packaged: Karobar-Native-Patch.zip ($PatchSizeMB MB, SHA256=$PatchSha256, layout=$RuntimeLayoutTag)" -ForegroundColor Green
 
 $LatestReleaseManifest = [ordered]@{
     app_name          = "Karobar-App Native"
@@ -398,7 +410,9 @@ $LatestReleaseManifest = [ordered]@{
     released_at       = $ReleasedAt
     notes             = "Native Windows C#/.NET 9 + Kestrel + Waseela Multi-Tab WebView2 Release (Fast Differential Patch: ${PatchSizeMB} MB)."
     runtime_layout    = "split-v2"
+    deps_fingerprint  = $DepsHash8
     download_url      = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup.exe"
+    installer_sha256  = $InstallerSha256
     bundle_url        = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip"
     patch_url         = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Patch.zip"
     patch_size        = [int64]$PatchSize

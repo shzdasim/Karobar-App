@@ -58,6 +58,7 @@ public class TrackTerminalMiddleware
                         : null;
 
                     var providedToken = (context.Request.Headers["X-Network-Token"].FirstOrDefault()
+                                         ?? context.Request.Headers["X-Terminal-Token"].FirstOrDefault()
                                          ?? context.Request.Query["network_token"].FirstOrDefault()
                                          ?? "").Trim();
                     var storedToken = (setting?.GetValueOrDefault("network_server_token")?.ToString() ?? "").Trim();

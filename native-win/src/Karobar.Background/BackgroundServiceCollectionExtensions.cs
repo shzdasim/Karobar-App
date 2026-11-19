@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Karobar.Background;
 
@@ -6,18 +7,21 @@ public static class BackgroundServiceCollectionExtensions
 {
     public static IServiceCollection AddKarobarBackgroundServices(this IServiceCollection services, string? appRoot = null)
     {
-        services.AddSingleton<FbrFiscalizationEngine>();
-        services.AddSingleton(_ => new CubeKnowledgeRetriever(appRoot));
-        services.AddSingleton<CubePromptBuilder>();
-        services.AddSingleton<CubeQuotaGuard>();
-        services.AddSingleton<GroqProvider>();
-        services.AddSingleton<GeminiProvider>();
-        services.AddSingleton<CubeTaskExecutorService>();
-        services.AddSingleton<CubeAssistantService>();
-        services.AddSingleton(_ => new LocalWhatsAppSidecarManager(appRoot));
-        services.AddSingleton(_ => new WaseelaAndSqliteImportEngine(appRoot));
-        services.AddSingleton(sp => new KarobarCliCommandRunner(appRoot, sp.GetRequiredService<WaseelaAndSqliteImportEngine>()));
-        services.AddHostedService<KarobarSchedulerHostedService>();
+        services.TryAddSingleton<FbrFiscalizationEngine>();
+        services.TryAddSingleton(_ => new CubeKnowledgeRetriever(appRoot));
+        services.TryAddSingleton<CubePromptBuilder>();
+        services.TryAddSingleton<CubeQuotaGuard>();
+        services.TryAddSingleton<GroqProvider>();
+        services.TryAddSingleton<GeminiProvider>();
+        services.TryAddSingleton<CubeTaskExecutorService>();
+        services.TryAddSingleton<CubeAssistantService>();
+        services.TryAddSingleton(_ => new LocalWhatsAppSidecarManager(appRoot));
+        services.TryAddSingleton(_ => new WaseelaAndSqliteImportEngine(appRoot));
+        services.TryAddSingleton(sp => new KarobarCliCommandRunner(appRoot, sp.GetRequiredService<WaseelaAndSqliteImportEngine>()));
+        if (!services.Any(d => d.ImplementationType == typeof(KarobarSchedulerHostedService)))
+        {
+            services.AddHostedService<KarobarSchedulerHostedService>();
+        }
         return services;
     }
 }

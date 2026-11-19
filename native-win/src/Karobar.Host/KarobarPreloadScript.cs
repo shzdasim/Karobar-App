@@ -167,20 +167,11 @@ public static class KarobarPreloadScript
             if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function" && window.__karobarUseNativeWebView2PostMessage) {
               return new Promise(function (resolve, reject) {
                 const id = "ipc_" + (nextInvokeId++) + "_" + Date.now();
-                const timer = setTimeout(function () {
-                  if (pendingInvocations.has(id)) {
-                    pendingInvocations.delete(id);
-                    invokeViaHttpFallback(channel, payload).then(resolve).catch(reject);
-                  }
-                }, 2500);
-
                 pendingInvocations.set(id, {
                   resolve: function (val) {
-                    clearTimeout(timer);
                     resolve(val);
                   },
                   reject: function (err) {
-                    clearTimeout(timer);
                     reject(err);
                   }
                 });
@@ -193,7 +184,6 @@ public static class KarobarPreloadScript
                     payload: payload ?? {}
                   }));
                 } catch (err) {
-                  clearTimeout(timer);
                   pendingInvocations.delete(id);
                   invokeViaHttpFallback(channel, payload).then(resolve).catch(reject);
                 }
@@ -216,18 +206,6 @@ public static class KarobarPreloadScript
             };
           }
 
-          // Intercept Ctrl+Tab / Ctrl+Shift+Tab for Browser Tab cycling matching desktop/main.cjs
-          if (typeof window.addEventListener === "function") {
-            window.addEventListener("keydown", function (e) {
-              if (e.key === "Tab" && e.ctrlKey && !e.altKey && !e.metaKey) {
-                e.preventDefault();
-                dispatchEventToListeners("karobar:window-command", {
-                  command: e.shiftKey ? "prev-tab" : "next-tab"
-                });
-              }
-            }, true);
-          }
-
           const desktopApi = {
             isDesktop: true,
             isOffscreenPrintWorker: Boolean(isOffscreenPrintWorker),
@@ -238,6 +216,8 @@ public static class KarobarPreloadScript
             testServerConnection: (payload = {}) => ipcInvoke("karobar:test-server-connection", payload),
             getPrinters: () => ipcInvoke("karobar:get-printers"),
             getPreferredPrinter: () => ipcInvoke("karobar:get-preferred-printer"),
+            kickCashDrawer: (payload = {}) => ipcInvoke("karobar:kick-cash-drawer", payload),
+            printThermalReceipt: (payload = {}) => ipcInvoke("karobar:print-thermal-raw", payload),
             setPreferredPrinter: (deviceName) =>
               ipcInvoke("karobar:set-preferred-printer", { deviceName }),
             silentPrint: (options = {}) => ipcInvoke("karobar:silent-print", options),
@@ -373,8 +353,20 @@ public static class KarobarPreloadScript
                   sendTabShortcut(e, "close-active");
                   return;
                 }
+                if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && code === "F5") {
+                  sendTabShortcut(e, "reload-active");
+                  return;
+                }
                 if ((ctrl && !e.shiftKey && key === "t") || (ctrl && e.shiftKey && key === "n")) {
                   sendTabShortcut(e, "new-tab");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "t") {
+                  sendTabShortcut(e, "reopen-closed");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "d") {
+                  sendTabShortcut(e, "duplicate");
                   return;
                 }
                 if (ctrl && e.shiftKey && key === "x") {

@@ -128,15 +128,21 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: runhidden waituntilterminated; \
   Check: not IsTerminalModeSelected
 
+; Open Windows Firewall on Private LAN profiles for Multi-PC POS Terminal mode (TCP 18960)
+Filename: "{sys}\netsh.exe"; \
+  Parameters: "advfirewall firewall add rule name=""Karobar-App Native LAN Server (TCP 18960)"" dir=in action=allow protocol=TCP localport=18960 profile=private"; \
+  Flags: runhidden waituntilterminated; \
+  Check: not IsTerminalModeSelected
+
 ; Launch the Native Desktop Application after interactive installation completes
 Filename: "{app}\{#MyAppExeName}"; \
   Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; \
-  Flags: nowait postinstall skipifsilent; \
+  Flags: nowait postinstall skipifsilent runasoriginaluser; \
   Check: not IsCliUpgradeMode
 
-; Automatically relaunch Karobar-App.exe after a silent 1-click OTA update (/UPGRADE=1)
+; Automatically relaunch Karobar-Native.exe (de-elevated) after a silent 1-click OTA update (/UPGRADE=1)
 Filename: "{app}\{#MyAppExeName}"; \
-  Flags: nowait; \
+  Flags: nowait runasoriginaluser; \
   Check: IsCliUpgradeMode
 
 [Code]
@@ -402,14 +408,14 @@ begin
   ServerUrlLabel.Parent := DatabaseImportPage.Surface;
   ServerUrlLabel.Left := ScaleX(18);
   ServerUrlLabel.Top := TerminalModeRadio.Top + ScaleY(20);
-  ServerUrlLabel.Caption := 'Store Server LAN URL (e.g. http://192.168.1.10:8000):';
+  ServerUrlLabel.Caption := 'Store Server LAN URL (e.g. http://192.168.1.10:18960):';
 
   ServerUrlEdit := TNewEdit.Create(DatabaseImportPage);
   ServerUrlEdit.Parent := DatabaseImportPage.Surface;
   ServerUrlEdit.Left := ScaleX(18);
   ServerUrlEdit.Top := ServerUrlLabel.Top + ScaleY(16);
   ServerUrlEdit.Width := (DatabaseImportPage.SurfaceWidth - ScaleX(30)) div 2;
-  ServerUrlEdit.Text := 'http://192.168.1.10:8000';
+  ServerUrlEdit.Text := 'http://192.168.1.10:18960';
   ServerUrlEdit.Enabled := False;
 
   TerminalNameLabel := TNewStaticText.Create(DatabaseImportPage);

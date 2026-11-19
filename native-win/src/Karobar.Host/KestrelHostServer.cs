@@ -532,7 +532,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             var relStorage = decodedPath["/storage/".Length..].TrimStart('/', '\\');
             if (string.IsNullOrWhiteSpace(relStorage)) return false;
 
-            var fullStorageDir = Path.GetFullPath(StoragePublicDir);
+            var fullStorageDir = Path.GetFullPath(StoragePublicDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var candidate = Path.GetFullPath(Path.Combine(fullStorageDir, relStorage.Replace('/', Path.DirectorySeparatorChar)));
             if (candidate.StartsWith(fullStorageDir, StringComparison.OrdinalIgnoreCase))
             {
@@ -544,7 +544,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             var relPublic = decodedPath.TrimStart('/', '\\');
             if (string.IsNullOrWhiteSpace(relPublic)) return false;
 
-            var fullPublicDir = Path.GetFullPath(PublicDir);
+            var fullPublicDir = Path.GetFullPath(PublicDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var candidate = Path.GetFullPath(Path.Combine(fullPublicDir, relPublic.Replace('/', Path.DirectorySeparatorChar)));
             if (candidate.StartsWith(fullPublicDir, StringComparison.OrdinalIgnoreCase))
             {
@@ -627,6 +627,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         CleanStaleHotMarker();
 
         Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", _networkConfig.AppRoot);
+        Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", _networkConfig.AppRoot);
         Environment.SetEnvironmentVariable("APP_URL", $"http://127.0.0.1:{port}");
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -637,10 +638,10 @@ public sealed class KestrelHostServer : IAsyncDisposable
         });
 
         builder.Logging.ClearProviders();
-        builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
         builder.WebHost.ConfigureKestrel(k =>
         {
             k.Limits.MaxRequestBodySize = 1024L * 1024 * 1024; // 1 GB for large SQLite / backup uploads
+            k.ListenAnyIP(port); // Listen on 0.0.0.0 so remote Multi-PC POS Terminals on the LAN can connect
         });
         builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
         {
@@ -838,9 +839,9 @@ public sealed class KestrelHostServer : IAsyncDisposable
         return app;
     }
 
-    public async Task StartAsync(int? explicitPort = null, CancellationToken cancellationToken = default)
+    public async Task StartAsync(int? explicitPort = null, CancellationToken cancellationToken = default, bool forceStart = false)
     {
-        if (_networkConfig.IsTerminalMode() && explicitPort == null)
+        if (!forceStart && _networkConfig.IsTerminalMode() && explicitPort == null)
         {
             // In Multi-PC Terminal Mode, connect directly to the remote Store Server over LAN
             return;

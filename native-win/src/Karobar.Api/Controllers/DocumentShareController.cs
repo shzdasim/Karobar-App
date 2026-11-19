@@ -1,12 +1,21 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
+using Karobar.Background;
+using Karobar.Data;
+using Karobar.Printing;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Karobar.Api.Controllers;
 
+[Authorize]
 public class DocumentShareController : ApiControllerBase
 {
     public static readonly HashSet<string> SupportedTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -43,19 +52,40 @@ public class DocumentShareController : ApiControllerBase
         "barcode"
     };
 
-    public DocumentShareController(KarobarDb db) : base(db)
+    private readonly PdfDocumentGenerator _pdfGenerator;
+    private readonly DocumentShareEngine _shareEngine;
+    private readonly LocalWhatsAppSidecarManager _waSidecar;
+    private readonly KarobarDbContext? _dbContext;
+
+    public DocumentShareController(
+        KarobarDb db,
+        PdfDocumentGenerator? pdfGenerator = null,
+        DocumentShareEngine? shareEngine = null,
+        LocalWhatsAppSidecarManager? waSidecar = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
+        _pdfGenerator = pdfGenerator ?? new PdfDocumentGenerator();
+        _shareEngine = shareEngine ?? new DocumentShareEngine(null, _pdfGenerator);
+        _waSidecar = waSidecar ?? new LocalWhatsAppSidecarManager();
+        _dbContext = dbContext;
     }
 
     private sealed class ResolvedDocContext
     {
         public string Title { get; set; } = "";
+        public string DocumentNumber { get; set; } = "";
+        public string DocumentDate { get; set; } = DateTime.Now.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         public string Filename { get; set; } = "document.pdf";
         public string? PartyType { get; set; }
         public long? PartyId { get; set; }
+        public string PartyHeading { get; set; } = "Prepared For";
         public string RecipientName { get; set; } = "";
         public string RecipientPhone { get; set; } = "";
         public string RecipientEmail { get; set; } = "";
+        public string RecipientAddress { get; set; } = "";
+        public string? Remarks { get; set; }
+        public string? FbrInvoiceNumber { get; set; }
+        public string? FbrQrData { get; set; }
         public string WhatsappTextEn { get; set; } = "";
         public string WhatsappTextUr { get; set; } = "";
         public string EmailSubjectEn { get; set; } = "";
@@ -102,13 +132,22 @@ public class DocumentShareController : ApiControllerBase
         var templateLabel = availableTemplates.FirstOrDefault(t => t["id"] == pdfDesign)?["name"] ?? pdfDesign;
 
         var queryParts = new List<string> { $"type={Uri.EscapeDataString(type)}" };
+        var signedParams = new Dictionary<string, string?>();
         foreach (var k in new[] { "id", "customer_id", "supplier_id", "from", "to" })
         {
             var v = Request.Query[k].FirstOrDefault();
-            if (!string.IsNullOrEmpty(v)) queryParts.Add($"{k}={Uri.EscapeDataString(v)}");
+            if (!string.IsNullOrEmpty(v))
+            {
+                queryParts.Add($"{k}={Uri.EscapeDataString(v)}");
+                signedParams[k] = v;
+            }
         }
         queryParts.Add($"size={Uri.EscapeDataString(paperSize)}");
         queryParts.Add($"template={Uri.EscapeDataString(pdfDesign)}");
+        queryParts.Add($"show_logo={(showLogo ? "1" : "0")}");
+        signedParams["size"] = paperSize;
+        signedParams["template"] = pdfDesign;
+        signedParams["show_logo"] = showLogo ? "1" : "0";
         var apiQuery = string.Join("&", queryParts);
 
         var waUrlEn = !string.IsNullOrEmpty(normalizedPhone)
@@ -119,7 +158,14 @@ public class DocumentShareController : ApiControllerBase
             ? $"https://wa.me/{normalizedPhone}?text={Uri.EscapeDataString(ctx.WhatsappTextUr)}"
             : $"https://wa.me/?text={Uri.EscapeDataString(ctx.WhatsappTextUr)}";
 
-        var logoUrl = setting != null && setting.TryGetValue("logo_url", out var lu) ? lu?.ToString() : null;
+        var settingVm = PrintViewModelMapper.MapPrintSetting(setting);
+        var logoUrl = settingVm.LogoUrl;
+        var waConfig = BuildWhatsAppConfig(setting);
+        var waConfigured = waConfig.Enabled && (
+            waConfig.Provider == "local_agent" ||
+            !string.IsNullOrWhiteSpace(waConfig.AccessToken) ||
+            !string.IsNullOrWhiteSpace(waConfig.ApiUrl));
+        var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
 
         return Ok(new Dictionary<string, object?>
         {
@@ -145,16 +191,16 @@ public class DocumentShareController : ApiControllerBase
             ["whatsapp_text_ur"] = ctx.WhatsappTextUr,
             ["whatsapp_url"] = waUrlEn,
             ["whatsapp_url_ur"] = waUrlUr,
-            ["whatsapp_api_configured"] = false,
-            ["whatsapp_provider"] = "meta_cloud",
-            ["whatsapp_default_country_code"] = "92",
+            ["whatsapp_api_configured"] = waConfigured,
+            ["whatsapp_provider"] = waConfig.Provider,
+            ["whatsapp_default_country_code"] = waConfig.DefaultCountryCode,
             ["email_subject"] = ctx.EmailSubjectEn,
             ["email_subject_en"] = ctx.EmailSubjectEn,
             ["email_subject_ur"] = ctx.EmailSubjectUr,
             ["email_body"] = ctx.EmailBodyEn,
             ["email_body_en"] = ctx.EmailBodyEn,
             ["email_body_ur"] = ctx.EmailBodyUr,
-            ["signed_pdf_url"] = $"/print/shared-pdf/{type}?{apiQuery}",
+            ["signed_pdf_url"] = signedPdfUrl,
             ["pdf_preview_url"] = $"/api/share/pdf?{apiQuery}",
             ["pdf_download_url"] = $"/api/share/pdf?{apiQuery}&download=1"
         });
@@ -172,22 +218,30 @@ public class DocumentShareController : ApiControllerBase
             });
         }
 
-        var (authErr, ctx) = await ResolveAndAuthorizeContextAsync(type, Request.Query["id"].FirstOrDefault(),
-            Request.Query["customer_id"].FirstOrDefault(), Request.Query["supplier_id"].FirstOrDefault(),
-            Request.Query["from"].FirstOrDefault(), Request.Query["to"].FirstOrDefault());
+        var idRaw = Request.Query["id"].FirstOrDefault();
+        var custRaw = Request.Query["customer_id"].FirstOrDefault();
+        var supRaw = Request.Query["supplier_id"].FirstOrDefault();
+        var fromRaw = Request.Query["from"].FirstOrDefault();
+        var toRaw = Request.Query["to"].FirstOrDefault();
 
+        var (authErr, ctx) = await ResolveAndAuthorizeContextAsync(type, idRaw, custRaw, supRaw, fromRaw, toRaw);
         if (authErr != null) return authErr;
 
-        var pdfBytes = BuildMinimalPdf(ctx!.Title, ctx.PdfSummaryLines);
+        var setting = await GetSettingAsync();
+        var paperSize = ResolvePaperSize(Request.Query["size"].FirstOrDefault(), setting);
+        var pdfDesign = ResolvePdfDesign(Request.Query["template"].FirstOrDefault(), setting, paperSize);
+        var showLogo = ResolveShowLogo(Request.Query["show_logo"].FirstOrDefault(), setting);
+
+        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx!, setting, paperSize, pdfDesign, showLogo, idRaw, custRaw, supRaw, fromRaw, toRaw);
         var downloadRaw = Request.Query["download"].FirstOrDefault() ?? "";
         var isDownload = downloadRaw == "1" || downloadRaw.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         if (isDownload)
         {
-            return File(pdfBytes, "application/pdf", ctx.Filename);
+            return File(pdfBytes, "application/pdf", ctx!.Filename);
         }
 
-        Response.Headers["Content-Disposition"] = $"inline; filename=\"{ctx.Filename}\"";
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{ctx!.Filename}\"";
         return File(pdfBytes, "application/pdf");
     }
 
@@ -235,26 +289,34 @@ public class DocumentShareController : ApiControllerBase
         var saveEmail = GetBool(body, "save_email", false);
         if (saveEmail && !string.IsNullOrEmpty(ctx!.PartyType) && ctx.PartyId.HasValue)
         {
-            if (ctx.PartyType == "customer" && (await IsAdminAsync() || await CanAsync("customer.update")))
+            var canUpdateParty = string.IsNullOrWhiteSpace(ctx.RecipientEmail) ||
+                await IsAdminAsync() ||
+                (ctx.PartyType == "customer" && await CanAsync("customer.update")) ||
+                (ctx.PartyType == "supplier" && await CanAsync("supplier.update"));
+            if (canUpdateParty)
             {
-                await Db.UpdateAsync("customers", ctx.PartyId.Value, new Dictionary<string, object?> { ["email"] = email });
-            }
-            else if (ctx.PartyType == "supplier" && (await IsAdminAsync() || await CanAsync("supplier.update")))
-            {
-                await Db.UpdateAsync("suppliers", ctx.PartyId.Value, new Dictionary<string, object?> { ["email"] = email });
+                var tbl = ctx.PartyType == "customer" ? "customers" : "suppliers";
+                await Db.UpdateAsync(tbl, ctx.PartyId.Value, new Dictionary<string, object?> { ["email"] = email });
             }
         }
 
-        var pdfBytes = BuildMinimalPdf(ctx!.Title, ctx.PdfSummaryLines);
+        var setting = await GetSettingAsync();
+        var paperSize = ResolvePaperSize(GetString(body, "size"), setting);
+        var pdfDesign = ResolvePdfDesign(GetString(body, "template"), setting, paperSize);
+        var showLogo = ResolveShowLogo(GetString(body, "show_logo"), setting);
 
-        return Ok(new Dictionary<string, object?>
-        {
-            ["status"] = "sent",
-            ["delivery_mode"] = "log_fallback",
-            ["message"] = $"PDF built & logged for {email} (PDF downloaded locally)",
-            ["filename"] = ctx.Filename,
-            ["pdf_base64"] = Convert.ToBase64String(pdfBytes)
-        });
+        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx!, setting, paperSize, pdfDesign, showLogo,
+            GetString(body, "id"), GetString(body, "customer_id"), GetString(body, "supplier_id"),
+            GetString(body, "from"), GetString(body, "to"));
+
+        var emailSubject = (GetString(body, "subject") ?? ctx!.EmailSubjectEn).Trim();
+        var bodyText = (GetString(body, "message") ?? GetString(body, "body") ?? ctx!.EmailBodyEn).Trim();
+        var smtpCfg = BuildSmtpConfig(setting);
+        var emailRes = await _shareEngine.SendDocumentEmailAsync(email, emailSubject, bodyText, pdfBytes, ctx!.Filename, smtpCfg, HttpContext.RequestAborted);
+        emailRes["filename"] = ctx.Filename;
+        emailRes["pdf_base64"] = Convert.ToBase64String(pdfBytes);
+
+        return Ok(emailRes);
     }
 
     [HttpPost("api/share/whatsapp")]
@@ -279,60 +341,84 @@ public class DocumentShareController : ApiControllerBase
             return Unprocessable("The given data was invalid.", errors);
         }
 
-        var (authErr, ctx) = await ResolveAndAuthorizeContextAsync(
-            type,
-            GetString(body, "id"),
-            GetString(body, "customer_id"),
-            GetString(body, "supplier_id"),
-            GetString(body, "from"),
-            GetString(body, "to"));
+        var idStr = GetString(body, "id");
+        var custStr = GetString(body, "customer_id");
+        var supStr = GetString(body, "supplier_id");
+        var fromStr = GetString(body, "from");
+        var toStr = GetString(body, "to");
 
+        var (authErr, ctx) = await ResolveAndAuthorizeContextAsync(type, idStr, custStr, supStr, fromStr, toStr);
         if (authErr != null) return authErr;
 
+        var setting = await GetSettingAsync();
+        var waConfig = BuildWhatsAppConfig(setting);
+        var paperSize = ResolvePaperSize(GetString(body, "size"), setting);
+        var pdfDesign = ResolvePdfDesign(GetString(body, "template"), setting, paperSize);
+        var showLogo = ResolveShowLogo(GetString(body, "show_logo"), setting);
+
         var rawPhone = !string.IsNullOrEmpty(phone) ? phone : ctx!.RecipientPhone;
-        var normalizedPhone = NormalizePhone(rawPhone);
+        var normalizedPhone = _shareEngine.NormalizePhone(rawPhone, waConfig.DefaultCountryCode);
 
         var savePhone = GetBool(body, "save_phone", false);
         if (savePhone && !string.IsNullOrEmpty(rawPhone) && !string.IsNullOrEmpty(ctx!.PartyType) && ctx.PartyId.HasValue)
         {
-            if (ctx.PartyType == "customer" && (await IsAdminAsync() || await CanAsync("customer.update")))
+            var canUpdatePhone = string.IsNullOrWhiteSpace(ctx.RecipientPhone) ||
+                await IsAdminAsync() ||
+                (ctx.PartyType == "customer" && await CanAsync("customer.update")) ||
+                (ctx.PartyType == "supplier" && await CanAsync("supplier.update"));
+            if (canUpdatePhone)
             {
-                await Db.UpdateAsync("customers", ctx.PartyId.Value, new Dictionary<string, object?> { ["phone"] = rawPhone });
+                var tbl = ctx.PartyType == "customer" ? "customers" : "suppliers";
+                await Db.UpdateAsync(tbl, ctx.PartyId.Value, new Dictionary<string, object?> { ["phone"] = rawPhone });
             }
-            else if (ctx.PartyType == "supplier" && (await IsAdminAsync() || await CanAsync("supplier.update")))
+        }
+
+        // If local WhatsApp agent is enabled & selected, verify live connection; return qr_required if not linked
+        if (waConfig.Enabled && waConfig.Provider == "local_agent" && !string.IsNullOrWhiteSpace(normalizedPhone))
+        {
+            var efSetting = _dbContext != null
+                ? await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted)
+                : null;
+            var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            var stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
+            if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
             {
-                await Db.UpdateAsync("suppliers", ctx.PartyId.Value, new Dictionary<string, object?> { ["phone"] = rawPhone });
+                return Ok(new Dictionary<string, object?>
+                {
+                    ["status"] = "qr_required",
+                    ["mode"] = "qr_required",
+                    ["message"] = "Local WhatsApp Agent is not linked yet. Please scan the QR code or pair with phone number.",
+                    ["agent_status"] = stStr,
+                    ["qr_data_url"] = agentStatus.GetValueOrDefault("qr_data_url"),
+                    ["pairing_code"] = agentStatus.GetValueOrDefault("pairing_code"),
+                    ["normalized_phone"] = normalizedPhone
+                });
             }
         }
 
-        var pdfBytes = BuildMinimalPdf(ctx!.Title, ctx.PdfSummaryLines);
-        var uniqueName = $"{Guid.NewGuid()}_{ctx.Filename}";
-        var storedPath = $"shared-pdfs/{uniqueName}";
-
-        try
+        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx!, setting, paperSize, pdfDesign, showLogo, idStr, custStr, supStr, fromStr, toStr);
+        var signedParams = new Dictionary<string, string?>
         {
-            var dir = Db.StoragePath("app/shared-pdfs");
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            await System.IO.File.WriteAllBytesAsync(Path.Combine(dir, uniqueName), pdfBytes);
-        }
-        catch
-        {
-        }
-
-        var response = new Dictionary<string, object?>
-        {
-            ["status"] = "pdf_built",
-            ["mode"] = "client_file",
-            ["message"] = $"PDF document ({ctx.Filename}) built and ready to send on WhatsApp",
-            ["filename"] = ctx.Filename,
-            ["stored_path"] = storedPath,
-            ["signed_pdf_url"] = $"/print/shared-pdf/{type}?id={GetString(body, "id")}",
-            ["mime_type"] = "application/pdf",
-            ["size_bytes"] = pdfBytes.Length,
-            ["pdf_base64"] = Convert.ToBase64String(pdfBytes),
-            ["normalized_phone"] = normalizedPhone,
-            ["caption"] = message
+            ["size"] = paperSize,
+            ["template"] = pdfDesign,
+            ["show_logo"] = showLogo ? "1" : "0"
         };
+        if (!string.IsNullOrWhiteSpace(idStr)) signedParams["id"] = idStr;
+        if (!string.IsNullOrWhiteSpace(custStr)) signedParams["customer_id"] = custStr;
+        if (!string.IsNullOrWhiteSpace(supStr)) signedParams["supplier_id"] = supStr;
+        if (!string.IsNullOrWhiteSpace(fromStr)) signedParams["from"] = fromStr;
+        if (!string.IsNullOrWhiteSpace(toStr)) signedParams["to"] = toStr;
+
+        var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
+
+        var response = await _shareEngine.SendOrBuildWhatsAppPdfAsync(
+            pdfBytes, ctx!.Filename, rawPhone, message, waConfig, signedPdfUrl, HttpContext.RequestAborted);
+        response["signed_pdf_url"] = signedPdfUrl;
+        response["mime_type"] = "application/pdf";
+        response["size_bytes"] = pdfBytes.Length;
+        response["pdf_base64"] = Convert.ToBase64String(pdfBytes);
+        response["normalized_phone"] = normalizedPhone;
+        response["caption"] = message;
 
         if (type == "regular_refill_reminder")
         {
@@ -346,27 +432,31 @@ public class DocumentShareController : ApiControllerBase
                 var custRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = custId.Value });
                 if (custRow != null)
                 {
-                    var nowUtc = DateTime.UtcNow;
-                    var custUpdates = new Dictionary<string, object?>();
-                    if (await Db.HasColumnAsync("customers", "last_refill_reminded_at"))
-                        custUpdates["last_refill_reminded_at"] = nowUtc.ToString("yyyy-MM-dd HH:mm:ss");
-                    var lang = (GetString(body, "language") ?? "").Trim();
-                    if (!string.IsNullOrEmpty(lang) && await Db.HasColumnAsync("customers", "reminder_language"))
-                        custUpdates["reminder_language"] = lang;
-
-                    if (GetBool(body, "advance_cycle", false))
+                    var canMutateRefill = await IsAdminAsync() || await CanAsync("customer.update", "customer.create", "sale-invoice.create");
+                    if (canMutateRefill)
                     {
-                        var cycleDays = Convert.ToInt32(custRow.GetValueOrDefault("refill_cycle_days") ?? 30);
-                        if (cycleDays <= 0) cycleDays = 30;
-                        if (await Db.HasColumnAsync("customers", "last_refill_collected_at"))
-                            custUpdates["last_refill_collected_at"] = nowUtc.ToString("yyyy-MM-dd");
-                        if (await Db.HasColumnAsync("customers", "next_refill_date"))
-                            custUpdates["next_refill_date"] = nowUtc.AddDays(cycleDays).ToString("yyyy-MM-dd");
-                    }
+                        var nowUtc = DateTime.UtcNow;
+                        var custUpdates = new Dictionary<string, object?>();
+                        if (await Db.HasColumnAsync("customers", "last_refill_reminded_at"))
+                            custUpdates["last_refill_reminded_at"] = nowUtc.ToString("yyyy-MM-dd HH:mm:ss");
+                        var lang = (GetString(body, "language") ?? "").Trim();
+                        if (!string.IsNullOrEmpty(lang) && await Db.HasColumnAsync("customers", "reminder_language"))
+                            custUpdates["reminder_language"] = lang;
 
-                    if (custUpdates.Count > 0)
-                    {
-                        await Db.UpdateAsync("customers", custId.Value, custUpdates);
+                        if (GetBool(body, "advance_cycle", false))
+                        {
+                            var cycleDays = Convert.ToInt32(custRow.GetValueOrDefault("refill_cycle_days") ?? 30);
+                            if (cycleDays <= 0) cycleDays = 30;
+                            if (await Db.HasColumnAsync("customers", "last_refill_collected_at"))
+                                custUpdates["last_refill_collected_at"] = nowUtc.ToString("yyyy-MM-dd");
+                            if (await Db.HasColumnAsync("customers", "next_refill_date"))
+                                custUpdates["next_refill_date"] = nowUtc.AddDays(cycleDays).ToString("yyyy-MM-dd");
+                        }
+
+                        if (custUpdates.Count > 0)
+                        {
+                            await Db.UpdateAsync("customers", custId.Value, custUpdates);
+                        }
                     }
 
                     var freshCustomer = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = custId.Value });
@@ -378,6 +468,7 @@ public class DocumentShareController : ApiControllerBase
         return Ok(response);
     }
 
+    [AllowAnonymous]
     [HttpGet("print/shared-pdf/{type}")]
     public async Task<IActionResult> PublicPdf(string type)
     {
@@ -386,20 +477,24 @@ public class DocumentShareController : ApiControllerBase
             return NotFound();
         }
 
-        var ctx = await BuildContextDataAsync(
-            type,
-            Request.Query["id"].FirstOrDefault(),
-            Request.Query["customer_id"].FirstOrDefault(),
-            Request.Query["supplier_id"].FirstOrDefault(),
-            Request.Query["from"].FirstOrDefault(),
-            Request.Query["to"].FirstOrDefault());
+        var idRaw = Request.Query["id"].FirstOrDefault();
+        var custRaw = Request.Query["customer_id"].FirstOrDefault();
+        var supRaw = Request.Query["supplier_id"].FirstOrDefault();
+        var fromRaw = Request.Query["from"].FirstOrDefault();
+        var toRaw = Request.Query["to"].FirstOrDefault();
 
+        var ctx = await BuildContextDataAsync(type, idRaw, custRaw, supRaw, fromRaw, toRaw);
         if (ctx == null)
         {
             return NotFound();
         }
 
-        var pdfBytes = BuildMinimalPdf(ctx.Title, ctx.PdfSummaryLines);
+        var setting = await GetSettingAsync();
+        var paperSize = ResolvePaperSize(Request.Query["size"].FirstOrDefault(), setting);
+        var pdfDesign = ResolvePdfDesign(Request.Query["template"].FirstOrDefault(), setting, paperSize);
+        var showLogo = ResolveShowLogo(Request.Query["show_logo"].FirstOrDefault(), setting);
+
+        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx, setting, paperSize, pdfDesign, showLogo, idRaw, custRaw, supRaw, fromRaw, toRaw);
         var downloadRaw = Request.Query["download"].FirstOrDefault() ?? "";
         var isDownload = downloadRaw == "1" || downloadRaw.Equals("true", StringComparison.OrdinalIgnoreCase);
 
@@ -526,11 +621,23 @@ public class DocumentShareController : ApiControllerBase
             {
                 var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id });
                 if (draft == null) return null;
-                var cId = ToNullableLong(draft, "party_id") ?? ToNullableLong(draft, "customer_id");
+                long? cId = ToNullableLong(draft, "party_id") ?? ToNullableLong(draft, "customer_id");
+                var payloadStr = GetVal(draft, "payload", "");
+                if (!cId.HasValue && !string.IsNullOrWhiteSpace(payloadStr))
+                {
+                    try
+                    {
+                        using var pDoc = JsonDocument.Parse(payloadStr);
+                        if (pDoc.RootElement.TryGetProperty("customer_id", out var cidEl) && long.TryParse(cidEl.ToString(), out var parsedCid))
+                            cId = parsedCid;
+                    }
+                    catch { }
+                }
                 var cust = cId.HasValue ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @cId", new { cId }) : null;
-                var docNo = GetVal(draft, "draft_number", $"QTN-{id}");
+                var docNo = GetVal(draft, "title", GetVal(draft, "uuid", $"QTN-{id}"));
                 var custName = GetVal(cust, "name", GetVal(draft, "party_name", "Valued Customer"));
-                var total = ToDouble(draft, "total");
+                var total = ToDouble(draft, "total_amount");
+                if (total == 0) total = ToDouble(draft, "total");
 
                 return new ResolvedDocContext
                 {
@@ -671,11 +778,18 @@ public class DocumentShareController : ApiControllerBase
             {
                 var po = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id });
                 if (po == null) return null;
-                var docNo = GetVal(po, "po_number", $"PO-{id}");
+                var docNo = GetVal(po, "number", GetVal(po, "reference", $"PO-{id}"));
                 var sId = ToNullableLong(po, "supplier_id");
                 var sup = sId.HasValue ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @sId", new { sId }) : null;
                 var supName = GetVal(sup, "name", "Supplier");
                 var total = ToDouble(po, "total");
+                if (total == 0 && await Db.HasTableAsync("purchase_order_items"))
+                {
+                    var sumRow = await Db.QuerySingleOrDefaultAsync(
+                        "SELECT COALESCE(SUM(ordered_quantity * unit_purchase_price * (1.0 - COALESCE(item_discount_percentage, 0) / 100.0)), 0) AS tot FROM purchase_order_items WHERE purchase_order_id = @id",
+                        new { id });
+                    total = ToDouble(sumRow, "tot");
+                }
 
                 return new ResolvedDocContext
                 {
@@ -851,7 +965,7 @@ public class DocumentShareController : ApiControllerBase
             {
                 var st = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id });
                 if (st == null) return null;
-                var docNo = GetVal(st, "session_number", $"STK-{id}");
+                var docNo = GetVal(st, "reference_no", GetVal(st, "session_number", $"STK-{id}"));
                 return new ResolvedDocContext
                 {
                     Title = $"Stocktake Session {docNo}",
@@ -942,88 +1056,201 @@ public class DocumentShareController : ApiControllerBase
         return Regex.Replace(name, @"[^A-Za-z0-9_-]", "_");
     }
 
-    private static byte[] BuildMinimalPdf(string title, IEnumerable<string> lines)
+    private static SmtpConfiguration BuildSmtpConfig(Dictionary<string, object?>? setting)
     {
-        static string EscapePdfText(string s)
+        bool IsOn(string k) => setting != null && setting.TryGetValue(k, out var v) && v is true or 1 or 1L or "1" or "true";
+        int IntVal(string k, int fb) => setting != null && setting.TryGetValue(k, out var v) && int.TryParse(v?.ToString(), out var i) ? i : fb;
+        return new SmtpConfiguration
         {
-            if (string.IsNullOrEmpty(s)) return "";
-            var ascii = new StringBuilder(s.Length);
-            foreach (var ch in s)
+            Enabled = IsOn("smtp_enabled"),
+            Host = GetVal(setting, "smtp_host", "127.0.0.1"),
+            Port = IntVal("smtp_port", 587),
+            Username = GetVal(setting, "smtp_username", ""),
+            Password = GetVal(setting, "smtp_password", ""),
+            Encryption = GetVal(setting, "smtp_encryption", "tls"),
+            FromAddress = GetVal(setting, "smtp_from_address", GetVal(setting, "smtp_username", "noreply@karobar.local")),
+            FromName = GetVal(setting, "smtp_from_name", GetVal(setting, "store_name", "Karobar App Store"))
+        };
+    }
+
+    private static WhatsAppConfiguration BuildWhatsAppConfig(Dictionary<string, object?>? setting)
+    {
+        bool IsOn(string k, bool fb = false) => setting != null && setting.TryGetValue(k, out var v) && v != null
+            ? (v is true or 1 or 1L || v.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true || v.ToString() == "1")
+            : fb;
+        return new WhatsAppConfiguration
+        {
+            Enabled = IsOn("whatsapp_enabled", false),
+            Provider = GetVal(setting, "whatsapp_provider", "local_agent"),
+            AccessToken = GetVal(setting, "whatsapp_access_token", ""),
+            PhoneNumberId = GetVal(setting, "whatsapp_phone_number_id", ""),
+            BusinessAccountId = GetVal(setting, "whatsapp_business_account_id", ""),
+            ApiVersion = GetVal(setting, "whatsapp_api_version", "v21.0"),
+            ApiUrl = GetVal(setting, "whatsapp_api_url", "http://127.0.0.1:3001"),
+            DefaultCountryCode = GetVal(setting, "whatsapp_default_country_code", "92"),
+            TemplateName = GetVal(setting, "whatsapp_template_name", ""),
+            TemplateLanguage = GetVal(setting, "whatsapp_template_language", "en_US"),
+            AutoFallback = IsOn("whatsapp_auto_fallback", true)
+        };
+    }
+
+    private async Task<byte[]> GenerateRealSharedPdfAsync(
+        string type,
+        ResolvedDocContext ctx,
+        Dictionary<string, object?>? setting,
+        string paperSize,
+        string pdfDesign,
+        bool showLogo,
+        string? idStr,
+        string? customerIdStr,
+        string? supplierIdStr,
+        string? from,
+        string? to)
+    {
+        var settingVm = PrintViewModelMapper.MapPrintSetting(setting);
+        settingVm.SharePaperSize = paperSize;
+        settingVm.ShareShowLogo = showLogo;
+
+        var req = new SharedDocumentPdfRequest
+        {
+            DocumentType = type,
+            DocumentTitle = PdfDocumentGenerator.SupportedSharedDocuments.TryGetValue(type, out var stdTitle) ? stdTitle : ctx.Title.ToUpperInvariant(),
+            DocumentNumber = !string.IsNullOrWhiteSpace(ctx.DocumentNumber) ? ctx.DocumentNumber : (!string.IsNullOrWhiteSpace(idStr) ? idStr! : type.ToUpperInvariant()),
+            DocumentDate = ctx.DocumentDate,
+            PaperSize = paperSize,
+            PdfDesign = pdfDesign,
+            Setting = settingVm,
+            PartyHeading = ctx.PartyHeading,
+            PartyName = string.IsNullOrWhiteSpace(ctx.RecipientName) ? "Customer" : ctx.RecipientName,
+            PartyPhone = string.IsNullOrWhiteSpace(ctx.RecipientPhone) ? null : ctx.RecipientPhone,
+            PartyAddress = string.IsNullOrWhiteSpace(ctx.RecipientAddress) ? null : ctx.RecipientAddress,
+            Remarks = ctx.Remarks,
+            FbrInvoiceNumber = ctx.FbrInvoiceNumber,
+            FbrQrData = ctx.FbrQrData
+        };
+
+        long.TryParse(idStr, out var docId);
+
+        if ((type == "sale_invoice" || type == "delivery_challan") && docId > 0)
+        {
+            var inv = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = docId });
+            if (inv != null)
             {
-                if (ch == '(' || ch == ')' || ch == '\\')
+                req.DocumentNumber = GetVal(inv, "posted_number", $"SI-{docId}");
+                req.DocumentDate = GetVal(inv, "date", req.DocumentDate);
+                req.FbrInvoiceNumber = GetVal(inv, "fbr_invoice_number", "");
+                req.FbrQrData = GetVal(inv, "fbr_qr_data", "");
+                req.Remarks = GetVal(inv, "remarks", "");
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM sale_invoice_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.sale_invoice_id = @id", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
+                    new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.5f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                foreach (var it in items)
                 {
-                    ascii.Append('\\').Append(ch);
+                    req.Rows.Add([
+                        GetVal(it, "product_name", "Item"),
+                        ToDouble(it, "quantity").ToString("0.##", CultureInfo.InvariantCulture),
+                        ToDouble(it, "price").ToString("N2", CultureInfo.InvariantCulture),
+                        ToDouble(it, "sub_total").ToString("N2", CultureInfo.InvariantCulture)
+                    ]);
                 }
-                else if (ch >= 32 && ch <= 126)
-                {
-                    ascii.Append(ch);
-                }
-                else
-                {
-                    ascii.Append(' ');
-                }
+                req.Totals =
+                [
+                    new PdfKeyValuePair("Gross Amount", $"Rs. {ToDouble(inv, "gross_amount"):N2}"),
+                    new PdfKeyValuePair("Discount", $"- Rs. {ToDouble(inv, "discount_amount"):N2}"),
+                    new PdfKeyValuePair("Tax", $"Rs. {ToDouble(inv, "tax_amount"):N2}"),
+                    new PdfKeyValuePair("Net Total", $"Rs. {ToDouble(inv, "total"):N2}", isGrandTotal: true)
+                ];
             }
-            return ascii.ToString();
         }
-
-        var contentSb = new StringBuilder();
-        contentSb.AppendLine("BT");
-        contentSb.AppendLine("/F1 14 Tf");
-        contentSb.AppendLine("40 800 Td");
-        contentSb.AppendLine($"({EscapePdfText(title)}) Tj");
-        contentSb.AppendLine("/F1 10 Tf");
-
-        foreach (var line in lines.Take(40))
+        else if (type == "purchase_invoice" && docId > 0)
         {
-            contentSb.AppendLine("0 -16 Td");
-            contentSb.AppendLine($"({EscapePdfText(line)}) Tj");
+            var inv = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id = docId });
+            if (inv != null)
+            {
+                req.DocumentNumber = GetVal(inv, "posted_number", $"PI-{docId}");
+                req.DocumentDate = GetVal(inv, "posted_date", req.DocumentDate);
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM purchase_invoice_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.purchase_invoice_id = @id", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
+                    new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Cost", RelativeWidth = 1.5f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                foreach (var it in items)
+                {
+                    req.Rows.Add([
+                        GetVal(it, "product_name", "Item"),
+                        ToDouble(it, "quantity").ToString("0.##", CultureInfo.InvariantCulture),
+                        ToDouble(it, "unit_purchase_price").ToString("N2", CultureInfo.InvariantCulture),
+                        ToDouble(it, "sub_total").ToString("N2", CultureInfo.InvariantCulture)
+                    ]);
+                }
+                req.Totals =
+                [
+                    new PdfKeyValuePair("Total Amount", $"Rs. {ToDouble(inv, "total_amount"):N2}", isGrandTotal: true),
+                    new PdfKeyValuePair("Total Paid", $"Rs. {ToDouble(inv, "total_paid"):N2}")
+                ];
+            }
         }
-        contentSb.AppendLine("ET");
-
-        var streamBytes = Encoding.ASCII.GetBytes(contentSb.ToString());
-
-        using var ms = new MemoryStream();
-        void WriteAscii(string str)
+        else if (type == "purchase_order" && docId > 0 && await Db.HasTableAsync("purchase_order_items"))
         {
-            var b = Encoding.ASCII.GetBytes(str);
-            ms.Write(b, 0, b.Length);
+            var items = await Db.QueryListAsync(@"
+                SELECT i.*, p.name AS product_name
+                FROM purchase_order_items i
+                LEFT JOIN products p ON p.id = i.product_id
+                WHERE i.purchase_order_id = @id", new { id = docId });
+            req.Columns =
+            [
+                new PdfTableColumnDef { Header = "Product", RelativeWidth = 4f },
+                new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.5f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.5f, AlignRight = true }
+            ];
+            double grand = 0;
+            foreach (var it in items)
+            {
+                var qty = ToDouble(it, "ordered_quantity");
+                var cost = ToDouble(it, "unit_purchase_price");
+                var discPct = ToDouble(it, "item_discount_percentage");
+                var lt = Math.Round(qty * cost * (1.0 - discPct / 100.0), 2);
+                grand += lt;
+                req.Rows.Add([GetVal(it, "product_name", "Item"), qty.ToString("0.##"), cost.ToString("N2"), lt.ToString("N2")]);
+            }
+            req.Totals = [new PdfKeyValuePair("Order Total", $"Rs. {grand:N2}", isGrandTotal: true)];
         }
 
-        WriteAscii("%PDF-1.4\n");
-        var offsets = new List<long>();
-
-        // Object 1: Catalog
-        offsets.Add(ms.Position);
-        WriteAscii("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-        // Object 2: Pages
-        offsets.Add(ms.Position);
-        WriteAscii("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-
-        // Object 3: Page
-        offsets.Add(ms.Position);
-        WriteAscii("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n");
-
-        // Object 4: Font
-        offsets.Add(ms.Position);
-        WriteAscii("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
-
-        // Object 5: Contents stream
-        offsets.Add(ms.Position);
-        WriteAscii($"5 0 obj\n<< /Length {streamBytes.Length} >>\nstream\n");
-        ms.Write(streamBytes, 0, streamBytes.Length);
-        WriteAscii("\nendstream\nendobj\n");
-
-        var xrefOffset = ms.Position;
-        WriteAscii($"xref\n0 {offsets.Count + 1}\n");
-        WriteAscii("0000000000 65535 f \n");
-        foreach (var off in offsets)
+        if (req.Columns.Count == 0 && ctx.PdfSummaryLines.Count > 0)
         {
-            WriteAscii($"{off:D10} 00000 n \n");
+            req.Columns =
+            [
+                new PdfTableColumnDef { Header = "Detail", RelativeWidth = 2.5f },
+                new PdfTableColumnDef { Header = "Value", RelativeWidth = 5.5f }
+            ];
+            foreach (var line in ctx.PdfSummaryLines)
+            {
+                var idx = line.IndexOf(':');
+                if (idx > 0)
+                    req.Rows.Add([line[..idx].Trim(), line[(idx + 1)..].Trim()]);
+                else
+                    req.Rows.Add(["Info", line]);
+            }
         }
 
-        WriteAscii($"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF\n");
-        return ms.ToArray();
+        return _pdfGenerator.GenerateSharedDocumentPdf(req);
     }
 
     private static string GetVal(Dictionary<string, object?>? dict, string key, string fallback = "")

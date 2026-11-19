@@ -679,6 +679,17 @@ public sealed class FbrFiscalizationEngine
         int limit = 50,
         CancellationToken cancellationToken = default)
     {
+        var setting = await GetSettingAsync(db, cancellationToken);
+        if (setting == null || !setting.FbrEnabled)
+        {
+            return new Dictionary<string, int>
+            {
+                ["processed"] = 0,
+                ["synced"] = 0,
+                ["failed"] = 0
+            };
+        }
+
         var pendingIds = await db.SaleInvoices
             .Where(i => (i.FbrSyncStatus == "pending" || i.FbrSyncStatus == "failed") &&
                         (i.Status == null || i.Status != "reversed"))

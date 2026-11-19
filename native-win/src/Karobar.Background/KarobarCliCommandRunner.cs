@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Karobar.Core;
 using Karobar.Core.Entities;
 using Karobar.Data;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -112,7 +113,8 @@ public sealed class KarobarCliCommandRunner
         {
             return Path.GetFullPath(explicitRoot);
         }
-        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
+        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
+            ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
         if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot))
         {
             return Path.GetFullPath(envRoot);
@@ -683,9 +685,26 @@ public sealed class KarobarCliCommandRunner
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        // 4. Zero-data-loss upgrade path: preserve existing users, license, and settings untouched
+        // 4. Zero-data-loss upgrade path: take WAL-safe pre-upgrade snapshot & preserve existing users, license, and settings untouched
         if (isUpgradeOnly && await db.Users.AnyAsync(cancellationToken))
         {
+            var existingDbPath = Path.Combine(_appRoot, "database", "database.sqlite");
+            if (File.Exists(existingDbPath))
+            {
+                try
+                {
+                    var preUpgradeDir = Path.Combine(_appRoot, "storage", "app", "backups");
+                    Directory.CreateDirectory(preUpgradeDir);
+                    var preSnap = Path.Combine(preUpgradeDir, $"pre-upgrade-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
+                    using var srcConn = new SqliteConnection($"Data Source={existingDbPath};Mode=ReadOnly;");
+                    using var dstConn = new SqliteConnection($"Data Source={preSnap};Mode=ReadWriteCreate;");
+                    await srcConn.OpenAsync(cancellationToken);
+                    await dstConn.OpenAsync(cancellationToken);
+                    srcConn.BackupDatabase(dstConn);
+                }
+                catch { }
+            }
+
             if (IsTruthyArg(args, "cleanup-temp"))
             {
                 CleanupInstallerTempFiles(args);
@@ -1381,7 +1400,7 @@ public sealed class KarobarCliCommandRunner
                 Frequency = "daily",
                 TimeOfDay = "02:00",
                 BackupType = "full",
-                StorageDestination = "default"
+                StorageDestination = "local"
             };
             db.BackupSchedules.Add(schedule);
             await db.SaveChangesAsync(cancellationToken);
@@ -1414,19 +1433,37 @@ public sealed class KarobarCliCommandRunner
         var fullPath = Path.Combine(backupDir, filename);
 
         var sourceDb = Path.Combine(_appRoot, "database", "database.sqlite");
-        using (var zipStream = new FileStream(fullPath, FileMode.Create))
-        using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
+        string? tempSnapshot = null;
+        try
         {
             if (File.Exists(sourceDb))
             {
-                archive.CreateEntryFromFile(sourceDb, "database.sqlite");
+                tempSnapshot = Path.Combine(Path.GetTempPath(), $"karobar-sched-snap-{Guid.NewGuid():N}.sqlite");
+                using var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;");
+                using var dstConn = new SqliteConnection($"Data Source={tempSnapshot};Mode=ReadWriteCreate;");
+                await srcConn.OpenAsync(cancellationToken);
+                await dstConn.OpenAsync(cancellationToken);
+                srcConn.BackupDatabase(dstConn);
             }
-            else
+
+            using (var zipStream = new FileStream(fullPath, FileMode.Create))
+            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
             {
-                var entry = archive.CreateEntry("manifest.json");
-                await using var writer = new StreamWriter(entry.Open());
-                await writer.WriteAsync(JsonSerializer.Serialize(new { created_at = now.ToString("O"), type = schedule.BackupType }));
+                if (tempSnapshot != null && File.Exists(tempSnapshot))
+                {
+                    archive.CreateEntryFromFile(tempSnapshot, "database.sqlite", CompressionLevel.Optimal);
+                }
+                else
+                {
+                    var entry = archive.CreateEntry("manifest.json");
+                    await using var writer = new StreamWriter(entry.Open());
+                    await writer.WriteAsync(JsonSerializer.Serialize(new { created_at = now.ToString("O"), type = schedule.BackupType }));
+                }
             }
+        }
+        finally
+        {
+            try { if (tempSnapshot != null && File.Exists(tempSnapshot)) File.Delete(tempSnapshot); } catch { }
         }
 
         if (schedule.StorageDestination == "custom_folder" &&

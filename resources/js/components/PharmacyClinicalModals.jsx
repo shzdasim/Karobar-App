@@ -212,8 +212,19 @@ export function DosageStickersModal({ isOpen, onClose, invoice, onUpdated }) {
       if (shouldPrint) {
         const mode = dosageStickerConfig?.printer_mode || "receipt_roll";
         const targetPrinter = dosageStickerConfig?.preferred_printer || undefined;
-        const url = `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}&printer_mode=${mode}&silent_print=1`;
+        let url = `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}&printer_mode=${mode}&silent_print=1`;
+        let html = undefined;
+        try {
+          const { data: labelRes } = await axios.get(`/api/sale-invoices/${invoice.id}/dosage-labels-url`, {
+            params: { width_mm: activeW, height_mm: activeH, printer_mode: mode, auto_print: 1 },
+          });
+          if (labelRes?.url) url = labelRes.url;
+          if (labelRes?.html) html = labelRes.html;
+        } catch {
+          // Fallback to direct URL if signed endpoint unavailable
+        }
         await printSlipUrl(url, {
+          html,
           deviceName: targetPrinter,
           loadingMessage: `Printing ${activeW}×${activeH}mm dosage stickers...`,
           successMessage: "Dosage stickers sent directly to printer",

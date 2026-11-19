@@ -147,7 +147,7 @@
 
     <div class="field">
       <label for="serverUrl">Store Server LAN URL</label>
-      <input id="serverUrl" type="text" placeholder="http://192.168.1.10:8000" />
+      <input id="serverUrl" type="text" placeholder="http://192.168.1.10:18960" />
     </div>
 
     <div class="field">
@@ -182,7 +182,7 @@
       if (!window.karobarDesktop || !window.karobarDesktop.getNetworkConfig) return;
       try {
         const cfg = await window.karobarDesktop.getNetworkConfig();
-        serverUrlInput.value = cfg.serverUrl || "http://192.168.1.10:8000";
+        serverUrlInput.value = cfg.serverUrl || "http://192.168.1.10:18960";
         terminalNameInput.value = cfg.terminalName || "Counter 1";
       } catch (e) {}
     }
@@ -190,7 +190,7 @@
     testBtn.addEventListener("click", async () => {
       const url = serverUrlInput.value.trim();
       if (!url) {
-        setStatus("err", "Please enter the Linux Server URL (e.g. http://192.168.1.10:8000).");
+        setStatus("err", "Please enter the Store Server URL (e.g. http://192.168.1.10:18960).");
         return;
       }
       setStatus("ok", "Testing connection to " + url + " ...");

@@ -163,6 +163,8 @@ public sealed class KarobarDesktopBridge
             "karobar:set-preferred-printer" or "setPreferredPrinter" => await SetPreferredPrinterAsync(body),
             "karobar:silent-print" or "silentPrint" => await SilentPrintAsync(body, cancellationToken),
             "karobar:print-url" or "printUrl" => await PrintUrlAsync(body, cancellationToken),
+            "karobar:kick-cash-drawer" or "kickCashDrawer" => await KickCashDrawerAsync(body, cancellationToken),
+            "karobar:print-thermal-raw" or "printThermalReceipt" => await PrintThermalRawAsync(body, cancellationToken),
             "karobar:print-html" or "printHtml" => await PrintHtmlAsync(body, cancellationToken),
             "karobar:select-directory" or "selectDirectory" => await SelectDirectoryAsync(),
             "karobar:select-sqlite-file" or "selectSqliteFile" => await SelectSqliteFileAsync(),
@@ -316,7 +318,15 @@ public sealed class KarobarDesktopBridge
             }
 
             var targetUrl = _networkConfig.GetAppBaseUrl();
-            _windowManager.SendNavigate($"{targetUrl}/", "Karobar-App");
+            var activeWin = _windowManager.GetActiveWindow();
+            if (activeWin != null)
+            {
+                activeWin.LoadUrl($"{targetUrl}/");
+            }
+            else
+            {
+                _windowManager.SendNavigate($"{targetUrl}/", "Karobar-App");
+            }
         }
 
         return new
@@ -816,10 +826,65 @@ public sealed class KarobarDesktopBridge
 
         return new
         {
-            ok = true,
+            ok = false,
             printer = targetPrinter,
-            engine = "win32-native-spooler"
+            engine = "webview2-silent-print",
+            error = "Desktop silent print host is unavailable in this environment."
         };
+    }
+
+    public async Task<object> KickCashDrawerAsync(JsonElement payload, CancellationToken cancellationToken = default)
+    {
+        var printerName = "";
+        if (payload.ValueKind == JsonValueKind.Object &&
+            payload.TryGetProperty("deviceName", out var dn) && dn.ValueKind == JsonValueKind.String)
+        {
+            printerName = (dn.GetString() ?? "").Trim();
+        }
+        if (string.IsNullOrWhiteSpace(printerName))
+        {
+            printerName = ReadPreferredPrinterConfig();
+        }
+
+        var rawSvc = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
+        var res = await rawSvc.KickCashDrawerAsync(string.IsNullOrWhiteSpace(printerName) ? null : printerName);
+        return new
+        {
+            ok = res.Ok,
+            printer = res.Printer,
+            error = res.Error
+        };
+    }
+
+    public Task<object> PrintThermalRawAsync(JsonElement payload, CancellationToken cancellationToken = default)
+    {
+        var printerName = "";
+        var text = "";
+        var kickDrawer = false;
+        if (payload.ValueKind == JsonValueKind.Object)
+        {
+            if (payload.TryGetProperty("deviceName", out var dn) && dn.ValueKind == JsonValueKind.String)
+                printerName = (dn.GetString() ?? "").Trim();
+            if (payload.TryGetProperty("text", out var txt) && txt.ValueKind == JsonValueKind.String)
+                text = txt.GetString() ?? "";
+            if (payload.TryGetProperty("kickDrawer", out var kd) && kd.ValueKind == JsonValueKind.True)
+                kickDrawer = true;
+        }
+        if (string.IsNullOrWhiteSpace(printerName))
+        {
+            printerName = ReadPreferredPrinterConfig();
+        }
+
+        var rawSvc = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
+        var bytes = rawSvc.BuildEscPosReceiptPayload(text, kickDrawer: kickDrawer);
+        var res = rawSvc.SendRawBytesToPrinter(printerName, bytes, "Karobar Thermal Receipt");
+        return Task.FromResult<object>(new
+        {
+            ok = res.Ok,
+            printer = printerName,
+            bytesWritten = res.BytesWritten,
+            error = res.Error
+        });
     }
 
     public Task<object> silentPrint(JsonElement options) => SilentPrintAsync(options);
@@ -849,7 +914,8 @@ public sealed class KarobarDesktopBridge
             ? rawUrl
             : $"{baseUrl}{(rawUrl.StartsWith('/') ? "" : "/")}{rawUrl}";
 
-        if (!Regex.IsMatch(resolvedUrl, @"[?&]silent_print=", RegexOptions.IgnoreCase))
+        if (!Regex.IsMatch(resolvedUrl, @"[?&]silent_print=", RegexOptions.IgnoreCase) &&
+            !Regex.IsMatch(resolvedUrl, @"[?&]signature=", RegexOptions.IgnoreCase))
         {
             resolvedUrl += (resolvedUrl.Contains('?') ? "&" : "?") + "silent_print=1";
         }
@@ -1095,14 +1161,18 @@ public sealed class KarobarDesktopBridge
                 }
             }
 
-            // Fallback: create immediate SQLite backup snapshot in storage/app/backups
+            // Fallback: create WAL-safe SQLite Online Backup snapshot in storage/app/backups
             var dbPath = Path.Combine(_networkConfig.AppRoot, "database", "database.sqlite");
             if (File.Exists(dbPath))
             {
                 var backupDir = Path.Combine(_networkConfig.AppRoot, "storage", "app", "backups");
                 Directory.CreateDirectory(backupDir);
                 var destFile = Path.Combine(backupDir, $"backup-{DateTime.UtcNow:yyyy-MM-dd-HHmmss}.sqlite");
-                File.Copy(dbPath, destFile, overwrite: true);
+                using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;");
+                using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={destFile};Mode=ReadWriteCreate;");
+                await srcConn.OpenAsync(cancellationToken);
+                await dstConn.OpenAsync(cancellationToken);
+                srcConn.BackupDatabase(dstConn);
             }
 
             return new { ok = true };
@@ -1217,8 +1287,7 @@ public sealed class KarobarDesktopBridge
         using var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 6,
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            MaxAutomaticRedirections = 6
         };
         using var client = new HttpClient(handler)
         {
@@ -1298,6 +1367,9 @@ public sealed class KarobarDesktopBridge
                         patch_sha256 = remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
                             ? pSha.GetString()
                             : null,
+                        installer_sha256 = remote.TryGetProperty("installer_sha256", out var iSha) && iSha.ValueKind == JsonValueKind.String
+                            ? iSha.GetString()
+                            : null,
                         min_patch_version = minPatchVer,
                         release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
                             ? ru.GetString()
@@ -1312,10 +1384,10 @@ public sealed class KarobarDesktopBridge
             }
         }
 
-        // 2. Fallback: GitHub Releases REST API
+        // 2. Fallback: GitHub Releases REST API (strictly `native-latest` tag so Electron `latest` is never returned)
         try
         {
-            var apiText = await client.GetStringAsync($"https://api.github.com/repos/{repo}/releases/latest", cancellationToken);
+            var apiText = await client.GetStringAsync($"https://api.github.com/repos/{repo}/releases/tags/native-latest", cancellationToken);
             using var doc = JsonDocument.Parse(apiText);
             var apiData = doc.RootElement;
 
@@ -1329,9 +1401,9 @@ public sealed class KarobarDesktopBridge
                     ? remoteBuild > local.BuildNumber
                     : CompareSemverNewer(remoteVer, local.Version);
 
-                var downloadUrl = $"https://github.com/{repo}/releases/latest/download/Karobar-Native-Setup.exe";
-                var bundleUrl = $"https://github.com/{repo}/releases/latest/download/Karobar-Native-Setup-Bundle.zip";
-                var patchUrl = $"https://github.com/{repo}/releases/latest/download/Karobar-Native-Patch.zip";
+                var downloadUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe";
+                var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
+                string? patchUrl = null;
                 long? patchSize = null;
 
                 if (apiData.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
@@ -1417,6 +1489,7 @@ public sealed class KarobarDesktopBridge
         var isPatchFlag = false;
         string? candidatePatchUrl = null;
         string? candidatePatchSha256 = null;
+        string? candidateInstallerSha256 = null;
         string? candidateDownloadUrl = null;
         var rawVersion = "latest";
 
@@ -1440,6 +1513,10 @@ public sealed class KarobarDesktopBridge
                 candidatePatchSha256 = ps1.GetString();
             if (payload.TryGetProperty("patch_sha256", out var ps2) && ps2.ValueKind == JsonValueKind.String)
                 candidatePatchSha256 ??= ps2.GetString();
+            if (payload.TryGetProperty("installerSha256", out var is1) && is1.ValueKind == JsonValueKind.String)
+                candidateInstallerSha256 = is1.GetString();
+            if (payload.TryGetProperty("installer_sha256", out var is2) && is2.ValueKind == JsonValueKind.String)
+                candidateInstallerSha256 ??= is2.GetString();
             if (payload.TryGetProperty("downloadUrl", out var du1) && du1.ValueKind == JsonValueKind.String)
                 candidateDownloadUrl = du1.GetString();
             if (payload.TryGetProperty("download_url", out var du2) && du2.ValueKind == JsonValueKind.String)
@@ -1454,6 +1531,7 @@ public sealed class KarobarDesktopBridge
         }
 
         var isPatch = (isPatchFlag || !string.IsNullOrWhiteSpace(candidatePatchUrl)) && !forceFull;
+        var expectedSha256 = isPatch ? candidatePatchSha256 : candidateInstallerSha256;
         var versionLabel = Regex.Replace(rawVersion, @"[^a-zA-Z0-9._-]", "");
         if (string.IsNullOrWhiteSpace(versionLabel)) versionLabel = "latest";
 
@@ -1472,8 +1550,8 @@ public sealed class KarobarDesktopBridge
         try
         {
             var alreadyDownloaded = File.Exists(tempFilePath) && new FileInfo(tempFilePath).Length >= minValidSize;
-            if (alreadyDownloaded && isPatch && !string.IsNullOrWhiteSpace(candidatePatchSha256) &&
-                !VerifyFileSha256(tempFilePath, candidatePatchSha256))
+            if (alreadyDownloaded && !string.IsNullOrWhiteSpace(expectedSha256) &&
+                !VerifyFileSha256(tempFilePath, expectedSha256))
             {
                 try { File.Delete(tempFilePath); } catch { }
                 alreadyDownloaded = false;
@@ -1481,7 +1559,7 @@ public sealed class KarobarDesktopBridge
 
             if (!alreadyDownloaded)
             {
-                _windowManager.SendUpdateProgress(new
+                PublishUpdateProgress(new
                 {
                     status = "starting",
                     percent = 2,
@@ -1491,17 +1569,17 @@ public sealed class KarobarDesktopBridge
 
                 await DownloadFileWithProgressAsync(downloadUrl, tempFilePath, isPatch, cancellationToken);
 
-                if (isPatch && !string.IsNullOrWhiteSpace(candidatePatchSha256) &&
-                    !VerifyFileSha256(tempFilePath, candidatePatchSha256))
+                if (!string.IsNullOrWhiteSpace(expectedSha256) &&
+                    !VerifyFileSha256(tempFilePath, expectedSha256))
                 {
                     try { File.Delete(tempFilePath); } catch { }
-                    throw new InvalidOperationException("Downloaded patch failed SHA-256 integrity verification. Please retry.");
+                    throw new InvalidOperationException("Downloaded update failed SHA-256 integrity verification. Please retry.");
                 }
             }
 
             if (mode == "download")
             {
-                _windowManager.SendUpdateProgress(new
+                PublishUpdateProgress(new
                 {
                     status = "downloaded",
                     percent = 100,
@@ -1524,7 +1602,7 @@ public sealed class KarobarDesktopBridge
 
             await RunBackupNowAsync(cancellationToken);
 
-            _windowManager.SendUpdateProgress(new
+            PublishUpdateProgress(new
             {
                 status = "installing",
                 percent = 100,
@@ -1749,7 +1827,13 @@ public sealed class KarobarDesktopBridge
                 Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
                 if (Test-Path $exePath) {
                     Write-Log "Relaunching $exePath"
-                    Start-Process -FilePath $exePath -WorkingDirectory $installDir
+                    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                    if ($isAdmin) {
+                        # Relaunch de-elevated through explorer.exe so WebView2 runs under normal user privileges
+                        Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$exePath`""
+                    } else {
+                        Start-Process -FilePath $exePath -WorkingDirectory $installDir
+                    }
                 }
             }
             """;
@@ -1805,6 +1889,18 @@ public sealed class KarobarDesktopBridge
 
     public Task<object> downloadAndInstallUpdate(JsonElement payload) => DownloadAndInstallUpdateAsync(payload);
 
+    private void PublishUpdateProgress(object progressPayload)
+    {
+        _windowManager.SendUpdateProgress(progressPayload);
+        try
+        {
+            var progressPath = Path.Combine(_networkConfig.AppRoot, "storage", "app", "update-progress.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(progressPath)!);
+            File.WriteAllText(progressPath, JsonSerializer.Serialize(progressPayload), new UTF8Encoding(false));
+        }
+        catch { }
+    }
+
     private async Task DownloadFileWithProgressAsync(
         string url,
         string destPath,
@@ -1814,8 +1910,7 @@ public sealed class KarobarDesktopBridge
         using var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 10,
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            MaxAutomaticRedirections = 10
         };
         using var client = new HttpClient(handler)
         {
@@ -1833,6 +1928,7 @@ public sealed class KarobarDesktopBridge
         var buffer = new byte[81920];
         long downloadedBytes = 0;
         int read;
+        int lastPublishedPct = -1;
         while ((read = await netStream.ReadAsync(buffer, cancellationToken)) > 0)
         {
             await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
@@ -1844,7 +1940,7 @@ public sealed class KarobarDesktopBridge
             var downloadedMb = (downloadedBytes / (1024.0 * 1024.0)).ToString("F1");
             var totalMb = totalBytes > 0 ? (totalBytes / (1024.0 * 1024.0)).ToString("F1") : null;
 
-            _windowManager.SendUpdateProgress(new
+            var prog = new
             {
                 status = "downloading",
                 percent,
@@ -1858,7 +1954,16 @@ public sealed class KarobarDesktopBridge
                     : (isPatch
                         ? $"Downloading fast patch ({downloadedMb} MB)…"
                         : $"Downloading update ({downloadedMb} MB)…")
-            });
+            };
+            if (percent != lastPublishedPct)
+            {
+                lastPublishedPct = percent;
+                PublishUpdateProgress(prog);
+            }
+            else
+            {
+                _windowManager.SendUpdateProgress(prog);
+            }
         }
     }
 

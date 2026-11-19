@@ -24,7 +24,9 @@ public sealed class NativeWebView2Form : Form
     private readonly Dictionary<string, WebView2> _tabWebViews = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _envInitLock = new(1, 1);
     private CoreWebView2Environment? _sharedEnv;
-    private readonly string _baseOrigin;
+    private string _baseOrigin;
+    private NotifyIcon? _trayIcon;
+    private ContextMenuStrip? _trayMenu;
     private long _lastTabShortcutMs;
     private string _lastTabShortcutAction = "";
 
@@ -76,23 +78,107 @@ public sealed class NativeWebView2Form : Form
         Controls.Add(_tabStrip);
 
         BuildNativeMenuBar();
+        if (winInstance.IsMain)
+        {
+            BuildSystemTrayIcon(iconPath);
+        }
 
         // Route windowManager messages & navigation to the active tab's WebView2
         _winInstance.WebMessageSender = BroadcastMessageToActiveTab;
-        _winInstance.UrlNavigator = targetUrl => OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
+        _winInstance.UrlNavigator = targetUrl =>
+        {
+            if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) &&
+                (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+            {
+                _baseOrigin = $"{uri.Scheme}://{uri.Authority}";
+            }
+            OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
+        };
 
         Load += async (_, _) => await InitializeInitialTabAsync();
         Activated += (_, _) => _winInstance.IsFocused = true;
         Deactivate += (_, _) => _winInstance.IsFocused = false;
         FormClosed += (_, _) =>
         {
+            if (_trayIcon != null)
+            {
+                try { _trayIcon.Visible = false; _trayIcon.Dispose(); } catch { }
+                _trayIcon = null;
+            }
+            if (_trayMenu != null)
+            {
+                try { _trayMenu.Dispose(); } catch { }
+                _trayMenu = null;
+            }
             foreach (var wv in _tabWebViews.Values)
             {
                 try { wv.Dispose(); } catch { }
             }
             _tabWebViews.Clear();
+            try { _envInitLock.Dispose(); } catch { }
             _windowManager.CloseWindow(_winInstance.Id);
         };
+    }
+
+    private void BuildSystemTrayIcon(string? iconPath)
+    {
+        try
+        {
+            _trayMenu = new ContextMenuStrip
+            {
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.FromArgb(248, 250, 252),
+                Renderer = new DarkMenuStripRenderer()
+            };
+            _trayMenu.Items.Add($"Show {Program.ApplicationDisplayName}", null, (_, _) =>
+            {
+                Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                Activate();
+            });
+            _trayMenu.Items.Add("New POS Tab (Ctrl+Shift+P)", null, (_, _) =>
+            {
+                Show();
+                Activate();
+                _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
+            });
+            _trayMenu.Items.Add("Check for Updates…", null, (_, _) =>
+            {
+                Show();
+                Activate();
+                _ = _desktopBridge.CheckForUpdatesAsync(null);
+            });
+            _trayMenu.Items.Add("Run Backup Now", null, (_, _) =>
+            {
+                _ = _desktopBridge.RunBackupNowAsync();
+            });
+            _trayMenu.Items.Add(new ToolStripSeparator());
+            _trayMenu.Items.Add($"Quit {Program.ApplicationDisplayName}", null, (_, _) =>
+            {
+                try { if (_trayIcon != null) _trayIcon.Visible = false; } catch { }
+                Application.Exit();
+            });
+
+            _trayIcon = new NotifyIcon
+            {
+                Text = Program.ApplicationDisplayName,
+                Icon = Icon ?? (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath) && iconPath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)
+                    ? new Icon(iconPath)
+                    : SystemIcons.Application),
+                ContextMenuStrip = _trayMenu,
+                Visible = true
+            };
+            _trayIcon.DoubleClick += (_, _) =>
+            {
+                Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                Activate();
+            };
+        }
+        catch
+        {
+            // Non-fatal if shell tray is unavailable in headless Windows sessions
+        }
     }
 
     private void WireTabStripEvents()
@@ -518,15 +604,8 @@ public sealed class NativeWebView2Form : Form
                 }
 
                 e.Handled = true;
-                if (decision != "silent-print-intercepted" && !string.IsNullOrWhiteSpace(e.Uri))
-                {
-                    // Open internal links as a Waseela-style tab inside THIS window instead of a new OS window
-                    if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var targetUri) &&
-                        string.Equals(targetUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _ = OpenTabAsync(targetUri.PathAndQuery, null, allowDuplicate: false);
-                    }
-                }
+                // HandleWindowOpenRequest already handled silent print ("deny-silent-print")
+                // and routed internal app links via CreateAppWindow -> OpenTabFromExternal.
             };
 
             core.WebMessageReceived += async (_, e) =>
@@ -648,6 +727,10 @@ public sealed class NativeWebView2Form : Form
     {
         // Waseela & Karobar conflict-free Tab Multitasking Shortcuts
         // (Preserves Ctrl+1/2/3, Ctrl+W, Ctrl+D, Ctrl+R, Ctrl+S, F4/F6/F7/F8/F9 for React invoicing screens!)
+        if (keyData == Keys.F5)
+        {
+            return ExecuteTabShortcutAction("reload-active");
+        }
         if (keyData == (Keys.Control | Keys.Tab) ||
             keyData == (Keys.Control | Keys.PageDown) ||
             keyData == (Keys.Control | Keys.OemCloseBrackets) ||
@@ -734,6 +817,9 @@ public sealed class NativeWebView2Form : Form
 
         switch (action)
         {
+            case "reload-active":
+                if (_workspace.ActiveTabId != null) ReloadTab(_workspace.ActiveTabId);
+                return true;
             case "cycle-next":
                 if (_workspace.CycleTab(1) != null) SyncActiveTabVisuals();
                 return true;
@@ -866,6 +952,11 @@ public sealed class NativeWebView2Form : Form
                             tcs.TrySetResult((false, "webview2-silent-print", "Timed out waiting for receipt page to load before printing."));
                             return;
                         }
+                        if (!await navTcs.Task)
+                        {
+                            tcs.TrySetResult((false, "webview2-silent-print", "Failed to load print document (navigation error or HTTP 403/404/500)."));
+                            return;
+                        }
                     }
                     finally
                     {
@@ -949,6 +1040,29 @@ public sealed class NativeWebView2Form : Form
             settings.MarginLeft = 0;
             settings.MarginRight = 0;
             settings.ScaleFactor = 1.0;
+
+            try
+            {
+                var metaRaw = await core.ExecuteScriptAsync(
+                    "(function(){var m=document.querySelector('meta[name=\"karobar-print-config\"]');return m?m.getAttribute('content'):'';})()");
+                if (!string.IsNullOrWhiteSpace(metaRaw) && metaRaw != "null" && metaRaw != "\"\"")
+                {
+                    var unescaped = JsonSerializer.Deserialize<string>(metaRaw);
+                    if (!string.IsNullOrWhiteSpace(unescaped))
+                    {
+                        using var cfgDoc = JsonDocument.Parse(unescaped);
+                        if (cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) && pwEl.TryGetDouble(out var pwMm) && pwMm is >= 25 and <= 216)
+                        {
+                            settings.PageWidth = pwMm / 25.4;
+                        }
+                        if (cfgDoc.RootElement.TryGetProperty("copies", out var cpEl) && cpEl.TryGetInt32(out var copies) && copies is >= 1 and <= 20)
+                        {
+                            settings.Copies = copies;
+                        }
+                    }
+                }
+            }
+            catch { }
         }
 
         CoreWebView2PrintStatus status;

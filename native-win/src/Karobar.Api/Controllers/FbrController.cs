@@ -2,9 +2,12 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Karobar.Api.Infrastructure;
+using Karobar.Background;
+using Karobar.Data;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Karobar.Api.Controllers;
 
@@ -18,8 +21,16 @@ public class FbrController : ApiControllerBase
     public const string DefaultPosProductionUrl = "https://esp.fbr.gov.pk:8244/FBR/v1/api/Live/PostData";
     public const string DefaultImsLocalUrl = "http://127.0.0.1:8524/api/IMSFiscal/GetInvoiceNumberByModel";
 
-    public FbrController(KarobarDb db) : base(db)
+    private readonly FbrFiscalizationEngine _fbrEngine;
+    private readonly KarobarDbContext? _dbContext;
+
+    public FbrController(
+        KarobarDb db,
+        FbrFiscalizationEngine? fbrEngine = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
+        _fbrEngine = fbrEngine ?? new FbrFiscalizationEngine();
+        _dbContext = dbContext;
     }
 
     private async Task<Dictionary<string, object?>?> GetSettingAsync()
@@ -148,13 +159,23 @@ public class FbrController : ApiControllerBase
             "fbr_sandbox_url", "fbr_production_url", "fbr_default_hs_code", "fbr_scenario_id"
         };
 
+        var overrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var k in overrideKeys)
         {
             var v = GetString(body, k);
             if (!string.IsNullOrWhiteSpace(v))
             {
                 setting[k] = v;
+                overrides[k] = v;
             }
+        }
+
+        if (_dbContext != null)
+        {
+            var efSetting = await _dbContext.Settings.AsNoTracking().OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted);
+            var engineRes = await _fbrEngine.TestConnectionAsync(efSetting, overrides, HttpContext.RequestAborted);
+            var engineOk = engineRes.TryGetValue("ok", out var okVal) && okVal is true;
+            return StatusCode(engineOk ? 200 : 422, engineRes);
         }
 
         var mode = GetVal(setting, "fbr_mode", "digital_invoicing");
@@ -286,7 +307,9 @@ public class FbrController : ApiControllerBase
             return NotFound(new { message = "Sale invoice not found." });
         }
 
-        var res = await FiscalizeSaleInvoiceInternalAsync(invoice, true);
+        var res = _dbContext != null
+            ? await _fbrEngine.FiscalizeSaleInvoiceAsync(_dbContext, (int)id, force: true, HttpContext.RequestAborted)
+            : await FiscalizeSaleInvoiceInternalAsync(invoice, true);
         var freshInvoice = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id });
         res["invoice"] = freshInvoice;
 
@@ -306,7 +329,9 @@ public class FbrController : ApiControllerBase
             return NotFound(new { message = "Sale return not found." });
         }
 
-        var res = await FiscalizeSaleReturnInternalAsync(saleReturn, true);
+        var res = _dbContext != null
+            ? await _fbrEngine.FiscalizeSaleReturnAsync(_dbContext, (int)id, force: true, HttpContext.RequestAborted)
+            : await FiscalizeSaleReturnInternalAsync(saleReturn, true);
         var freshReturn = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id });
         res["sale_return"] = freshReturn;
 
@@ -327,6 +352,17 @@ public class FbrController : ApiControllerBase
                 ["ok"] = true,
                 ["summary"] = new { processed = 0, synced = 0, failed = 0 },
                 ["message"] = "Processed 0 queued invoice(s): 0 synced, 0 failed."
+            });
+        }
+
+        if (_dbContext != null)
+        {
+            var summary = await _fbrEngine.RetryPendingInvoicesAsync(_dbContext, limit: 50, HttpContext.RequestAborted);
+            return Ok(new Dictionary<string, object?>
+            {
+                ["ok"] = true,
+                ["summary"] = summary,
+                ["message"] = $"Processed {summary["processed"]} queued invoice(s): {summary["synced"]} synced, {summary["failed"]} failed."
             });
         }
 

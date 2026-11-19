@@ -110,37 +110,37 @@ public class SignedUrlMiddleware
         var host = request.Host.HasValue ? request.Host.Value : "127.0.0.1:8000";
         var path = request.Path.Value ?? "/";
 
-        var sortedParams = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        var originalOrderParams = new List<string>();
+        var providedSigBytes = Encoding.UTF8.GetBytes(sigVals.ToString().ToLowerInvariant());
 
-        foreach (var kv in request.Query)
+        bool MatchesExcluding(params string[] excludedKeys)
         {
-            if (kv.Key.Equals("signature", StringComparison.OrdinalIgnoreCase)) continue;
-            var val = kv.Value.ToString();
-            sortedParams[kv.Key] = val;
-            originalOrderParams.Add($"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(val)}");
+            var sorted = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            var orig = new List<string>();
+            foreach (var kv in request.Query)
+            {
+                if (kv.Key.Equals("signature", StringComparison.OrdinalIgnoreCase)) continue;
+                if (excludedKeys.Any(ex => kv.Key.Equals(ex, StringComparison.OrdinalIgnoreCase))) continue;
+                var val = kv.Value.ToString();
+                sorted[kv.Key] = val;
+                orig.Add($"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(val)}");
+            }
+
+            bool Check(string q)
+            {
+                var url = string.IsNullOrEmpty(q) ? $"{scheme}://{host}{path}" : $"{scheme}://{host}{path}?{q}";
+                var expectedBytes = Encoding.UTF8.GetBytes(ComputeHmacSha256(url).ToLowerInvariant());
+                return expectedBytes.Length == providedSigBytes.Length &&
+                       CryptographicOperations.FixedTimeEquals(expectedBytes, providedSigBytes);
+            }
+
+            var sortedQ = string.Join("&", sorted.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
+            return Check(sortedQ) || Check(string.Join("&", orig));
         }
 
-        var providedSig = sigVals.ToString();
-
-        var sortedQuery = string.Join("&", sortedParams.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
-        var sortedUrl = string.IsNullOrEmpty(sortedQuery) ? $"{scheme}://{host}{path}" : $"{scheme}://{host}{path}?{sortedQuery}";
-        var expectedSortedSig = ComputeHmacSha256(sortedUrl);
-
-        if (CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(expectedSortedSig.ToLowerInvariant()),
-                Encoding.UTF8.GetBytes(providedSig.ToLowerInvariant())))
-        {
-            return true;
-        }
-
-        var origQuery = string.Join("&", originalOrderParams);
-        var origUrl = string.IsNullOrEmpty(origQuery) ? $"{scheme}://{host}{path}" : $"{scheme}://{host}{path}?{origQuery}";
-        var expectedOrigSig = ComputeHmacSha256(origUrl);
-
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expectedOrigSig.ToLowerInvariant()),
-            Encoding.UTF8.GetBytes(providedSig.ToLowerInvariant()));
+        return MatchesExcluding()
+            || MatchesExcluding("download")
+            || MatchesExcluding("silent_print")
+            || MatchesExcluding("download", "silent_print");
     }
 
     private static string ComputeHmacSha256(string payload)

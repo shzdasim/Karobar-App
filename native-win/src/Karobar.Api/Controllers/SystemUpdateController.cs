@@ -36,7 +36,13 @@ public class SystemUpdateController : ApiControllerBase
                 var method = bridge.GetType().GetMethod("CheckForUpdatesAsync");
                 if (method != null)
                 {
-                    var taskObj = method.Invoke(bridge, new object?[] { isForce ? "force" : null, HttpContext.RequestAborted });
+                    JsonElement? forcePayload = null;
+                    if (isForce)
+                    {
+                        using var fDoc = JsonDocument.Parse("{\"force\":true}");
+                        forcePayload = fDoc.RootElement.Clone();
+                    }
+                    var taskObj = method.Invoke(bridge, new object?[] { forcePayload, HttpContext.RequestAborted });
                     if (taskObj is Task<object> resTask)
                     {
                         var result = await resTask;
@@ -147,12 +153,10 @@ public class SystemUpdateController : ApiControllerBase
             }
         }
 
-        return Ok(new
+        return StatusCode(503, new
         {
-            ok = true,
-            downloaded = true,
-            installing = mode != "download",
-            is_patch = GetBool(body, "is_patch", false)
+            ok = false,
+            message = "Desktop updater bridge is unavailable in this environment."
         });
     }
 

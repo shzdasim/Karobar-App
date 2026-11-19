@@ -204,7 +204,12 @@ public sealed class CubeKnowledgeRetriever
 
     public CubeKnowledgeRetriever(string? appRoot = null)
     {
-        _appRoot = Path.GetFullPath(appRoot ?? Directory.GetCurrentDirectory());
+        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
+            ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
+        var resolved = !string.IsNullOrWhiteSpace(appRoot) && Directory.Exists(appRoot)
+            ? appRoot
+            : (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot) ? envRoot : Directory.GetCurrentDirectory());
+        _appRoot = Path.GetFullPath(resolved);
     }
 
     public string GetProductVersion()

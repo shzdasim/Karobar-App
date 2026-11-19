@@ -49,9 +49,17 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
-        _appRoot = appRoot ?? Directory.GetCurrentDirectory();
+        _appRoot = ResolveAppRoot(appRoot);
         _cliRunner = cliRunner ?? new KarobarCliCommandRunner(_appRoot);
         _fbrEngine = fbrEngine ?? new FbrFiscalizationEngine();
+    }
+
+    private static string ResolveAppRoot(string? explicitRoot)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitRoot) && Directory.Exists(explicitRoot)) return Path.GetFullPath(explicitRoot);
+        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH") ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot)) return Path.GetFullPath(envRoot);
+        return Directory.Exists(AppContext.BaseDirectory) ? AppContext.BaseDirectory : Directory.GetCurrentDirectory();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

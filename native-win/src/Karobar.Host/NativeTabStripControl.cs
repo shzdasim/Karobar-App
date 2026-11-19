@@ -84,6 +84,16 @@ public sealed class NativeTabStripControl : Control
         Invalidate();
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            try { _tabContextMenu.Dispose(); } catch { }
+            try { Font?.Dispose(); } catch { }
+        }
+        base.Dispose(disposing);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;

@@ -48,7 +48,8 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             return Path.GetFullPath(explicitRoot);
         }
 
-        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
+        var envRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
+            ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
         if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot))
         {
             return Path.GetFullPath(envRoot);

@@ -584,7 +584,8 @@ public sealed class WebView2WindowManager : IDisposable
                 ? url
                 : $"{baseUrl}{(url.StartsWith('/') ? "" : "/")}{url}";
 
-            if (!Regex.IsMatch(resolvedUrl, @"[?&]silent_print=", RegexOptions.IgnoreCase))
+            if (!Regex.IsMatch(resolvedUrl, @"[?&]silent_print=", RegexOptions.IgnoreCase) &&
+                !Regex.IsMatch(resolvedUrl, @"[?&]signature=", RegexOptions.IgnoreCase))
             {
                 resolvedUrl += (resolvedUrl.Contains('?') ? "&" : "?") + "silent_print=1";
             }
@@ -1143,4 +1144,15 @@ internal static class Win32Native
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr FindWindowW(string? lpClassName, string? lpWindowName);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetWindowTextW(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
 }

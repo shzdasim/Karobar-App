@@ -2,8 +2,10 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
 using Karobar.Api.Middleware;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -14,8 +16,11 @@ namespace Karobar.Api.Controllers;
 [Authorize]
 public class SupplierLedgerController : ApiControllerBase
 {
-    public SupplierLedgerController(KarobarDb db) : base(db)
+    private readonly PrintTemplateRenderer _renderer;
+
+    public SupplierLedgerController(KarobarDb db, PrintTemplateRenderer? renderer = null) : base(db)
     {
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     public static async Task<Dictionary<long, decimal>> SumAllocatedByInvoiceIdsAsync(
@@ -1105,42 +1110,36 @@ public class SupplierLedgerController : ApiControllerBase
         string? to)
     {
         var supplierId = Convert.ToInt64(supplier["id"]);
-        var supplierName = WebUtility.HtmlEncode(supplier.GetValueOrDefault("name")?.ToString() ?? $"Supplier #{supplierId}");
-        var setting = await Db.HasTableAsync("settings")
-            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
-            : null;
-        var storeName = WebUtility.HtmlEncode(setting?.GetValueOrDefault("store_name")?.ToString() ?? "KAROBAR PHARMACY & ERP");
-
+        var supplierName = supplier.GetValueOrDefault("name")?.ToString() ?? $"Supplier #{supplierId}";
+        var settingVm = await PrintViewModelMapper.LoadPrintSettingAsync(Db);
         var (rows, summary) = await BuildSupplierLedgerViewAsync(supplierId, from, to);
 
-        var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Supplier Ledger Statement</title>");
-        sb.AppendLine("<style>body{font-family:system-ui,-apple-system,sans-serif;margin:20px;color:#0f172a;font-size:12px;} table{width:100%;border-collapse:collapse;margin-top:14px;} th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;} th{background:#f1f5f9;} .num{text-align:right;}</style>");
-        sb.AppendLine("</head><body>");
-        sb.AppendLine($"<h2>{storeName} — Supplier Ledger Statement</h2>");
-        sb.AppendLine($"<p><strong>Supplier:</strong> {supplierName}</p>");
-        if (!string.IsNullOrWhiteSpace(from) || !string.IsNullOrWhiteSpace(to))
+        var rowVms = rows.Select(r => new PrintLedgerRowViewModel
         {
-            sb.AppendLine($"<p><strong>Period:</strong> {WebUtility.HtmlEncode(from ?? "Start")} to {WebUtility.HtmlEncode(to ?? "Present")}</p>");
-        }
-        sb.AppendLine("<table><thead><tr><th>#</th><th>Date</th><th>Ref / Posted #</th><th>Description</th><th class=\"num\">Invoiced</th><th class=\"num\">Paid on Inv</th><th class=\"num\">Payment Debited</th><th class=\"num\">Running Balance</th></tr></thead><tbody>");
-        foreach (var r in rows)
+            EntryDate = r.GetValueOrDefault("entry_date")?.ToString() ?? "",
+            EntryType = r.GetValueOrDefault("entry_type")?.ToString() ?? "invoice",
+            PostedNumber = r.GetValueOrDefault("posted_number")?.ToString(),
+            InvoiceNumber = r.GetValueOrDefault("invoice_number")?.ToString(),
+            InvoiceTotal = StocktakeService.ToDecimal(r.GetValueOrDefault("invoice_total")),
+            TotalPaid = StocktakeService.ToDecimal(r.GetValueOrDefault("total_paid")),
+            DebitedAmount = StocktakeService.ToDecimal(r.GetValueOrDefault("debited_amount")),
+            PaymentRef = r.GetValueOrDefault("payment_ref")?.ToString(),
+            CreditRemainingCalc = StocktakeService.ToDecimal(r.GetValueOrDefault("credit_remaining_calc")),
+            RunningBalance = StocktakeService.ToDecimal(r.GetValueOrDefault("running_balance")),
+            Description = r.GetValueOrDefault("description")?.ToString()
+        }).ToList();
+
+        var summaryVm = new PrintLedgerSummaryViewModel
         {
-            var seq = r.GetValueOrDefault("seq");
-            var dt = WebUtility.HtmlEncode(r.GetValueOrDefault("entry_date")?.ToString() ?? "");
-            var refNo = WebUtility.HtmlEncode(r.GetValueOrDefault("posted_number")?.ToString() ?? r.GetValueOrDefault("invoice_number")?.ToString() ?? "");
-            var desc = WebUtility.HtmlEncode(r.GetValueOrDefault("description")?.ToString() ?? "");
-            var invTot = StocktakeService.ToDecimal(r.GetValueOrDefault("invoice_total"));
-            var totPaid = StocktakeService.ToDecimal(r.GetValueOrDefault("total_paid"));
-            var deb = StocktakeService.ToDecimal(r.GetValueOrDefault("debited_amount"));
-            var runBal = StocktakeService.ToDecimal(r.GetValueOrDefault("running_balance"));
-            sb.AppendLine($"<tr><td>{seq}</td><td>{dt}</td><td>{refNo}</td><td>{desc}</td><td class=\"num\">{invTot:N2}</td><td class=\"num\">{totPaid:N2}</td><td class=\"num\">{deb:N2}</td><td class=\"num\">{runBal:N2}</td></tr>");
-        }
-        sb.AppendLine("</tbody></table>");
-        var netBal = StocktakeService.ToDecimal(summary.GetValueOrDefault("net_balance"));
-        sb.AppendLine($"<p style=\"margin-top:12px;text-align:right;\"><strong>Net Payable Balance: {netBal:N2}</strong></p>");
-        sb.AppendLine("</body></html>");
-        return sb.ToString();
+            OpeningBalance = StocktakeService.ToDecimal(summary.GetValueOrDefault("opening_balance")),
+            TotalInvoiced = StocktakeService.ToDecimal(summary.GetValueOrDefault("total_invoiced")),
+            PaidOnInvoice = StocktakeService.ToDecimal(summary.GetValueOrDefault("paid_on_invoice")),
+            PaymentsDebited = StocktakeService.ToDecimal(summary.GetValueOrDefault("payments_debited")),
+            NetBalance = StocktakeService.ToDecimal(summary.GetValueOrDefault("net_balance"))
+        };
+
+        var paperSize = string.Equals(type, "thermal", StringComparison.OrdinalIgnoreCase) ? "thermal" : "a4";
+        return _renderer.RenderPartyLedger("supplier", paperSize, supplierName, rowVms, summaryVm, settingVm, from, to, PrintViewModelMapper.QueryToDict(Request.Query));
     }
 
     private static string? DateStr(string? value, string? fallback = null)

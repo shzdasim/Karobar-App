@@ -516,9 +516,9 @@ public class TerminalController : ApiControllerBase
             recent_logs = Array.Empty<string>(),
             cli_commands = new
             {
-                status = "Karobar.Host.exe --cli status",
-                export_sqlite = "Karobar.Host.exe --cli karobar:export-sqlite",
-                import_sqlite = "Karobar.Host.exe --cli karobar:import-sqlite"
+                status = "Karobar-Native.exe --cli install --upgrade-only",
+                export_sqlite = "Karobar-Native.exe --cli karobar:export-sqlite",
+                import_sqlite = "Karobar-Native.exe --cli karobar:import-sqlite"
             }
         });
     }
@@ -649,7 +649,7 @@ public class TerminalController : ApiControllerBase
             terminalName = termName,
             pairingToken = setting?.GetValueOrDefault("network_server_token"),
             generatedAt = DateTime.UtcNow.ToString("O"),
-            instructions = "Place this file at %APPDATA%\\Karobar App\\network-config.json on the Windows Terminal PC."
+            instructions = "Place this file at %APPDATA%\\Karobar-App-Native\\network-config.json on the Windows Terminal PC."
         };
 
         var slug = Regex.Replace(termName.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
@@ -662,7 +662,7 @@ public class TerminalController : ApiControllerBase
     private async Task<Dictionary<string, object?>> BuildServerHealthSummaryAsync(List<Dictionary<string, object?>> terminals)
     {
         var lanIps = DetectLanIpv4Addresses();
-        var port = Request.Host.Port ?? 8000;
+        var port = Request.Host.Port ?? 18960;
         var scheme = string.IsNullOrWhiteSpace(Request.Scheme) ? "http" : Request.Scheme;
         var primaryIp = lanIps.FirstOrDefault() ?? "127.0.0.1";
         var recommendedUrl = port is 80 or 443 ? $"{scheme}://{primaryIp}" : $"{scheme}://{primaryIp}:{port}";

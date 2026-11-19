@@ -91,6 +91,7 @@ public sealed class NetworkConfigManager
 
     private readonly object _syncLock = new();
     private readonly string _appRoot;
+    private readonly string? _userDataDirOverride;
     private NetworkConfig? _networkConfigCache;
     private int _activePort = DefaultPort;
 
@@ -105,10 +106,11 @@ public sealed class NetworkConfigManager
         PropertyNameCaseInsensitive = true
     };
 
-    public NetworkConfigManager(string? appRoot = null, int activePort = DefaultPort)
+    public NetworkConfigManager(string? appRoot = null, int activePort = DefaultPort, string? userDataDirOverride = null)
     {
         _appRoot = string.IsNullOrWhiteSpace(appRoot) ? ResolveAppRoot() : Path.GetFullPath(appRoot);
         _activePort = activePort > 0 ? activePort : DefaultPort;
+        _userDataDirOverride = string.IsNullOrWhiteSpace(userDataDirOverride) ? null : Path.GetFullPath(userDataDirOverride);
     }
 
     public string AppRoot => _appRoot;
@@ -203,7 +205,7 @@ public sealed class NetworkConfigManager
         var paths = new List<string>();
         try
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var appData = _userDataDirOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             if (!string.IsNullOrWhiteSpace(appData))
             {
                 paths.Add(Path.Combine(appData, AppDataFolderName, "network-mode.json"));
@@ -415,6 +417,7 @@ public sealed class NetworkConfigManager
 
         if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
         {
+            headers["X-Network-Token"] = cfg.PairingToken;
             headers["X-Terminal-Token"] = cfg.PairingToken;
         }
 
@@ -433,7 +436,7 @@ public sealed class NetworkConfigManager
             return new ServerConnectionTestResult
             {
                 Ok = false,
-                Error = "Please enter a valid Server URL (e.g. http://192.168.1.10:8000)."
+                Error = "Please enter a valid Server URL (e.g. http://192.168.1.10:18960)."
             };
         }
 
@@ -487,6 +490,11 @@ public sealed class NetworkConfigManager
         request.Headers.TryAddWithoutValidation("X-Terminal-Hostname", hostname);
         request.Headers.TryAddWithoutValidation("X-Terminal-OS", osPlatform);
         request.Headers.TryAddWithoutValidation("X-Terminal-Version", appVersion);
+        if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-Network-Token", cfg.PairingToken);
+            request.Headers.TryAddWithoutValidation("X-Terminal-Token", cfg.PairingToken);
+        }
 
         try
         {

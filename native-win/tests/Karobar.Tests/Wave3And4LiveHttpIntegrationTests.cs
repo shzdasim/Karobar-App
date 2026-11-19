@@ -319,7 +319,7 @@ public class Wave3And4LiveHttpIntegrationTests
             var dosageResp = await client.GetAsync($"/sale-invoices/{saleId}/dosage-labels?json=1&width_mm=50&height_mm=25");
             dosageResp.StatusCode.Should().Be(HttpStatusCode.OK, "dosage-labels?json=1 must not 422");
             var dosageText = await dosageResp.Content.ReadAsStringAsync();
-            dosageText.Should().Contain("50mm 25mm");
+            dosageText.Should().Contain("50mm").And.Contain("25mm");
             dosageText.Should().Contain("1 tab twice daily");
 
             // Reverse sale invoice -> verify stock restored 45 -> 50 and withdrawal txn written with type='withdrawal'

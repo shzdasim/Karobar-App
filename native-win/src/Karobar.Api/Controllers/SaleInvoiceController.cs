@@ -3,7 +3,12 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
+using Karobar.Background;
+using Karobar.Data;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -23,8 +28,15 @@ public class SaleInvoiceController : ApiControllerBase
     private readonly ReturnSettlementService _settlementService;
     private readonly DocumentAuditService _auditService;
     private readonly OperatorPinService _operatorPinService;
+    private readonly PrintTemplateRenderer _renderer;
+    private readonly FbrFiscalizationEngine? _fbrEngine;
+    private readonly KarobarDbContext? _dbContext;
 
-    public SaleInvoiceController(KarobarDb db) : base(db)
+    public SaleInvoiceController(
+        KarobarDb db,
+        PrintTemplateRenderer? renderer = null,
+        FbrFiscalizationEngine? fbrEngine = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
         _sequenceService = new DocumentSequenceService(db);
         _calculationService = new InvoiceCalculationService(db);
@@ -34,6 +46,9 @@ public class SaleInvoiceController : ApiControllerBase
         _settlementService = new ReturnSettlementService(db);
         _auditService = new DocumentAuditService(db);
         _operatorPinService = new OperatorPinService(db);
+        _renderer = renderer ?? new PrintTemplateRenderer();
+        _fbrEngine = fbrEngine;
+        _dbContext = dbContext;
     }
 
     [HttpGet("new-code")]
@@ -563,6 +578,24 @@ public class SaleInvoiceController : ApiControllerBase
 
                 await tx.CommitAsync();
                 SyncPulseService.Bump("stock", "drafts", "drawer");
+
+                if (_fbrEngine != null && _dbContext != null && await Db.HasTableAsync("settings"))
+                {
+                    try
+                    {
+                        var st = await Db.QuerySingleOrDefaultAsync("SELECT fbr_enabled, fbr_auto_sync FROM settings ORDER BY id ASC LIMIT 1");
+                        var fbrOn = st != null && st.GetValueOrDefault("fbr_enabled") is true or 1 or 1L;
+                        var fbrAuto = st != null && st.GetValueOrDefault("fbr_auto_sync") is true or 1 or 1L;
+                        if (fbrOn && fbrAuto)
+                        {
+                            await _fbrEngine.FiscalizeSaleInvoiceAsync(_dbContext, (int)invoiceId, force: false, HttpContext?.RequestAborted ?? CancellationToken.None);
+                        }
+                    }
+                    catch
+                    {
+                        // Never block POS checkout if FBR gateway is unreachable
+                    }
+                }
 
                 var loaded = (await LoadSaleInvoiceAsync(invoiceId))!;
                 await _auditService.RecordCreateAsync("App\\Models\\SaleInvoice", invoiceId, loaded, operatorUserId);
@@ -1788,13 +1821,46 @@ public class SaleInvoiceController : ApiControllerBase
         var loaded = await LoadSaleInvoiceAsync(saleInvoice);
         if (loaded == null) return NotFound(new { message = "Sale invoice not found." });
 
-        var typeParam = string.IsNullOrWhiteSpace(type) ? "" : $"&type={Uri.EscapeDataString(type)}";
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        var url = $"{baseUrl}/print/sale-invoices/{saleInvoice}?silent_print=1{typeParam}";
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (!string.IsNullOrWhiteSpace(type)) qParams["type"] = type;
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/sale-invoices/{saleInvoice}", qParams, TimeSpan.FromMinutes(15));
         var html = await RenderInvoicePrintHtmlAsync(loaded, type);
 
         return Ok(new Dictionary<string, object?>
         {
+            ["url"] = url,
+            ["html"] = html
+        });
+    }
+
+    [HttpGet("{saleInvoice:long}/dosage-labels-url")]
+    public async Task<IActionResult> DosageLabelsUrl(
+        long saleInvoice,
+        [FromQuery(Name = "width_mm")] double? widthMm = null,
+        [FromQuery(Name = "height_mm")] double? heightMm = null,
+        [FromQuery(Name = "printer_mode")] string? printerMode = null,
+        [FromQuery(Name = "auto_print")] string? autoPrintRaw = null)
+    {
+        if (!await CanAsync("sale-invoice.view", "sale-invoice.create", "barcode-pos.create"))
+        {
+            return Forbidden();
+        }
+
+        var loaded = await LoadSaleInvoiceAsync(saleInvoice);
+        if (loaded == null) return NotFound(new { message = "Sale invoice not found." });
+
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (widthMm.HasValue) qParams["width_mm"] = widthMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (heightMm.HasValue) qParams["height_mm"] = heightMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(printerMode)) qParams["printer_mode"] = printerMode;
+        if (!string.IsNullOrWhiteSpace(autoPrintRaw)) qParams["auto_print"] = autoPrintRaw;
+
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/sale-invoices/{saleInvoice}/dosage-labels", qParams, TimeSpan.FromMinutes(15));
+        var html = await RenderDosageLabelsHtmlAsync(loaded, widthMm, heightMm, false);
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["ok"] = true,
             ["url"] = url,
             ["html"] = html
         });
@@ -1821,6 +1887,19 @@ public class SaleInvoiceController : ApiControllerBase
         [FromQuery(Name = "auto_print")] string? autoPrintRaw = null,
         [FromQuery(Name = "silent_print")] string? silentPrintRaw = null)
     {
+        var hasValidSig = SignedUrlMiddleware.ValidateSignedRequest(Request);
+        if (!hasValidSig)
+        {
+            if (CurrentUserId == null)
+            {
+                return Unauthorized(new { message = "Unauthenticated. Provide a valid signed URL or Bearer token." });
+            }
+            if (!await CanAsync("sale-invoice.view", "sale-invoice.create", "barcode-pos.create"))
+            {
+                return Forbidden();
+            }
+        }
+
         var loaded = await LoadSaleInvoiceAsync(invoice);
         if (loaded == null) return NotFound("Sale invoice not found.");
 
@@ -2571,47 +2650,85 @@ public class SaleInvoiceController : ApiControllerBase
         return rows;
     }
 
-    private async Task<string> RenderInvoicePrintHtmlAsync(Dictionary<string, object?> invoice, string? type)
+    private PrintInvoiceViewModel MapToPrintInvoiceVm(Dictionary<string, object?> invoice)
     {
-        var setting = await Db.HasTableAsync("settings")
-            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
-            : null;
-
-        var storeName = WebUtility.HtmlEncode(setting?.GetValueOrDefault("store_name")?.ToString() ?? "KAROBAR PHARMACY & STORE");
-        var storePhone = WebUtility.HtmlEncode(setting?.GetValueOrDefault("phone_number")?.ToString() ?? "");
-        var storeAddress = WebUtility.HtmlEncode(setting?.GetValueOrDefault("address")?.ToString() ?? "");
-        var postedNumber = WebUtility.HtmlEncode(invoice.GetValueOrDefault("posted_number")?.ToString() ?? "");
-        var date = WebUtility.HtmlEncode(invoice.GetValueOrDefault("date")?.ToString() ?? "");
         var cust = invoice.GetValueOrDefault("customer") as Dictionary<string, object?>;
-        var custName = WebUtility.HtmlEncode(cust?.GetValueOrDefault("name")?.ToString() ?? "Walk-In Customer");
-        var total = ToDouble(invoice.GetValueOrDefault("total"));
-        var received = ToDouble(invoice.GetValueOrDefault("total_receive"));
-        var discount = ToDouble(invoice.GetValueOrDefault("discount_amount"));
-        var tax = ToDouble(invoice.GetValueOrDefault("tax_amount"));
+        var user = invoice.GetValueOrDefault("user") as Dictionary<string, object?>;
         var items = invoice.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new List<Dictionary<string, object?>>();
 
-        var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Invoice " + postedNumber + "</title>");
-        sb.AppendLine("<style>body{font-family:system-ui,-apple-system,sans-serif;margin:12px;color:#0f172a;font-size:12px;}table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border-bottom:1px solid #e2e8f0;padding:5px 4px;text-align:left;}th{font-weight:700;background:#f8fafc;}.right{text-align:right;}.center{text-align:center;}</style></head><body>");
-        sb.AppendLine($"<div class=\"center\"><h2 style=\"margin:0 0 4px;\">{storeName}</h2><div>{storeAddress}</div><div>{storePhone}</div></div>");
-        sb.AppendLine($"<hr/><div style=\"display:flex;justify-content:space-between;\"><div><strong>Invoice:</strong> {postedNumber}<br/><strong>Customer:</strong> {custName}</div><div><strong>Date:</strong> {date}</div></div>");
-        sb.AppendLine("<table><thead><tr><th>Item</th><th class=\"right\">Qty</th><th class=\"right\">Price</th><th class=\"right\">Disc%</th><th class=\"right\">Total</th></tr></thead><tbody>");
+        DateTime? invDate = DateTime.TryParse(invoice.GetValueOrDefault("date")?.ToString(), out var dt) ? dt : DateTime.Now;
+        var vm = new PrintInvoiceViewModel
+        {
+            Id = (int)ToLong(invoice.GetValueOrDefault("id")),
+            PostedNumber = invoice.GetValueOrDefault("posted_number")?.ToString() ?? "",
+            Date = invDate,
+            SaleType = invoice.GetValueOrDefault("sale_type")?.ToString() ?? "retail",
+            InvoiceType = invoice.GetValueOrDefault("invoice_type")?.ToString() ?? "debit",
+            UserName = user?.GetValueOrDefault("name")?.ToString() ?? invoice.GetValueOrDefault("user_name")?.ToString(),
+            CustomerId = ToLong(invoice.GetValueOrDefault("customer_id")) > 0 ? (int)ToLong(invoice.GetValueOrDefault("customer_id")) : null,
+            CustomerName = cust?.GetValueOrDefault("name")?.ToString() ?? "Walk-In Customer",
+            CustomerPhone = cust?.GetValueOrDefault("phone")?.ToString(),
+            CustomerAddress = cust?.GetValueOrDefault("address")?.ToString(),
+            DoctorName = invoice.GetValueOrDefault("doctor_name")?.ToString(),
+            PatientName = invoice.GetValueOrDefault("patient_name")?.ToString(),
+            Remarks = invoice.GetValueOrDefault("remarks")?.ToString(),
+            GrossAmount = (decimal)ToDouble(invoice.GetValueOrDefault("gross_amount")),
+            DiscountAmount = (decimal)ToDouble(invoice.GetValueOrDefault("discount_amount")),
+            DiscountPercentage = (decimal)ToDouble(invoice.GetValueOrDefault("discount_percentage")),
+            TaxAmount = (decimal)ToDouble(invoice.GetValueOrDefault("tax_amount")),
+            TaxPercentage = (decimal)ToDouble(invoice.GetValueOrDefault("tax_percentage")),
+            Total = (decimal)ToDouble(invoice.GetValueOrDefault("total")),
+            TotalReceive = (decimal)ToDouble(invoice.GetValueOrDefault("total_receive")),
+            FbrInvoiceNumber = invoice.GetValueOrDefault("fbr_invoice_number")?.ToString(),
+            FbrQrData = invoice.GetValueOrDefault("fbr_qr_data")?.ToString(),
+            FbrUsin = invoice.GetValueOrDefault("fbr_usin")?.ToString(),
+            FbrPosFee = (decimal)ToDouble(invoice.GetValueOrDefault("fbr_pos_fee"))
+        };
 
         foreach (var it in items)
         {
             var prod = it.GetValueOrDefault("product") as Dictionary<string, object?>;
-            var pName = WebUtility.HtmlEncode(prod?.GetValueOrDefault("name")?.ToString() ?? $"Product #{it.GetValueOrDefault("product_id")}");
-            var qty = ToLong(it.GetValueOrDefault("quantity"));
-            var price = ToDouble(it.GetValueOrDefault("price"));
-            var discPct = ToDouble(it.GetValueOrDefault("item_discount_percentage"));
-            var subTotal = ToDouble(it.GetValueOrDefault("sub_total"));
-            sb.AppendLine($"<tr><td>{pName}</td><td class=\"right\">{qty}</td><td class=\"right\">{price:N2}</td><td class=\"right\">{discPct:N1}%</td><td class=\"right\">{subTotal:N2}</td></tr>");
+            vm.Items.Add(new PrintInvoiceItemViewModel
+            {
+                ProductName = prod?.GetValueOrDefault("name")?.ToString() ?? $"Product #{it.GetValueOrDefault("product_id")}",
+                Barcode = prod?.GetValueOrDefault("barcode")?.ToString(),
+                ProductCode = prod?.GetValueOrDefault("product_code")?.ToString(),
+                PackSize = Math.Max(1, (int)ToLong(it.GetValueOrDefault("pack_size"))),
+                Quantity = (decimal)ToDouble(it.GetValueOrDefault("quantity")),
+                PackQuantity = (decimal)ToDouble(it.GetValueOrDefault("pack_quantity")),
+                UnitQuantity = (decimal)ToDouble(it.GetValueOrDefault("unit_quantity")),
+                Bonus = (int)ToLong(it.GetValueOrDefault("bonus")),
+                PackBonus = (decimal)ToDouble(it.GetValueOrDefault("pack_bonus")),
+                Price = (decimal)ToDouble(it.GetValueOrDefault("price")),
+                PackPrice = (decimal)ToDouble(it.GetValueOrDefault("pack_price")),
+                ItemDiscountPercentage = (decimal)ToDouble(it.GetValueOrDefault("item_discount_percentage")),
+                SubTotal = (decimal)ToDouble(it.GetValueOrDefault("sub_total")),
+                BatchNumber = it.GetValueOrDefault("batch_number")?.ToString(),
+                Expiry = it.GetValueOrDefault("expiry")?.ToString(),
+                DosageInstruction = it.GetValueOrDefault("dosage_instruction")?.ToString()
+            });
         }
 
-        sb.AppendLine("</tbody></table>");
-        sb.AppendLine($"<div style=\"margin-top:10px;text-align:right;\"><div><strong>Discount:</strong> {discount:N2}</div><div><strong>Tax:</strong> {tax:N2}</div><div style=\"font-size:14px;\"><strong>Total:</strong> {total:N2}</div><div><strong>Received:</strong> {received:N2}</div></div>");
-        sb.AppendLine("</body></html>");
-        return sb.ToString();
+        return vm;
+    }
+
+    private async Task<string> RenderInvoicePrintHtmlAsync(Dictionary<string, object?> invoice, string? type)
+    {
+        var settingRow = await Db.HasTableAsync("settings")
+            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
+            : null;
+        var settingVm = PrintViewModelMapper.MapPrintSetting(settingRow);
+        var invVm = MapToPrintInvoiceVm(invoice);
+        var queryOverrides = PrintViewModelMapper.QueryToDict(Request.Query);
+
+        var defaultPrinterType = settingRow?.GetValueOrDefault("printer_type")?.ToString()?.Trim().ToLowerInvariant() ?? "thermal";
+        var effectiveType = string.IsNullOrWhiteSpace(type) ? defaultPrinterType : type.Trim().ToLowerInvariant();
+        if (effectiveType == "a4")
+        {
+            return _renderer.RenderA4SaleInvoice(settingVm.A4Template, invVm, settingVm, queryOverrides);
+        }
+
+        return _renderer.RenderThermalSaleInvoice(settingVm.ThermalTemplate, invVm, settingVm, queryOverrides);
     }
 
     private async Task<string> RenderDosageLabelsHtmlAsync(
@@ -2620,42 +2737,28 @@ public class SaleInvoiceController : ApiControllerBase
         double? heightMm = null,
         bool autoPrint = false)
     {
-        var setting = await Db.HasTableAsync("settings")
+        var settingRow = await Db.HasTableAsync("settings")
             ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
             : null;
-
-        var storeName = WebUtility.HtmlEncode(setting?.GetValueOrDefault("store_name")?.ToString() ?? "Karobar Pharmacy");
-        var postedNumber = WebUtility.HtmlEncode(invoice.GetValueOrDefault("posted_number")?.ToString() ?? "");
-        var cust = invoice.GetValueOrDefault("customer") as Dictionary<string, object?>;
-        var patientName = WebUtility.HtmlEncode(invoice.GetValueOrDefault("patient_name")?.ToString() ?? cust?.GetValueOrDefault("name")?.ToString() ?? "Patient");
-        var items = invoice.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new List<Dictionary<string, object?>>();
-
-        var w = widthMm is > 10 and <= 210 ? widthMm.Value : 50;
-        var h = heightMm is > 10 and <= 297 ? heightMm.Value : 25;
-
-        var wStr = w.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var hStr = h.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Dosage Labels " + postedNumber + "</title>");
-        sb.AppendLine($"<style>@page{{size:{wStr}mm {hStr}mm;margin:1mm;}}body{{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:2px;font-size:10px;}}.label{{width:{wStr}mm;min-height:{hStr}mm;box-sizing:border-box;border:1px solid #000;padding:4px;margin-bottom:4px;page-break-after:always;page-break-inside:avoid;}}</style></head><body>");
-
-        foreach (var it in items)
+        var settingVm = PrintViewModelMapper.MapPrintSetting(settingRow);
+        var stickerCfg = PrintViewModelMapper.MapStickerConfig(settingRow);
+        if (widthMm is > 10 and <= 210) stickerCfg.WidthMm = (int)Math.Round(widthMm.Value);
+        if (heightMm is > 10 and <= 297) stickerCfg.HeightMm = (int)Math.Round(heightMm.Value);
+        if (Request.Query.TryGetValue("printer_mode", out var pm) && pm.ToString() is "receipt_roll" or "label_printer")
         {
-            var dosage = (it.GetValueOrDefault("dosage_instruction")?.ToString() ?? "").Trim();
-            if (string.IsNullOrEmpty(dosage)) continue;
-
-            var prod = it.GetValueOrDefault("product") as Dictionary<string, object?>;
-            var pName = WebUtility.HtmlEncode(prod?.GetValueOrDefault("name")?.ToString() ?? $"Product #{it.GetValueOrDefault("product_id")}");
-            var qty = ToLong(it.GetValueOrDefault("quantity"));
-            sb.AppendLine($"<div class=\"label\"><div><strong>{storeName}</strong> - {postedNumber}</div><div><strong>Patient:</strong> {patientName}</div><div><strong>{pName}</strong> (Qty: {qty})</div><div style=\"margin-top:3px;font-weight:700;\">{WebUtility.HtmlEncode(dosage)}</div></div>");
+            stickerCfg.PrinterMode = pm.ToString();
         }
 
+        var invVm = MapToPrintInvoiceVm(invoice);
+        var dosageItems = invVm.Items.Where(i => !string.IsNullOrWhiteSpace(i.DosageInstruction)).ToList();
+        if (dosageItems.Count > 0) invVm.Items = dosageItems;
+
+        var html = _renderer.RenderDosageStickers(invVm, settingVm, stickerCfg, PrintViewModelMapper.QueryToDict(Request.Query));
         if (autoPrint)
         {
-            sb.AppendLine("<script>window.onload=function(){try{window.print();}catch(e){}};</script>");
+            html = html.Replace("</body>", "<script>window.onload=function(){try{window.print();}catch(e){}};</script></body>", StringComparison.OrdinalIgnoreCase);
         }
-        sb.AppendLine("</body></html>");
-        return sb.ToString();
+        return html;
     }
 
     public static (Dictionary<string, object?> Data, List<Dictionary<string, object?>> Items, List<Dictionary<string, object?>> SplitPayments) ParseSalePayload(Dictionary<string, JsonElement> body)

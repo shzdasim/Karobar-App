@@ -366,8 +366,8 @@ public sealed class DocumentShareEngine
     public string BuildSignedPdfUrl(
         string type,
         IDictionary<string, string?> queryParams,
-        string baseUrl = "http://127.0.0.1:18942",
-        string appKey = "karobar-native-secret-key")
+        string baseUrl = "http://127.0.0.1:18960",
+        string? appKey = null)
     {
         var expires = DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeSeconds();
         var filtered = new SortedDictionary<string, string>(StringComparer.Ordinal);
@@ -380,9 +380,13 @@ public sealed class DocumentShareEngine
         }
         filtered["expires"] = expires.ToString(CultureInfo.InvariantCulture);
 
+        var effectiveKey = !string.IsNullOrWhiteSpace(appKey)
+            ? appKey
+            : (Environment.GetEnvironmentVariable("APP_KEY") ?? "karobar-native-win-signed-url-secret-key-2026");
+
         var queryString = string.Join("&", filtered.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
         var unsignedUrl = $"{baseUrl.TrimEnd('/')}/print/shared-pdf/{Uri.EscapeDataString(type)}?{queryString}";
-        var keyBytes = Encoding.UTF8.GetBytes(string.IsNullOrWhiteSpace(appKey) ? "karobar-native-secret-key" : appKey);
+        var keyBytes = Encoding.UTF8.GetBytes(effectiveKey);
         var sigBytes = HMACSHA256.HashData(keyBytes, Encoding.UTF8.GetBytes(unsignedUrl));
         var signature = Convert.ToHexStringLower(sigBytes);
 
