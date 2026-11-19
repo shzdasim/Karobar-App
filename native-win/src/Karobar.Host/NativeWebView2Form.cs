@@ -726,10 +726,7 @@ public sealed class NativeWebView2Form : Form
             case "close-others":
                 if (_workspace.ActiveTabId != null)
                 {
-                    foreach (var closedId in _workspace.CloseOtherTabs(_workspace.ActiveTabId))
-                    {
-                        DisposeTabWebView(closedId);
-                    }
+                    DisposeTabControls(_workspace.CloseOtherTabs(_workspace.ActiveTabId));
                     SyncActiveTabVisuals();
                 }
                 return true;
