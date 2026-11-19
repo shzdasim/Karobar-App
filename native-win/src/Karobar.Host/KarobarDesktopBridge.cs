@@ -1090,6 +1090,14 @@ public sealed class KarobarDesktopBridge
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(versionFile, Encoding.UTF8));
                 var root = doc.RootElement;
+                var runtimeLayout = root.TryGetProperty("runtime_layout", out var rl) && rl.ValueKind == JsonValueKind.String
+                    ? rl.GetString() ?? ""
+                    : "";
+                if (string.IsNullOrWhiteSpace(runtimeLayout) &&
+                    File.Exists(Path.Combine(_networkConfig.AppRoot, "Karobar.Core.dll")))
+                {
+                    runtimeLayout = "split-v2";
+                }
                 return new LocalVersionMeta
                 {
                     AppName = root.TryGetProperty("app_name", out var an) && an.ValueKind == JsonValueKind.String
@@ -1106,8 +1114,13 @@ public sealed class KarobarDesktopBridge
                         : defaults.CommitSha,
                     Repository = root.TryGetProperty("repository", out var rp) && rp.ValueKind == JsonValueKind.String
                         ? rp.GetString() ?? defaults.Repository
-                        : defaults.Repository
+                        : defaults.Repository,
+                    RuntimeLayout = runtimeLayout
                 };
+            }
+            if (File.Exists(Path.Combine(_networkConfig.AppRoot, "Karobar.Core.dll")))
+            {
+                defaults.RuntimeLayout = "split-v2";
             }
         }
         catch
@@ -1488,7 +1501,6 @@ public sealed class KarobarDesktopBridge
                 if (isPatch)
                 {
                     LaunchWindowsDifferentialPatchSwap(tempFilePath, installDir);
-                    _windowManager.OnQuitRequested?.Invoke();
                 }
                 else
                 {
@@ -1502,14 +1514,18 @@ public sealed class KarobarDesktopBridge
                         // Ignore flag error
                     }
 
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = tempFilePath,
-                        Arguments = $"/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 \"/DIR={installDir}\"",
-                        UseShellExecute = true
-                    });
-                    _windowManager.OnQuitRequested?.Invoke();
+                    // Wait for Karobar-Native.exe to exit & release Global\KarobarNativeErpV2Mutex BEFORE starting Inno Setup
+                    LaunchWindowsInstallerAfterExit(tempFilePath, installDir);
                 }
+
+                // Allow the IPC/HTTP response to flush cleanly, then guarantee a prompt exit so DLL locks release immediately
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(350);
+                    try { _windowManager.OnQuitRequested?.Invoke(); } catch { }
+                    await Task.Delay(1500);
+                    Environment.Exit(0);
+                });
             }
 
             return new { ok = true, installing = true, is_patch = isPatch };
@@ -1561,11 +1577,37 @@ public sealed class KarobarDesktopBridge
         return string.Equals(actualHex, expectedSha256Hex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
     }
 
+    private static bool CanWriteToInstallDirectory(string installDir)
+    {
+        try
+        {
+            var probe = Path.Combine(installDir, $".karobar-patch-probe-{Environment.ProcessId}.tmp");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+
+            // Also test overwriting an existing binary/metadata file attribute check if present
+            var versionFile = Path.Combine(installDir, "public", "version.json");
+            if (File.Exists(versionFile))
+            {
+                using var fs = new FileStream(versionFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static void LaunchWindowsDifferentialPatchSwap(string patchZipPath, string installDir)
     {
         var pid = Environment.ProcessId;
         var helperScriptPath = Path.Combine(Path.GetTempPath(), $"karobar-apply-patch-{pid}.ps1");
         var exePath = Path.Combine(installDir, Program.ExecutableFileName);
+        var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), NetworkConfigManager.AppDataFolderName);
+        try { Directory.CreateDirectory(logDir); } catch { }
+        var logPath = Path.Combine(logDir, "patch-update.log");
+        var needsElevation = !CanWriteToInstallDirectory(installDir);
 
         var ps1 = $$"""
             $ErrorActionPreference = 'Stop'
@@ -1573,61 +1615,152 @@ public sealed class KarobarDesktopBridge
             $zipPath = '{{patchZipPath.Replace("'", "''")}}'
             $installDir = '{{installDir.Replace("'", "''")}}'
             $exePath = '{{exePath.Replace("'", "''")}}'
+            $logPath = '{{logPath.Replace("'", "''")}}'
             $stageDir = Join-Path $env:TEMP "karobar-patch-stage-$targetPid"
 
-            for ($i = 0; $i -lt 60; $i++) {
-                if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
-                Start-Sleep -Milliseconds 250
+            function Write-Log([string]$msg) {
+                try {
+                    Add-Content -Path $logPath -Value ("[" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + "] " + $msg) -Encoding UTF8
+                } catch {}
             }
 
-            if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue }
-            Expand-Archive -Path $zipPath -DestinationPath $stageDir -Force
+            Write-Log "=== Starting differential OTA patch swap (PID=$targetPid, Zip=$zipPath, InstallDir=$installDir) ==="
 
-            $protected = @(
-                'database\database.sqlite',
-                'storage\app\.machine-id',
-                'storage\app\.license-clock',
-                'storage\app\public\',
-                'storage\app\whatsapp-auth\',
-                'storage\app\backups\',
-                'storage\backups\',
-                '.env'
-            )
-
-            Get-ChildItem -Path $stageDir -Recurse -File | ForEach-Object {
-                $rel = $_.FullName.Substring($stageDir.Length).TrimStart('\', '/')
-                $skip = $false
-                foreach ($p in $protected) {
-                    if ($rel.StartsWith($p, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $skip = $true
-                        break
+            try {
+                # 1. Wait cleanly for Karobar-Native.exe to exit; force-close after 6s if still lingering so DLL locks release
+                for ($i = 0; $i -lt 40; $i++) {
+                    if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
+                    if ($i -eq 24) {
+                        Write-Log "Process $targetPid still active after 6s; requesting force termination to release DLL locks."
+                        Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
                     }
+                    Start-Sleep -Milliseconds 250
                 }
-                if (-not $skip) {
+                Start-Sleep -Milliseconds 350
+
+                # 2. Extract patch zip cleanly using .NET ZipFile (fast, reliable across PowerShell 5.1 & 7)
+                if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue }
+                New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $stageDir)
+                Write-Log "Extracted patch archive into $stageDir"
+
+                $protected = @(
+                    'database\database.sqlite',
+                    'storage\app\.machine-id',
+                    'storage\app\.license-clock',
+                    'storage\app\public\',
+                    'storage\app\whatsapp-auth\',
+                    'storage\app\backups\',
+                    'storage\backups\',
+                    '.env'
+                )
+
+                $copied = 0
+                $files = Get-ChildItem -Path $stageDir -Recurse -File
+                foreach ($f in $files) {
+                    $rel = $f.FullName.Substring($stageDir.Length).TrimStart('\', '/')
+                    $skip = $false
+                    foreach ($p in $protected) {
+                        if ($rel.StartsWith($p, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $skip = $true
+                            break
+                        }
+                    }
+                    if ($skip) { continue }
+
                     $dest = Join-Path $installDir $rel
                     $destDir = Split-Path -Parent $dest
                     if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
-                    Copy-Item -Path $_.FullName -Destination $dest -Force
+
+                    $ok = $false
+                    $lastErr = $null
+                    for ($attempt = 1; $attempt -le 8; $attempt++) {
+                        try {
+                            Copy-Item -Path $f.FullName -Destination $dest -Force
+                            $ok = $true
+                            break
+                        } catch {
+                            $lastErr = $_
+                            Start-Sleep -Milliseconds 350
+                        }
+                    }
+                    if (-not $ok) {
+                        throw "Failed to overwrite $dest after 8 attempts: $lastErr"
+                    }
+                    $copied++
+                }
+                Write-Log "Successfully updated $copied files in $installDir"
+
+                if (Test-Path $exePath) {
+                    Write-Log "Running post-patch --cli install --upgrade-only..."
+                    $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
+                    Write-Log "Post-patch schema upgrade exited with code $($upgProc.ExitCode)"
+                }
+
+                Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+                Write-Log "Patch applied successfully!"
+            } catch {
+                Write-Log "ERROR: $($_.Exception.Message)"
+                try {
+                    Add-Type -AssemblyName System.Windows.Forms
+                    [System.Windows.Forms.MessageBox]::Show("Karobar-App Native patch update failed:`n`n$($_.Exception.Message)`n`nLog: $logPath", 'Karobar-App Native Updater', 'OK', 'Error') | Out-Null
+                } catch {}
+            } finally {
+                Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
+                if (Test-Path $exePath) {
+                    Write-Log "Relaunching $exePath"
+                    Start-Process -FilePath $exePath -WorkingDirectory $installDir
                 }
             }
-
-            if (Test-Path $exePath) {
-                $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
-                Start-Process -FilePath $exePath -WorkingDirectory $installDir
-            }
-
-            Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
-            Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
             """;
 
         File.WriteAllText(helperScriptPath, ps1, new UTF8Encoding(false));
 
+        var psi = new ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{helperScriptPath}\"",
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+        if (needsElevation)
+        {
+            psi.Verb = "runas";
+        }
+        Process.Start(psi);
+    }
+
+    private static void LaunchWindowsInstallerAfterExit(string installerExePath, string installDir)
+    {
+        var pid = Environment.ProcessId;
+        var helperScriptPath = Path.Combine(Path.GetTempPath(), $"karobar-run-setup-{pid}.ps1");
+        var ps1 = $$"""
+            $targetPid = {{pid}}
+            $setupExe = '{{installerExePath.Replace("'", "''")}}'
+            $installDir = '{{installDir.Replace("'", "''")}}'
+
+            # Wait for Karobar-Native.exe to exit and release Global\KarobarNativeErpV2Mutex before Inno Setup starts
+            for ($i = 0; $i -lt 40; $i++) {
+                if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
+                if ($i -eq 24) {
+                    Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            Start-Sleep -Milliseconds 400
+
+            $setupArgs = "/SILENT /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 `"/DIR=$installDir`""
+            Start-Process -FilePath $setupExe -ArgumentList $setupArgs
+            """;
+
+        File.WriteAllText(helperScriptPath, ps1, new UTF8Encoding(false));
         Process.Start(new ProcessStartInfo
         {
             FileName = "powershell.exe",
             Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{helperScriptPath}\"",
-            UseShellExecute = false,
-            CreateNoWindow = true
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden
         });
     }
 

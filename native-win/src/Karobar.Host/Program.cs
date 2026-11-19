@@ -135,7 +135,23 @@ public static class Program
             windowManager.OnQuitRequested = () =>
             {
                 shutdownCts.Cancel();
-                try { System.Windows.Forms.Application.Exit(); } catch { }
+                try
+                {
+                    if (!mainForm.IsDisposed && mainForm.IsHandleCreated && mainForm.InvokeRequired)
+                    {
+                        mainForm.BeginInvoke((Action)(() =>
+                        {
+                            try { mainForm.Close(); } catch { }
+                            try { System.Windows.Forms.Application.Exit(); } catch { }
+                        }));
+                    }
+                    else
+                    {
+                        try { mainForm.Close(); } catch { }
+                        try { System.Windows.Forms.Application.Exit(); } catch { }
+                    }
+                }
+                catch { }
             };
 
             System.Windows.Forms.Application.Run(mainForm);

@@ -308,6 +308,26 @@ public class Phase13ImportedDbTabsAndOtaTests
         KarobarDesktopBridge.IsProtectedPatchPath("storage/app/public/logo.png").Should().BeTrue();
         KarobarDesktopBridge.IsProtectedPatchPath(".env").Should().BeTrue();
         KarobarDesktopBridge.IsProtectedPatchPath("Karobar.Api.dll").Should().BeFalse();
+
+        // 3. Verify ReadLocalVersionMeta reads runtime_layout="split-v2" so fast differential patches are selected
+        var tmpAppRoot = Path.Combine(Path.GetTempPath(), $"karobar_qa_ver_{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(tmpAppRoot, "public"));
+            File.WriteAllText(
+                Path.Combine(tmpAppRoot, "public", "version.json"),
+                """{"app_name":"Karobar-App Native","version":"2.0.50","build_number":50,"runtime_layout":"split-v2"}""");
+            var cfg = new NetworkConfigManager(tmpAppRoot);
+            var bridge = new KarobarDesktopBridge(cfg, new WebView2WindowManager(cfg));
+            var meta = bridge.ReadLocalVersionMeta();
+            meta.Version.Should().Be("2.0.50");
+            meta.BuildNumber.Should().Be(50);
+            meta.RuntimeLayout.Should().Be("split-v2");
+        }
+        finally
+        {
+            try { Directory.Delete(tmpAppRoot, recursive: true); } catch { }
+        }
         KarobarDesktopBridge.IsProtectedPatchPath("public/build/assets/app.js").Should().BeFalse();
     }
 
