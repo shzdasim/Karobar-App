@@ -339,6 +339,40 @@ public class DocumentShareController : ApiControllerBase
             response["wa_me_url"] = !string.IsNullOrEmpty(normalizedPhone)
                 ? $"https://wa.me/{normalizedPhone}?text={Uri.EscapeDataString(message)}"
                 : $"https://wa.me/?text={Uri.EscapeDataString(message)}";
+
+            var custId = ctx.PartyId ?? GetNullableLong(body, "customer_id") ?? GetNullableLong(body, "id");
+            if (custId.HasValue)
+            {
+                var custRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = custId.Value });
+                if (custRow != null)
+                {
+                    var nowUtc = DateTime.UtcNow;
+                    var custUpdates = new Dictionary<string, object?>();
+                    if (await Db.HasColumnAsync("customers", "last_refill_reminded_at"))
+                        custUpdates["last_refill_reminded_at"] = nowUtc.ToString("yyyy-MM-dd HH:mm:ss");
+                    var lang = (GetString(body, "language") ?? "").Trim();
+                    if (!string.IsNullOrEmpty(lang) && await Db.HasColumnAsync("customers", "reminder_language"))
+                        custUpdates["reminder_language"] = lang;
+
+                    if (GetBool(body, "advance_cycle", false))
+                    {
+                        var cycleDays = Convert.ToInt32(custRow.GetValueOrDefault("refill_cycle_days") ?? 30);
+                        if (cycleDays <= 0) cycleDays = 30;
+                        if (await Db.HasColumnAsync("customers", "last_refill_collected_at"))
+                            custUpdates["last_refill_collected_at"] = nowUtc.ToString("yyyy-MM-dd");
+                        if (await Db.HasColumnAsync("customers", "next_refill_date"))
+                            custUpdates["next_refill_date"] = nowUtc.AddDays(cycleDays).ToString("yyyy-MM-dd");
+                    }
+
+                    if (custUpdates.Count > 0)
+                    {
+                        await Db.UpdateAsync("customers", custId.Value, custUpdates);
+                    }
+
+                    var freshCustomer = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = custId.Value });
+                    response["customer"] = freshCustomer;
+                }
+            }
         }
 
         return Ok(response);

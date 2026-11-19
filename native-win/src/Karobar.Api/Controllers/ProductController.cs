@@ -445,6 +445,7 @@ public class ProductController : ApiControllerBase
 
     [HttpPut("{id:long}")]
     [HttpPatch("{id:long}")]
+    [HttpPost("{id:long}")]
     public async Task<IActionResult> Update(long id)
     {
         if (!await CanAsync("product.update")) return Forbidden();
@@ -845,7 +846,7 @@ public class ProductController : ApiControllerBase
                 ["price_diff"] = priceDiff,
                 ["brand"] = sub["brand_id"] != null ? new Dictionary<string, object?> { ["id"] = sub["brand_id"], ["name"] = sub["__brand_name"] } : null,
                 ["category"] = sub["category_id"] != null ? new Dictionary<string, object?> { ["id"] = sub["category_id"], ["name"] = sub["__category_name"] } : null,
-                ["Earliest_expiry"] = fefoBatch?["expiry_date"],
+                ["earliest_expiry"] = fefoBatch?["expiry_date"],
                 ["fefo_batch"] = fefoBatch != null ? new Dictionary<string, object?>
                 {
                     ["id"] = fefoBatch["id"],

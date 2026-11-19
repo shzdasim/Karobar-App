@@ -635,7 +635,7 @@ public class LicenseService
             var cached = ReadPeriodicStatusCache(now);
             if (cached != null)
             {
-                return cached;
+                return new Dictionary<string, object?>(cached, StringComparer.OrdinalIgnoreCase);
             }
         }
 
@@ -689,7 +689,7 @@ public class LicenseService
 
         if (ok)
         {
-            WritePeriodicStatusCache(result, now);
+            WritePeriodicStatusCache(new Dictionary<string, object?>(result, StringComparer.OrdinalIgnoreCase), now);
         }
         else
         {

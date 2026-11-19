@@ -526,15 +526,29 @@ public class DashboardController : ApiControllerBase
         double? expectedOrdersAmount = null;
         if (await IsAdminAsync() || await CanAsync("purchase-order.view"))
         {
-            if (await Db.HasTableAsync("purchase_orders"))
+            if (await Db.HasTableAsync("purchase_orders") && await Db.HasTableAsync("purchase_order_items"))
             {
                 var fromStr = fromDt.ToString("yyyy-MM-dd");
                 var toStr = toDt.ToString("yyyy-MM-dd");
-                expectedOrdersAmount = await Db.ExecuteScalarAsync<double>(@"
-                    SELECT COALESCE(SUM(total), 0)
-                    FROM purchase_orders
-                    WHERE status IN ('draft', 'ordered', 'pending', 'approved', 'partially_received')
-                      AND DATE(COALESCE(expected_delivery_date, order_date)) BETWEEN @fromStr AND @toStr",
+                var hasExpectedCol = await Db.HasColumnAsync("purchase_orders", "expected_received_date");
+                var hasDateCol = await Db.HasColumnAsync("purchase_orders", "date");
+                var dateExpr = hasExpectedCol && hasDateCol
+                    ? "DATE(COALESCE(po.expected_received_date, po.date))"
+                    : hasExpectedCol
+                        ? "DATE(po.expected_received_date)"
+                        : "DATE(po.created_at)";
+                var hasPiPoCol = await Db.HasTableAsync("purchase_invoices") && await Db.HasColumnAsync("purchase_invoices", "purchase_order_id");
+                var notReceivedClause = hasPiPoCol
+                    ? "AND NOT EXISTS (SELECT 1 FROM purchase_invoices pi WHERE pi.purchase_order_id = po.id)"
+                    : "";
+
+                expectedOrdersAmount = await Db.ExecuteScalarAsync<double>($@"
+                    SELECT COALESCE(SUM(lines.ordered_quantity * lines.unit_purchase_price * (1.0 - COALESCE(lines.item_discount_percentage, 0) / 100.0)), 0)
+                    FROM purchase_orders po
+                    INNER JOIN purchase_order_items lines ON lines.purchase_order_id = po.id
+                    WHERE po.status = 'ordered'
+                      {notReceivedClause}
+                      AND {dateExpr} BETWEEN @fromStr AND @toStr",
                     new { fromStr, toStr });
             }
             else

@@ -28,11 +28,15 @@ public class StorageLocationController : ApiControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Index([FromQuery(Name = "active_only")] bool activeOnly = false)
+    public async Task<IActionResult> Index([FromQuery(Name = "active_only")] string? activeOnlyRaw = null)
     {
         if (!await CanAsync(ViewPermissions)) return Forbidden();
         if (!await Db.HasTableAsync("storage_locations")) return Ok(Array.Empty<object>());
 
+        var activeOnly = !string.IsNullOrWhiteSpace(activeOnlyRaw) &&
+            (activeOnlyRaw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+             activeOnlyRaw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+             activeOnlyRaw.Equals("yes", StringComparison.OrdinalIgnoreCase));
         var where = activeOnly ? "WHERE sl.is_active = 1" : "";
         var items = await Db.QueryListAsync($@"
             SELECT sl.*,

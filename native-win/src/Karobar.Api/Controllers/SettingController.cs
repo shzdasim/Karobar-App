@@ -33,7 +33,7 @@ public class SettingController : ApiControllerBase
             ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
             : null;
 
-        bool isSetupCompleted = true;
+        bool isSetupCompleted = false;
         if (setting != null && await Db.HasColumnAsync("settings", "is_setup_completed"))
         {
             isSetupCompleted = setting.GetValueOrDefault("is_setup_completed") is true or 1 or 1L;
@@ -99,6 +99,15 @@ public class SettingController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var updates = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
+        var secretFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "smtp_password",
+            "whatsapp_access_token",
+            "cube_groq_api_key",
+            "cube_gemini_api_key",
+            "fbr_bearer_token"
+        };
+
         foreach (var kv in body)
         {
             if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
@@ -107,7 +116,12 @@ public class SettingController : ApiControllerBase
             {
                 continue;
             }
-            updates[kv.Key] = KarobarDb.PrepareDbValue(kv.Value);
+            var prepared = KarobarDb.PrepareDbValue(kv.Value);
+            if (secretFields.Contains(kv.Key) && string.IsNullOrWhiteSpace(prepared?.ToString()))
+            {
+                continue;
+            }
+            updates[kv.Key] = prepared;
         }
 
         if (Request.HasFormContentType)
@@ -140,16 +154,29 @@ public class SettingController : ApiControllerBase
 
         if (await Db.HasColumnAsync("settings", "is_setup_completed"))
         {
-            var storeName = updates.TryGetValue("store_name", out var snObj)
-                ? snObj?.ToString()
-                : setting.GetValueOrDefault("store_name")?.ToString();
-
-            if (!string.IsNullOrWhiteSpace(storeName) && !storeName.Equals("Karobar App", StringComparison.OrdinalIgnoreCase))
+            var explicitSetupFlag = body.ContainsKey("is_setup_completed");
+            if (explicitSetupFlag)
             {
-                updates["is_setup_completed"] = 1;
-                if (setting.GetValueOrDefault("setup_completed_at") == null)
+                var flagVal = GetBool(body, "is_setup_completed", false);
+                updates["is_setup_completed"] = flagVal ? 1 : 0;
+                if (flagVal && setting.GetValueOrDefault("setup_completed_at") == null)
                 {
                     updates["setup_completed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                }
+            }
+            else
+            {
+                var storeName = updates.TryGetValue("store_name", out var snObj)
+                    ? snObj?.ToString()
+                    : setting.GetValueOrDefault("store_name")?.ToString();
+
+                if (!string.IsNullOrWhiteSpace(storeName) && !storeName.Equals("Karobar App", StringComparison.OrdinalIgnoreCase))
+                {
+                    updates["is_setup_completed"] = 1;
+                    if (setting.GetValueOrDefault("setup_completed_at") == null)
+                    {
+                        updates["setup_completed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                    }
                 }
             }
         }
@@ -221,10 +248,58 @@ public class SettingController : ApiControllerBase
         var setting = await GetOrCreateSettingAsync();
         var settingId = Convert.ToInt64(setting["id"]);
 
+        var secretFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "smtp_password",
+            "whatsapp_access_token",
+            "cube_groq_api_key",
+            "cube_gemini_api_key",
+            "fbr_bearer_token"
+        };
+
         var updates = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in body)
         {
-            updates[kv.Key] = KarobarDb.PrepareDbValue(kv.Value);
+            if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var prepared = KarobarDb.PrepareDbValue(kv.Value);
+            if (secretFields.Contains(kv.Key) && string.IsNullOrWhiteSpace(prepared?.ToString()))
+            {
+                continue;
+            }
+            updates[kv.Key] = prepared;
+        }
+
+        if (Request.HasFormContentType)
+        {
+            var form = await Request.ReadFormAsync();
+            var logoFile = form.Files.GetFile("logo");
+            if (logoFile != null && logoFile.Length > 0)
+            {
+                var logosDir = Db.StoragePath("app/public/logos");
+                if (!Directory.Exists(logosDir)) Directory.CreateDirectory(logosDir);
+                var ext = Path.GetExtension(logoFile.FileName);
+                if (string.IsNullOrEmpty(ext)) ext = ".png";
+                var fileName = $"logo_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
+                var fullPath = Path.Combine(logosDir, fileName);
+                await using (var fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write))
+                {
+                    await logoFile.CopyToAsync(fs);
+                }
+                updates["logo_path"] = $"logos/{fileName}";
+            }
+            else if (GetBool(body, "remove_logo", false))
+            {
+                updates["logo_path"] = null;
+            }
+        }
+        else if (GetBool(body, "remove_logo", false))
+        {
+            updates["logo_path"] = null;
         }
 
         if (!updates.ContainsKey("printer_type")) updates["printer_type"] = "thermal";
@@ -237,6 +312,59 @@ public class SettingController : ApiControllerBase
         if (themeId.HasValue && await Db.HasTableAsync("theme_settings"))
         {
             await Db.ExecuteAsync("UPDATE theme_settings SET is_active = CASE WHEN id = @id THEN 1 ELSE 0 END", new { id = themeId.Value });
+        }
+
+        // Persist automated backup schedule configured in Setup Wizard Step 6
+        if (body.ContainsKey("backup_is_automated") || body.ContainsKey("backup_frequency") ||
+            body.ContainsKey("backup_time_of_day") || body.ContainsKey("custom_backup_path"))
+        {
+            try
+            {
+                var sched = await backupService.GetScheduleAsync();
+                if (sched.TryGetValue("id", out var sidObj) && sidObj != null)
+                {
+                    var schedId = Convert.ToInt64(sidObj);
+                    var schedUpdates = new Dictionary<string, object?>();
+                    if (body.ContainsKey("backup_is_automated"))
+                        schedUpdates["is_automated"] = GetBool(body, "backup_is_automated", false) ? 1 : 0;
+                    var freq = GetString(body, "backup_frequency");
+                    if (!string.IsNullOrWhiteSpace(freq))
+                        schedUpdates["frequency"] = freq.Trim();
+                    var tod = GetString(body, "backup_time_of_day");
+                    if (!string.IsNullOrWhiteSpace(tod))
+                        schedUpdates["time_of_day"] = tod.Trim();
+                    var customPath = GetString(body, "custom_backup_path");
+                    if (customPath != null)
+                        schedUpdates["custom_backup_path"] = customPath.Trim();
+
+                    if (schedUpdates.Count > 0)
+                    {
+                        await Db.UpdateAsync("backup_schedules", schedId, schedUpdates);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore schedule persistence issues during setup completion
+            }
+        }
+
+        // Seed default Cash in Hand account if requested and accounts table is empty
+        if (GetBool(body, "seed_default_accounts", true) && await Db.HasTableAsync("accounts"))
+        {
+            var accCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM accounts");
+            if (accCount == 0)
+            {
+                await Db.InsertAsync("accounts", new Dictionary<string, object?>
+                {
+                    ["name"] = "Cash in Hand",
+                    ["type"] = "cash",
+                    ["opening_balance"] = 0m,
+                    ["current_balance"] = 0m,
+                    ["is_default"] = 1,
+                    ["is_active"] = 1
+                });
+            }
         }
 
         if (GetBool(body, "seed_default_locations", true) && await Db.HasTableAsync("storage_locations"))

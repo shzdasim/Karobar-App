@@ -90,7 +90,7 @@ public class WebRoutesController : ApiControllerBase
 
         if (adminRow == null)
         {
-            return Redirect("/login");
+            return Redirect("/");
         }
 
         var adminId = Convert.ToInt64(adminRow["id"]);

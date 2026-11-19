@@ -48,7 +48,7 @@ public class BatchExpiryController : ApiControllerBase
         [FromQuery(Name = "brand_id")] long? brandId = null,
         [FromQuery(Name = "category_id")] long? categoryId = null,
         [FromQuery(Name = "storage_location_id")] long? storageLocationId = null,
-        [FromQuery(Name = "include_zero_qty")] bool includeZeroQty = false,
+        [FromQuery(Name = "include_zero_qty")] string? includeZeroQtyRaw = null,
         [FromQuery(Name = "has_custom_warning")] string? hasCustom = null,
         [FromQuery(Name = "sort_by")] string sortBy = "expiry_date",
         [FromQuery(Name = "sort_dir")] string sortDir = "asc",
@@ -56,6 +56,11 @@ public class BatchExpiryController : ApiControllerBase
         [FromQuery] int page = 1)
     {
         if (!await CanAsync("batch-expiry.view", "product.view", "product.update")) return Forbidden();
+
+        var includeZeroQty = !string.IsNullOrWhiteSpace(includeZeroQtyRaw) &&
+            (includeZeroQtyRaw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+             includeZeroQtyRaw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+             includeZeroQtyRaw.Equals("yes", StringComparison.OrdinalIgnoreCase));
 
         var (globalWarningDays, globalCriticalDays, dailyFlashLimit) = await GetGlobalExpirySettingsAsync();
 

@@ -17,10 +17,9 @@ public class ProductImportController : ApiControllerBase
     }
 
     [HttpGet("template")]
-    public async Task<IActionResult> Template()
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public IActionResult Template()
     {
-        if (!await CanAsync("product.import")) return Forbidden();
-
         const string csv = "product_code,name,pack_size,unit_purchase_price,unit_sale_price,category,brand,supplier,quantity,barcode,narcotic,max_discount,formulation,description,rack\nPRD-0001,Paracetamol 500mg,10,3.5,5,Analgesics,Acme,ABC Pharma,0,1234567890123,no,10,Tablet,Pain reliever,R1\n";
         return File(Encoding.UTF8.GetBytes(csv), "text/csv", "products_template.csv");
     }
@@ -95,8 +94,19 @@ public class ProductImportController : ApiControllerBase
         var delimiter = GetString(body, "delimiter", ",") ?? ",";
         var createRefs = body.ContainsKey("create_missing_refs") ? GetBool(body, "create_missing_refs", true) : true;
 
-        var stats = await _service.CommitAsync(path, insertValidOnly, delimiter, createRefs);
-        try { System.IO.File.Delete(path); } catch { }
+        Dictionary<string, int> stats;
+        try
+        {
+            stats = await _service.CommitAsync(path, insertValidOnly, delimiter, createRefs);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Unprocessable(ex.Message);
+        }
+        finally
+        {
+            try { System.IO.File.Delete(path); } catch { }
+        }
 
         return Ok(new
         {

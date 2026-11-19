@@ -455,6 +455,7 @@ public class BrandController : ApiControllerBase
 
     [HttpPut("{id:long}")]
     [HttpPatch("{id:long}")]
+    [HttpPost("{id:long}")]
     public async Task<IActionResult> Update(long id)
     {
         if (!await CanAsync("brand.update")) return Forbidden();

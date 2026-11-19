@@ -60,7 +60,16 @@ public class KarobarDb
         "fbr_enabled",
         "fbr_pos_fee_enabled",
         "allow_negative_stock",
-        "auto_backup_enabled"
+        "auto_backup_enabled",
+        "is_regular",
+        "is_preferred",
+        "requires_cold_chain",
+        "is_narcotic_controlled",
+        "enable_dosage_stickers",
+        "enable_prescription_attachments",
+        "enable_drug_interaction_warnings",
+        "enable_cold_chain_log",
+        "operator_pin_auto_submit"
     };
 
     public KarobarDb(IServiceProvider? serviceProvider = null, IConfiguration? configuration = null, string? explicitSqlitePath = null)
@@ -452,7 +461,7 @@ public class KarobarDb
         Func<List<Dictionary<string, object?>>, Task<List<Dictionary<string, object?>>>>? enrichBatch = null)
     {
         page = Math.Max(1, page);
-        perPage = perPage <= 0 || perPage > 500 ? 15 : perPage;
+        perPage = perPage <= 0 ? 15 : Math.Min(perPage, 500);
         var offset = (page - 1) * perPage;
 
         await using var conn = await OpenConnectionAsync();

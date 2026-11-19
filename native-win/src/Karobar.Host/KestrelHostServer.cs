@@ -668,6 +668,37 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         var app = builder.Build();
 
+        // 0. Laravel _method spoofing (POST with ?_method=PUT or FormData _method=PUT/PATCH/DELETE)
+        // Must execute BEFORE UseRouting() so endpoint routing matches [HttpPut]/[HttpPatch]/[HttpDelete].
+        app.Use(async (context, next) =>
+        {
+            if (HttpMethods.IsPost(context.Request.Method))
+            {
+                string? spoofed = null;
+                if (context.Request.Query.TryGetValue("_method", out var qMethod) && !string.IsNullOrWhiteSpace(qMethod))
+                {
+                    spoofed = qMethod.ToString().Trim().ToUpperInvariant();
+                }
+                else if (context.Request.HasFormContentType)
+                {
+                    context.Request.EnableBuffering();
+                    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+                    if (form.TryGetValue("_method", out var fMethod) && !string.IsNullOrWhiteSpace(fMethod))
+                    {
+                        spoofed = fMethod.ToString().Trim().ToUpperInvariant();
+                    }
+                }
+
+                if (spoofed is "PUT" or "PATCH" or "DELETE")
+                {
+                    context.Request.Method = spoofed;
+                }
+            }
+
+            await next();
+        });
+        app.UseRouting();
+
         // 1. Health Endpoint: GET /up -> 200 OK
         app.MapGet("/up", () => Results.Text("OK", "text/plain; charset=utf-8"));
 

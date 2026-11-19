@@ -17,10 +17,9 @@ public class CustomerImportController : ApiControllerBase
     }
 
     [HttpGet("template")]
-    public async Task<IActionResult> Template()
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public IActionResult Template()
     {
-        if (!await CanAsync("customer.import")) return Forbidden();
-
         const string csv = "name,email,phone,address,opening_balance\nAlice Smith,alice@example.com,0300-1234567,123 Main St,5000\nBob Khan,,021-1112223,Defense Phase 6,0\n";
         return File(Encoding.UTF8.GetBytes(csv), "text/csv", "customers_template.csv");
     }
@@ -87,8 +86,19 @@ public class CustomerImportController : ApiControllerBase
         var insertValidOnly = GetBool(body, "insert_valid_only", true);
         var delimiter = GetString(body, "delimiter", ",") ?? ",";
 
-        var stats = await _service.CommitAsync(path, insertValidOnly, delimiter);
-        try { System.IO.File.Delete(path); } catch { }
+        Dictionary<string, int> stats;
+        try
+        {
+            stats = await _service.CommitAsync(path, insertValidOnly, delimiter);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Unprocessable(ex.Message);
+        }
+        finally
+        {
+            try { System.IO.File.Delete(path); } catch { }
+        }
 
         return Ok(new
         {

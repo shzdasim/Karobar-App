@@ -186,6 +186,11 @@ public class UserController : ApiControllerBase
         }
 
         var requestedRoles = hasRolesInput ? GetStringList(body, "roles") : new List<string>();
+        if (!await IsAdminAsync() && hasRolesInput &&
+            requestedRoles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || r.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Forbidden("Only an Administrator can assign the Admin role.");
+        }
         if (targetIsAdmin)
         {
             var willBeInactive = status != null && !status.Equals("active", StringComparison.OrdinalIgnoreCase);
@@ -316,7 +321,7 @@ public class UserController : ApiControllerBase
     {
         var body = await ReadJsonBodyAsync();
         var action = (GetString(body, "action") ?? "").Trim();
-        var role = GetString(body, "role") ?? "";
+        var role = (GetString(body, "role") ?? "").Trim();
 
         var userIds = new List<long>();
         if (body.TryGetValue("user_ids", out var idsEl) && idsEl.ValueKind == JsonValueKind.Array)
@@ -333,6 +338,33 @@ public class UserController : ApiControllerBase
             return Unprocessable("Invalid bulk action parameters.");
         }
 
+        // Enforce action-specific authorization
+        var authorized = action switch
+        {
+            "delete" => await CanManageOrAsync("user.delete"),
+            "assign_role" => await CanManageOrAsync("user.assign.roles", "user.update"),
+            _ => await CanManageOrAsync("user.update")
+        };
+        if (!authorized) return Forbidden();
+
+        var callerIsAdmin = await IsAdminAsync();
+        if (action == "assign_role")
+        {
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                return Unprocessable("Please select a valid role to assign.");
+            }
+            var roleExists = await Db.QuerySingleOrDefaultAsync("SELECT id FROM roles WHERE LOWER(name) = LOWER(@role) LIMIT 1", new { role });
+            if (roleExists == null)
+            {
+                return Unprocessable($"Role '{role}' does not exist.");
+            }
+            if (!callerIsAdmin && (role.Equals("Admin", StringComparison.OrdinalIgnoreCase) || role.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+            {
+                return Forbidden("Only an Administrator can assign the Admin role.");
+            }
+        }
+
         var actorId = CurrentUserId ?? 0;
         var processed = 0;
         var skipped = new List<string>();
@@ -342,6 +374,13 @@ public class UserController : ApiControllerBase
             var target = await Db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id = targetId });
             if (target == null) continue;
             var targetName = target.GetValueOrDefault("name")?.ToString() ?? $"User #{targetId}";
+            var targetIsAdmin = await Db.UserHasRoleAsync(targetId, "Admin", "admin", "super-admin");
+
+            if (!callerIsAdmin && targetIsAdmin)
+            {
+                skipped.Add($"{targetName} (cannot modify Administrator account)");
+                continue;
+            }
 
             if (action is "deactivate" or "delete" && targetId == actorId)
             {
@@ -368,6 +407,17 @@ public class UserController : ApiControllerBase
             }
             else if (action == "assign_role")
             {
+                var losesAdmin = targetIsAdmin && !role.Equals("Admin", StringComparison.OrdinalIgnoreCase) && !role.Equals("super-admin", StringComparison.OrdinalIgnoreCase);
+                if (losesAdmin && targetId == actorId)
+                {
+                    skipped.Add($"{targetName} (cannot remove Admin role from your own account)");
+                    continue;
+                }
+                if (losesAdmin && await IsLastActiveAdminAsync(targetId))
+                {
+                    skipped.Add($"{targetName} (last active Admin)");
+                    continue;
+                }
                 await Db.SyncUserRolesAsync(targetId, new[] { role });
                 processed++;
             }
@@ -379,6 +429,8 @@ public class UserController : ApiControllerBase
                     continue;
                 }
                 await Db.ExecuteAsync("DELETE FROM personal_access_tokens WHERE tokenable_id = @id", new { id = targetId });
+                await Db.ExecuteAsync("DELETE FROM model_has_roles WHERE model_id = @id", new { id = targetId });
+                await Db.ExecuteAsync("DELETE FROM model_has_permissions WHERE model_id = @id", new { id = targetId });
                 await Db.ExecuteAsync("DELETE FROM users WHERE id = @id", new { id = targetId });
                 processed++;
             }

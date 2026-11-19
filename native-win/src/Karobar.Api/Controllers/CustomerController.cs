@@ -116,17 +116,35 @@ public class CustomerController : ApiControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> Index(
+        [FromQuery] string? search = null,
+        [FromQuery(Name = "per_page")] int? perPage = null,
+        [FromQuery] int? limit = null)
     {
         if (!await CanAsync("customer.view")) return Forbidden();
         await EnsureRegularCustomerSchemaAsync();
 
-        var customers = await Db.QueryListAsync(@"
+        var where = new List<string>();
+        var param = new DynamicParameters();
+        var q = (search ?? "").Trim();
+        if (!string.IsNullOrEmpty(q))
+        {
+            where.Add("(LOWER(c.name) LIKE @q OR LOWER(COALESCE(c.phone, '')) LIKE @q OR LOWER(COALESCE(c.email, '')) LIKE @q OR LOWER(COALESCE(c.address, '')) LIKE @q)");
+            param.Add("q", $"%{q.ToLowerInvariant()}%");
+        }
+
+        var whereSql = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+        var maxRows = perPage ?? limit;
+        var limitSql = maxRows.HasValue && maxRows.Value > 0 ? $"LIMIT {Math.Min(maxRows.Value, 500)}" : "";
+
+        var customers = await Db.QueryListAsync($@"
             SELECT c.*,
                    (SELECT COUNT(1) FROM sale_invoices si WHERE si.customer_id = c.id) AS sale_invoices_count,
                    (SELECT COUNT(1) FROM sale_returns sr WHERE sr.customer_id = c.id) AS sale_returns_count
             FROM customers c
-            ORDER BY c.name ASC");
+            {whereSql}
+            ORDER BY c.name ASC
+            {limitSql}", param);
 
         await AttachRegularItemsAndMetadataAsync(customers);
 

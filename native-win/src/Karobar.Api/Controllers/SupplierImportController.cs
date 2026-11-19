@@ -17,10 +17,9 @@ public class SupplierImportController : ApiControllerBase
     }
 
     [HttpGet("template")]
-    public async Task<IActionResult> Template()
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public IActionResult Template()
     {
-        if (!await CanAsync("supplier.import")) return Forbidden();
-
         const string csv = "name,address,phone,opening_balance\nAcme Supplies,21 Main Street,+92 300 1234567,15000\nNexus Traders,Plot #45, +92 333 7654321,0\n";
         return File(Encoding.UTF8.GetBytes(csv), "text/csv", "suppliers_template.csv");
     }
@@ -101,6 +100,10 @@ public class SupplierImportController : ApiControllerBase
         try
         {
             stats = await _service.CommitAsync(path, insertValidOnly, delimiter);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Unprocessable(ex.Message);
         }
         finally
         {

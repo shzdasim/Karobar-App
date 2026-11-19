@@ -337,7 +337,19 @@ public class AuthController : ApiControllerBase
             });
         }
 
-        await Task.CompletedTask;
+        var user = await Db.QuerySingleOrDefaultAsync("SELECT id, email FROM users WHERE LOWER(email) = LOWER(@email)", new { email });
+        if (user != null && await Db.HasTableAsync("password_reset_tokens"))
+        {
+            var canonicalEmail = user.GetValueOrDefault("email")?.ToString() ?? email;
+            var rawToken = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            var tokenHash = SanctumAuthenticationHandler.ComputeSha256Hex(rawToken);
+            var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            await Db.ExecuteAsync("DELETE FROM password_reset_tokens WHERE LOWER(email) = LOWER(@email)", new { email = canonicalEmail });
+            await Db.ExecuteAsync(
+                "INSERT INTO password_reset_tokens (email, token, created_at) VALUES (@email, @token, @createdAt)",
+                new { email = canonicalEmail, token = tokenHash, createdAt = nowStr });
+        }
+
         return Ok(new
         {
             message = "Password reset link sent to your email.",
@@ -350,7 +362,7 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> ResetPassword()
     {
         var body = await ReadJsonBodyAsync();
-        var token = GetString(body, "token") ?? "";
+        var token = (GetString(body, "token") ?? "").Trim();
         var email = (GetString(body, "email") ?? "").Trim();
         var password = GetString(body, "password") ?? "";
         var confirmation = GetString(body, "password_confirmation") ?? "";
@@ -372,11 +384,61 @@ public class AuthController : ApiControllerBase
             });
         }
 
+        if (!await Db.HasTableAsync("password_reset_tokens"))
+        {
+            return Unprocessable("This password reset token is invalid.", new Dictionary<string, string[]>
+            {
+                ["token"] = new[] { "This password reset token is invalid." }
+            });
+        }
+
+        var resetRow = await Db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM password_reset_tokens WHERE LOWER(email) = LOWER(@email) ORDER BY created_at DESC LIMIT 1",
+            new { email });
+        if (resetRow == null)
+        {
+            return Unprocessable("This password reset token is invalid.", new Dictionary<string, string[]>
+            {
+                ["token"] = new[] { "This password reset token is invalid." }
+            });
+        }
+
+        var storedToken = resetRow.GetValueOrDefault("token")?.ToString() ?? "";
+        var tokenHash = SanctumAuthenticationHandler.ComputeSha256Hex(token);
+        var tokenMatches =
+            (!string.IsNullOrEmpty(storedToken) &&
+             System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                 System.Text.Encoding.UTF8.GetBytes(tokenHash.ToLowerInvariant()),
+                 System.Text.Encoding.UTF8.GetBytes(storedToken.ToLowerInvariant()))) ||
+            (!string.IsNullOrEmpty(storedToken) &&
+             storedToken.StartsWith("$2", StringComparison.Ordinal) &&
+             SanctumAuthenticationHandler.VerifyLaravelBcryptPassword(token, storedToken));
+
+        var isExpired = false;
+        if (resetRow.TryGetValue("created_at", out var cObj) && cObj != null &&
+            DateTimeOffset.TryParse(
+                cObj.ToString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var createdDt))
+        {
+            isExpired = DateTimeOffset.UtcNow - createdDt > TimeSpan.FromMinutes(60);
+        }
+
+        if (!tokenMatches || isExpired)
+        {
+            return Unprocessable("This password reset token is invalid or has expired.", new Dictionary<string, string[]>
+            {
+                ["token"] = new[] { "This password reset token is invalid or has expired." }
+            });
+        }
+
         var userId = Convert.ToInt64(user["id"]);
         await Db.UpdateAsync("users", userId, new Dictionary<string, object?>
         {
             ["password"] = SanctumAuthenticationHandler.HashLaravelBcryptPassword(password)
         });
+        await Db.ExecuteAsync("DELETE FROM password_reset_tokens WHERE LOWER(email) = LOWER(@email)", new { email });
         await Db.ExecuteAsync("DELETE FROM personal_access_tokens WHERE tokenable_id = @userId", new { userId });
 
         return Ok(new

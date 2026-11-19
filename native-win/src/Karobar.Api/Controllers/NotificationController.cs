@@ -240,7 +240,7 @@ public class NotificationController : ApiControllerBase
             return Unauthorized(new { message = "Unauthenticated" });
         }
 
-        if (!await IsAdminAsync() && !await CanAsync("user-demand.view"))
+        if (!await IsAdminAsync() && !await CanAsync("user-demands.view", "user-demand.view"))
         {
             return Forbidden("This action is unauthorized.");
         }

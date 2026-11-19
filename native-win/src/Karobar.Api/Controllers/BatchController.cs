@@ -61,9 +61,13 @@ public class BatchController : ApiControllerBase
     public async Task<IActionResult> Index(
         long product,
         [FromQuery(Name = "storage_location_id")] long? storageLocationId = null,
-        [FromQuery(Name = "include_unbatched")] bool includeUnbatched = false)
+        [FromQuery(Name = "include_unbatched")] string? includeUnbatchedRaw = null)
     {
         if (!await CanAsync(ViewBatchPermissions)) return Forbidden();
+        var includeUnbatched = !string.IsNullOrWhiteSpace(includeUnbatchedRaw) &&
+            (includeUnbatchedRaw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+             includeUnbatchedRaw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+             includeUnbatchedRaw.Equals("yes", StringComparison.OrdinalIgnoreCase));
 
         var prodRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @product", new { product });
         if (prodRow == null) return NotFound(new { message = "Product not found." });

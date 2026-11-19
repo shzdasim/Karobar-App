@@ -40,7 +40,11 @@ public class CheckTokenExpiryMiddleware
             if (user.TryGetValue("remember_token_expires_at", out var remExpObj) &&
                 remExpObj != null &&
                 !string.IsNullOrWhiteSpace(remExpObj.ToString()) &&
-                DateTimeOffset.TryParse(remExpObj.ToString(), out var remExp) &&
+                DateTimeOffset.TryParse(
+                    remExpObj.ToString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out var remExp) &&
                 DateTimeOffset.UtcNow > remExp)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;

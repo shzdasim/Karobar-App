@@ -74,7 +74,11 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         }
 
         if (tokenRow.TryGetValue("expires_at", out var expObj) && expObj != null &&
-            DateTimeOffset.TryParse(expObj.ToString(), out var expDt) &&
+            DateTimeOffset.TryParse(
+                expObj.ToString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var expDt) &&
             expDt < DateTimeOffset.UtcNow)
         {
             return AuthenticateResult.Fail("Token has expired.");

@@ -17,10 +17,9 @@ public class BrandImportController : ApiControllerBase
     }
 
     [HttpGet("template")]
-    public async Task<IActionResult> Template()
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public IActionResult Template()
     {
-        if (!await CanAsync("brand.import")) return Forbidden();
-
         const string csv = "name,image\nAcme,https://example.com/logo-acme.png\nNova Brands,\n";
         return File(Encoding.UTF8.GetBytes(csv), "text/csv", "brands_template.csv");
     }
@@ -87,8 +86,19 @@ public class BrandImportController : ApiControllerBase
         var insertValidOnly = GetBool(body, "insert_valid_only", true);
         var delimiter = GetString(body, "delimiter", ",") ?? ",";
 
-        var stats = await _service.CommitAsync(path, insertValidOnly, delimiter);
-        try { System.IO.File.Delete(path); } catch { }
+        Dictionary<string, int> stats;
+        try
+        {
+            stats = await _service.CommitAsync(path, insertValidOnly, delimiter);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Unprocessable(ex.Message);
+        }
+        finally
+        {
+            try { System.IO.File.Delete(path); } catch { }
+        }
 
         return Ok(new
         {
