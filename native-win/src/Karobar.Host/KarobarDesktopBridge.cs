@@ -133,6 +133,14 @@ public sealed class KarobarDesktopBridge
     public string platform => "win32";
 
     public Func<Task>? OnStartBackendServices { get; set; }
+
+    /// <summary>
+    /// Optional native desktop print executor (wired on Windows to NativeWebView2Form's
+    /// CoreWebView2.PrintAsync engine) so printUrl, printHtml, and window.print() spool
+    /// directly to the physical thermal/A4 hardware printer without OS dialogs.
+    /// Signature: (targetUrl, targetHtml, printerName, isThermal) => (Ok, Engine, Error).
+    /// </summary>
+    public Func<string?, string?, string, bool, Task<(bool Ok, string? Engine, string? Error)>>? NativeSilentPrintExecutor { get; set; }
     public Func<Task>? OnStopBackendServices { get; set; }
 
     // =========================================================================
@@ -728,7 +736,14 @@ public sealed class KarobarDesktopBridge
         return null;
     }
 
-    public async Task<object> SilentPrintAsync(JsonElement options, CancellationToken cancellationToken = default)
+    public Task<object> SilentPrintAsync(JsonElement options, CancellationToken cancellationToken = default)
+        => ExecuteSilentPrintCoreAsync(options, targetUrl: null, targetHtml: null, cancellationToken);
+
+    private async Task<object> ExecuteSilentPrintCoreAsync(
+        JsonElement options,
+        string? targetUrl,
+        string? targetHtml,
+        CancellationToken cancellationToken)
     {
         string? requestedDeviceName = null;
         var isThermal = false;
@@ -760,11 +775,12 @@ public sealed class KarobarDesktopBridge
         }
 
         var targetPrinter = strategy.DeviceName;
+        var effectiveIsThermal = isThermal || (strategy.PrinterInfo?.IsThermalPos == true);
         var sumatraExe = ResolveSumatraPdfBinary();
 
         if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(sumatraExe) && !string.IsNullOrWhiteSpace(pdfPath) && File.Exists(pdfPath))
         {
-            var sumatraRes = await SpoolPdfViaSumatraAsync(sumatraExe, pdfPath, targetPrinter, isThermal, scaleMode, cancellationToken);
+            var sumatraRes = await SpoolPdfViaSumatraAsync(sumatraExe, pdfPath, targetPrinter, effectiveIsThermal, scaleMode, cancellationToken);
             if (sumatraRes.Ok)
             {
                 return new
@@ -774,6 +790,28 @@ public sealed class KarobarDesktopBridge
                     engine = "sumatra-win32"
                 };
             }
+        }
+
+        if (NativeSilentPrintExecutor != null)
+        {
+            var nativeRes = await NativeSilentPrintExecutor(targetUrl, targetHtml, targetPrinter, effectiveIsThermal);
+            if (!nativeRes.Ok)
+            {
+                return new
+                {
+                    ok = false,
+                    printer = targetPrinter,
+                    engine = nativeRes.Engine ?? "webview2-silent-print",
+                    error = nativeRes.Error ?? $"Failed to print to '{targetPrinter}'."
+                };
+            }
+
+            return new
+            {
+                ok = true,
+                printer = targetPrinter,
+                engine = nativeRes.Engine ?? "webview2-silent-print"
+            };
         }
 
         return new
@@ -819,7 +857,7 @@ public sealed class KarobarDesktopBridge
         return await _windowManager.RunOffscreenPrintJobAsync(async printWin =>
         {
             printWin.LoadUrl(resolvedUrl);
-            return await SilentPrintAsync(payload, cancellationToken);
+            return await ExecuteSilentPrintCoreAsync(payload, targetUrl: resolvedUrl, targetHtml: null, cancellationToken);
         });
     }
 
@@ -855,10 +893,11 @@ public sealed class KarobarDesktopBridge
         try
         {
             await File.WriteAllTextAsync(tempFilePath, sanitizedHtml, Encoding.UTF8, cancellationToken);
+            var fileUri = new Uri(tempFilePath).AbsoluteUri;
             return await _windowManager.RunOffscreenPrintJobAsync(async printWin =>
             {
-                printWin.LoadUrl(new Uri(tempFilePath).AbsoluteUri);
-                return await SilentPrintAsync(payload, cancellationToken);
+                printWin.LoadUrl(fileUri);
+                return await ExecuteSilentPrintCoreAsync(payload, targetUrl: fileUri, targetHtml: null, cancellationToken);
             });
         }
         finally

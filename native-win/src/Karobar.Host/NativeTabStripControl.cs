@@ -60,7 +60,12 @@ public sealed class NativeTabStripControl : Control
 
     private ContextMenuStrip BuildContextMenu()
     {
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(30, 41, 59),
+            ForeColor = Color.FromArgb(248, 250, 252),
+            Renderer = new DarkMenuStripRenderer()
+        };
         menu.Items.Add("Reload Tab", null, (_, _) => { if (_contextMenuTabId != null) TabReloadRequested?.Invoke(_contextMenuTabId); });
         menu.Items.Add("Duplicate Tab (Ctrl+Shift+D)", null, (_, _) => { if (_contextMenuTabId != null) TabDuplicateRequested?.Invoke(_contextMenuTabId); });
         menu.Items.Add("Pin / Unpin Tab", null, (_, _) => { if (_contextMenuTabId != null) TabPinToggled?.Invoke(_contextMenuTabId); });

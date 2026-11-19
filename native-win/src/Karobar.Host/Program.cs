@@ -122,6 +122,9 @@ public static class Program
             splashForm.Close();
             var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge);
 
+            // Wire real Windows hardware silent printing (CoreWebView2.PrintAsync) for thermal & A4 printers
+            hostServer.DesktopBridge.NativeSilentPrintExecutor = mainForm.ExecuteNativeSilentPrintAsync;
+
             // Route all child-window / openWindow / openSubWindow requests into Waseela-style tabs
             // inside the SINGLE main window instead of spawning separate OS windows.
             windowManager.OnWindowCreated = childWin =>

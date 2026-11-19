@@ -147,10 +147,12 @@ public sealed class NativeWebView2Form : Form
 
     private void BuildNativeMenuBar()
     {
+        var darkRenderer = new DarkMenuStripRenderer();
         var menuStrip = new MenuStrip
         {
             BackColor = Color.FromArgb(15, 23, 42),
-            ForeColor = Color.FromArgb(248, 250, 252)
+            ForeColor = Color.FromArgb(248, 250, 252),
+            Renderer = darkRenderer
         };
 
         var sections = _windowManager.GetApplicationMenuSections();
@@ -158,8 +160,12 @@ public sealed class NativeWebView2Form : Form
         {
             var topItem = new ToolStripMenuItem(section.Key)
             {
-                ForeColor = Color.FromArgb(248, 250, 252)
+                ForeColor = Color.FromArgb(248, 250, 252),
+                BackColor = Color.FromArgb(15, 23, 42)
             };
+            topItem.DropDown.BackColor = Color.FromArgb(30, 41, 59);
+            topItem.DropDown.ForeColor = Color.FromArgb(248, 250, 252);
+            topItem.DropDown.Renderer = darkRenderer;
 
             foreach (var item in section.Value)
             {
@@ -168,7 +174,11 @@ public sealed class NativeWebView2Form : Form
                 var cleanLabel = label.StartsWith("Quick Window:", StringComparison.OrdinalIgnoreCase)
                     ? label.Replace("Quick Window:", "").Trim()
                     : label;
-                var subItem = new ToolStripMenuItem(cleanLabel);
+                var subItem = new ToolStripMenuItem(cleanLabel)
+                {
+                    ForeColor = Color.FromArgb(248, 250, 252),
+                    BackColor = Color.FromArgb(30, 41, 59)
+                };
                 subItem.Click += (_, _) =>
                 {
                     // Every menu selection opens cleanly as a Waseela-style tab inside THIS window
@@ -181,20 +191,39 @@ public sealed class NativeWebView2Form : Form
         }
 
         // Dedicated "Tabs" menu for discoverable Waseela keyboard multitasking
-        var tabsMenu = new ToolStripMenuItem("Tabs") { ForeColor = Color.FromArgb(248, 250, 252) };
-        tabsMenu.DropDownItems.Add("Next Tab (Ctrl+Tab / Ctrl+PageDown)", null, (_, _) => ExecuteTabShortcutAction("cycle-next"));
-        tabsMenu.DropDownItems.Add("Previous Tab (Ctrl+Shift+Tab / Ctrl+PageUp)", null, (_, _) => ExecuteTabShortcutAction("cycle-prev"));
-        tabsMenu.DropDownItems.Add("Jump to Tab 1–9 (Alt+1..9 / Ctrl+Shift+1..9)", null, (_, _) => ExecuteTabShortcutAction("cycle-next"));
+        var tabsMenu = new ToolStripMenuItem("Tabs")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(15, 23, 42)
+        };
+        tabsMenu.DropDown.BackColor = Color.FromArgb(30, 41, 59);
+        tabsMenu.DropDown.ForeColor = Color.FromArgb(248, 250, 252);
+        tabsMenu.DropDown.Renderer = darkRenderer;
+
+        void AddTabMenuItem(string text, Action onClick)
+        {
+            var mi = new ToolStripMenuItem(text)
+            {
+                ForeColor = Color.FromArgb(248, 250, 252),
+                BackColor = Color.FromArgb(30, 41, 59)
+            };
+            mi.Click += (_, _) => onClick();
+            tabsMenu.DropDownItems.Add(mi);
+        }
+
+        AddTabMenuItem("Next Tab (Ctrl+Tab / Ctrl+PageDown)", () => ExecuteTabShortcutAction("cycle-next"));
+        AddTabMenuItem("Previous Tab (Ctrl+Shift+Tab / Ctrl+PageUp)", () => ExecuteTabShortcutAction("cycle-prev"));
+        AddTabMenuItem("Jump to Tab 1–9 (Alt+1..9 / Ctrl+Shift+1..9)", () => ExecuteTabShortcutAction("cycle-next"));
         tabsMenu.DropDownItems.Add(new ToolStripSeparator());
-        tabsMenu.DropDownItems.Add("New Tab (Ctrl+T / Ctrl+Shift+N)", null, (_, _) => ExecuteTabShortcutAction("new-tab"));
-        tabsMenu.DropDownItems.Add("New Purchase Invoice Tab (Ctrl+Shift+G)", null, (_, _) => ExecuteTabShortcutAction("new-purchase"));
-        tabsMenu.DropDownItems.Add("Open Barcode POS Tab (Ctrl+Shift+P)", null, (_, _) => ExecuteTabShortcutAction("open-pos"));
-        tabsMenu.DropDownItems.Add("Open Customer Ledger Tab (Ctrl+Shift+L)", null, (_, _) => ExecuteTabShortcutAction("open-ledger"));
+        AddTabMenuItem("New Tab (Ctrl+T / Ctrl+Shift+N)", () => ExecuteTabShortcutAction("new-tab"));
+        AddTabMenuItem("New Purchase Invoice Tab (Ctrl+Shift+G)", () => ExecuteTabShortcutAction("new-purchase"));
+        AddTabMenuItem("Open Barcode POS Tab (Ctrl+Shift+P)", () => ExecuteTabShortcutAction("open-pos"));
+        AddTabMenuItem("Open Customer Ledger Tab (Ctrl+Shift+L)", () => ExecuteTabShortcutAction("open-ledger"));
         tabsMenu.DropDownItems.Add(new ToolStripSeparator());
-        tabsMenu.DropDownItems.Add("Duplicate Active Tab (Ctrl+Shift+D)", null, (_, _) => ExecuteTabShortcutAction("duplicate"));
-        tabsMenu.DropDownItems.Add("Close Active Tab (Ctrl+F4 / Ctrl+Shift+Q)", null, (_, _) => ExecuteTabShortcutAction("close-active"));
-        tabsMenu.DropDownItems.Add("Close Other Tabs (Ctrl+Shift+X)", null, (_, _) => ExecuteTabShortcutAction("close-others"));
-        tabsMenu.DropDownItems.Add("Reopen Closed Tab (Ctrl+Shift+T)", null, (_, _) => ExecuteTabShortcutAction("reopen-closed"));
+        AddTabMenuItem("Duplicate Active Tab (Ctrl+Shift+D)", () => ExecuteTabShortcutAction("duplicate"));
+        AddTabMenuItem("Close Active Tab (Ctrl+F4 / Ctrl+Shift+Q)", () => ExecuteTabShortcutAction("close-active"));
+        AddTabMenuItem("Close Other Tabs (Ctrl+Shift+X)", () => ExecuteTabShortcutAction("close-others"));
+        AddTabMenuItem("Reopen Closed Tab (Ctrl+Shift+T)", () => ExecuteTabShortcutAction("reopen-closed"));
         menuStrip.Items.Add(tabsMenu);
 
         MainMenuStrip = menuStrip;
@@ -755,6 +784,199 @@ public sealed class NativeWebView2Form : Form
         }
     }
 
+    /// <summary>
+    /// Executes real Windows hardware silent printing through Microsoft Edge WebView2
+    /// (CoreWebView2.PrintAsync) for both thermal POS receipts and A4 documents, with zero OS dialog.
+    /// When targetUrl &amp; targetHtml are null, prints the currently active tab.
+    /// </summary>
+    public Task<(bool Ok, string? Engine, string? Error)> ExecuteNativeSilentPrintAsync(
+        string? targetUrl,
+        string? targetHtml,
+        string printerName,
+        bool isThermal)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return Task.FromResult<(bool, string?, string?)>((false, "webview2-silent-print", "Main window is not active."));
+        }
+
+        var tcs = new TaskCompletionSource<(bool Ok, string? Engine, string? Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task RunOnUiThreadAsync()
+        {
+            Form? offscreenForm = null;
+            try
+            {
+                CoreWebView2? coreToPrint = null;
+
+                if (string.IsNullOrWhiteSpace(targetUrl) && string.IsNullOrWhiteSpace(targetHtml))
+                {
+                    if (_workspace.ActiveTabId != null &&
+                        _tabWebViews.TryGetValue(_workspace.ActiveTabId, out var activeWv) &&
+                        activeWv.CoreWebView2 != null)
+                    {
+                        coreToPrint = activeWv.CoreWebView2;
+                    }
+                    else
+                    {
+                        tcs.TrySetResult((false, "webview2-silent-print", "No active tab available to print."));
+                        return;
+                    }
+                }
+                else
+                {
+                    offscreenForm = new OffscreenPrintForm(isThermal ? 380 : 820, 900);
+
+                    var printWv = new WebView2
+                    {
+                        Dock = DockStyle.Fill,
+                        DefaultBackgroundColor = Color.White
+                    };
+                    offscreenForm.Controls.Add(printWv);
+                    offscreenForm.Show();
+
+                    var env = await GetOrCreateSharedEnvironmentAsync();
+                    await printWv.EnsureCoreWebView2Async(env);
+                    coreToPrint = printWv.CoreWebView2;
+
+                    await coreToPrint.AddScriptToExecuteOnDocumentCreatedAsync(
+                        "window.__karobarSilentPrintWorker = true; window.print = function(){}; window.close = function(){};");
+
+                    var navTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs args)
+                    {
+                        navTcs.TrySetResult(args.IsSuccess);
+                    }
+
+                    coreToPrint.NavigationCompleted += OnNavCompleted;
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(targetUrl))
+                        {
+                            coreToPrint.Navigate(targetUrl);
+                        }
+                        else
+                        {
+                            coreToPrint.NavigateToString(targetHtml!);
+                        }
+
+                        var completed = await Task.WhenAny(navTcs.Task, Task.Delay(15000));
+                        if (completed != navTcs.Task)
+                        {
+                            tcs.TrySetResult((false, "webview2-silent-print", "Timed out waiting for receipt page to load before printing."));
+                            return;
+                        }
+                    }
+                    finally
+                    {
+                        coreToPrint.NavigationCompleted -= OnNavCompleted;
+                    }
+
+                    try
+                    {
+                        await coreToPrint.ExecuteScriptAsync("document.fonts ? document.fonts.ready : Promise.resolve()");
+                    }
+                    catch { }
+                    await Task.Delay(250);
+                }
+
+                var result = await PrintCoreWebViewAsync(coreToPrint, printerName, isThermal);
+                tcs.TrySetResult(result);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetResult((false, "webview2-silent-print", ex.Message));
+            }
+            finally
+            {
+                if (offscreenForm != null)
+                {
+                    var formToDispose = offscreenForm;
+                    _ = Task.Delay(3000).ContinueWith(_ =>
+                    {
+                        try
+                        {
+                            if (!IsDisposed && IsHandleCreated)
+                            {
+                                BeginInvoke((Action)(() =>
+                                {
+                                    try
+                                    {
+                                        if (!formToDispose.IsDisposed)
+                                        {
+                                            formToDispose.Close();
+                                            formToDispose.Dispose();
+                                        }
+                                    }
+                                    catch { }
+                                }));
+                            }
+                        }
+                        catch { }
+                    });
+                }
+            }
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke((Action)(() => { _ = RunOnUiThreadAsync(); }));
+        }
+        else
+        {
+            _ = RunOnUiThreadAsync();
+        }
+
+        return tcs.Task;
+    }
+
+    private static async Task<(bool Ok, string? Engine, string? Error)> PrintCoreWebViewAsync(
+        CoreWebView2 core,
+        string printerName,
+        bool isThermal)
+    {
+        var settings = core.Environment.CreatePrintSettings();
+        settings.PrinterName = printerName;
+        settings.Copies = 1;
+        settings.Orientation = CoreWebView2PrintOrientation.Portrait;
+        settings.ShouldPrintBackgrounds = true;
+        settings.ShouldPrintHeaderAndFooter = false;
+        settings.ShouldPrintSelectionOnly = false;
+        if (isThermal)
+        {
+            settings.MarginTop = 0;
+            settings.MarginBottom = 0;
+            settings.MarginLeft = 0;
+            settings.MarginRight = 0;
+            settings.ScaleFactor = 1.0;
+        }
+
+        CoreWebView2PrintStatus status;
+        try
+        {
+            status = await core.PrintAsync(settings);
+        }
+        catch (ArgumentException)
+        {
+            // Fallback for thermal drivers that reject explicit 0 margins or custom scale factor
+            var fallback = core.Environment.CreatePrintSettings();
+            fallback.PrinterName = printerName;
+            fallback.ShouldPrintBackgrounds = true;
+            fallback.ShouldPrintHeaderAndFooter = false;
+            status = await core.PrintAsync(fallback);
+        }
+
+        if (status == CoreWebView2PrintStatus.Succeeded)
+        {
+            return (true, "webview2-silent-print", null);
+        }
+
+        var reason = status == CoreWebView2PrintStatus.PrinterUnavailable
+            ? $"Printer '{printerName}' is offline, disconnected, or unavailable in Windows."
+            : $"Windows printer '{printerName}' failed to print (status: {status}).";
+        return (false, "webview2-silent-print", reason);
+    }
+
     private string BuildAbsoluteUrl(string routePath)
     {
         var norm = NativeTabWorkspace.NormalizeRoutePath(routePath);
@@ -769,6 +991,79 @@ public sealed class NativeWebView2Form : Form
         }
         return $"http://127.0.0.1:{NetworkConfigManager.DefaultPort}";
     }
+}
+
+/// <summary>
+/// Dark-slate WinForms MenuStrip / ContextMenuStrip renderer so open, hovered, and pressed
+/// menu items &amp; dropdowns never flash white-on-white.
+/// </summary>
+internal sealed class DarkMenuStripRenderer : ToolStripProfessionalRenderer
+{
+    private static readonly Color TextNormal = Color.FromArgb(248, 250, 252);
+    private static readonly Color TextDisabled = Color.FromArgb(148, 163, 184);
+
+    public DarkMenuStripRenderer() : base(new DarkMenuColorTable())
+    {
+        RoundedEdges = false;
+    }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        e.TextColor = e.Item.Enabled ? TextNormal : TextDisabled;
+        base.OnRenderItemText(e);
+    }
+
+    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+    {
+        e.ArrowColor = TextNormal;
+        base.OnRenderArrow(e);
+    }
+}
+
+internal sealed class DarkMenuColorTable : ProfessionalColorTable
+{
+    private static readonly Color BarBg = Color.FromArgb(15, 23, 42);        // #0f172a
+    private static readonly Color DropdownBg = Color.FromArgb(30, 41, 59);   // #1e293b
+    private static readonly Color HoverBg = Color.FromArgb(51, 65, 85);      // #334155
+    private static readonly Color BorderColor = Color.FromArgb(71, 85, 105); // #475569
+    private static readonly Color AccentBorder = Color.FromArgb(56, 189, 248);
+
+    public override Color MenuStripGradientBegin => BarBg;
+    public override Color MenuStripGradientEnd => BarBg;
+    public override Color ToolStripDropDownBackground => DropdownBg;
+    public override Color ImageMarginGradientBegin => DropdownBg;
+    public override Color ImageMarginGradientMiddle => DropdownBg;
+    public override Color ImageMarginGradientEnd => DropdownBg;
+    public override Color MenuBorder => BorderColor;
+    public override Color MenuItemBorder => AccentBorder;
+    public override Color MenuItemSelected => HoverBg;
+    public override Color MenuItemSelectedGradientBegin => HoverBg;
+    public override Color MenuItemSelectedGradientEnd => HoverBg;
+    public override Color MenuItemPressedGradientBegin => DropdownBg;
+    public override Color MenuItemPressedGradientMiddle => DropdownBg;
+    public override Color MenuItemPressedGradientEnd => DropdownBg;
+    public override Color SeparatorDark => BorderColor;
+    public override Color SeparatorLight => DropdownBg;
+}
+
+/// <summary>
+/// Non-activating offscreen Form for silent WebView2 hardware printing so printing a receipt
+/// never steals focus from the cashier's active POS input or flashes on the taskbar.
+/// </summary>
+internal sealed class OffscreenPrintForm : Form
+{
+    public OffscreenPrintForm(int width, int height)
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(-32000, -32000);
+        Size = new Size(width, height);
+        Opacity = 0.0;
+        BackColor = Color.White;
+    }
+
+    protected override bool ShowWithoutActivation => true;
 }
 
 /// <summary>
