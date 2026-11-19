@@ -61,7 +61,7 @@ public class AccountController : ApiControllerBase
 
         if (activeOnly)
         {
-            if (!await CanAsync("account.view", "sale-invoice.create", "sale-invoice.update", "barcode-pos.view", "barcode-pos.create", "purchase-invoice.create", "purchase-invoice.update", "payment.create", "expense.create", "expense.update"))
+            if (!await CanAsync("account.view", "sale-invoice.create", "sale-invoice.update", "sale-return.create", "sale-return.update", "barcode-pos.view", "barcode-pos.create", "purchase-invoice.create", "purchase-invoice.update", "purchase-return.create", "purchase-return.update", "payment.create", "expense.create", "expense.update"))
                 return Forbidden();
         }
         else

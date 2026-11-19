@@ -42,24 +42,20 @@ public class PurchaseOrderController : ApiControllerBase
         var supplierTrim = (supplier ?? "").Trim();
         var searchTrim = (search ?? q ?? "").Trim();
 
-        if (!string.IsNullOrEmpty(supplierTrim))
+        var effectiveQuery = !string.IsNullOrEmpty(supplierTrim) ? supplierTrim : searchTrim;
+        if (!string.IsNullOrEmpty(effectiveQuery))
         {
-            where.Add("EXISTS (SELECT 1 FROM suppliers s WHERE s.id = purchase_orders.supplier_id AND s.name LIKE @supLike)");
-            dyn.Add("supLike", "%" + supplierTrim + "%");
-        }
-        else if (!string.IsNullOrEmpty(searchTrim))
-        {
-            var cleanPo = Regex.Replace(searchTrim, "[^0-9]", "");
+            var cleanPo = Regex.Replace(effectiveQuery, "[^0-9]", "");
             if (!string.IsNullOrEmpty(cleanPo) && long.TryParse(cleanPo, out var cleanId))
             {
-                where.Add("(EXISTS (SELECT 1 FROM suppliers s WHERE s.id = purchase_orders.supplier_id AND s.name LIKE @searchLike) OR purchase_orders.reference LIKE @searchLike OR purchase_orders.id = @cleanId)");
+                where.Add("(EXISTS (SELECT 1 FROM suppliers s WHERE s.id = purchase_orders.supplier_id AND s.name LIKE @searchLike) OR purchase_orders.reference LIKE @searchLike OR purchase_orders.number LIKE @searchLike OR purchase_orders.id = @cleanId)");
                 dyn.Add("cleanId", cleanId);
             }
             else
             {
-                where.Add("(EXISTS (SELECT 1 FROM suppliers s WHERE s.id = purchase_orders.supplier_id AND s.name LIKE @searchLike) OR purchase_orders.reference LIKE @searchLike)");
+                where.Add("(EXISTS (SELECT 1 FROM suppliers s WHERE s.id = purchase_orders.supplier_id AND s.name LIKE @searchLike) OR purchase_orders.reference LIKE @searchLike OR purchase_orders.number LIKE @searchLike)");
             }
-            dyn.Add("searchLike", "%" + searchTrim + "%");
+            dyn.Add("searchLike", "%" + effectiveQuery + "%");
         }
 
         var delivDate = (delivery_date ?? expected_received_date ?? expected_date ?? "").Trim();
@@ -360,12 +356,15 @@ public class PurchaseOrderController : ApiControllerBase
 
         var poItems = await Db.QueryListAsync("SELECT * FROM purchase_order_items WHERE purchase_order_id = @id", new { id });
         var previousReceipts = await Db.HasTableAsync("purchase_invoices")
-            ? await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id })
+            ? await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id AND (status IS NULL OR status != 'reversed')", new { id })
             : 0;
 
         var invoiceItems = await Db.HasTableAsync("purchase_invoice_items") && poItems.Count > 0
             ? await Db.QueryListAsync(
-                "SELECT * FROM purchase_invoice_items WHERE purchase_order_item_id IN @ids",
+                @"SELECT pii.* FROM purchase_invoice_items pii
+                  INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                  WHERE pii.purchase_order_item_id IN @ids
+                    AND (pi.status IS NULL OR pi.status != 'reversed')",
                 new { ids = poItems.Select(x => ToLong(x["id"])).ToArray() })
             : new List<Dictionary<string, object?>>();
 
@@ -483,7 +482,7 @@ public class PurchaseOrderController : ApiControllerBase
         [FromQuery] int safety_packs = 0,
         [FromQuery] int moq_packs = 0)
     {
-        if (!await CanAsync("purchase-order.forecast", "purchase-order.create", "purchase-order.view"))
+        if (!await CanAsync("purchase-order.generate", "purchase-order.forecast", "purchase-order.create"))
         {
             return Forbidden();
         }
@@ -758,7 +757,10 @@ public class PurchaseOrderController : ApiControllerBase
         var items = await Db.QueryListAsync("SELECT * FROM purchase_order_items WHERE purchase_order_id = @id", new { id });
         var invoiceItems = await Db.HasTableAsync("purchase_invoice_items") && items.Count > 0
             ? await Db.QueryListAsync(
-                "SELECT * FROM purchase_invoice_items WHERE purchase_order_item_id IN @ids",
+                @"SELECT pii.* FROM purchase_invoice_items pii
+                  INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                  WHERE pii.purchase_order_item_id IN @ids
+                    AND (pi.status IS NULL OR pi.status != 'reversed')",
                 new { ids = items.Select(x => ToLong(x["id"])).ToArray() })
             : new List<Dictionary<string, object?>>();
 
@@ -818,6 +820,10 @@ public class PurchaseOrderController : ApiControllerBase
         if (string.IsNullOrEmpty(expectedDate))
         {
             errors["expected_received_date"] = new[] { "The expected received date field is required." };
+        }
+        else if (!string.IsNullOrEmpty(date) && DateTime.TryParse(date, out var orderDt) && DateTime.TryParse(expectedDate, out var expDt) && expDt.Date < orderDt.Date)
+        {
+            errors["expected_received_date"] = new[] { "The expected received date must be on or after the order date." };
         }
 
         var items = new List<Dictionary<string, object?>>();

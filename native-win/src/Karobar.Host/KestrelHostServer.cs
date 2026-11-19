@@ -190,7 +190,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
     ];
 
     private static readonly Regex NonSpaRoutePrefixRegex = new(
-        @"^\/(api|sanctum|storage|up|print|password\/reset|supplier-ledger\/print|customer-ledger\/print|terms-of-service|privacy-policy|server-launch|__karobar_ipc|__desktop)(\/|$)",
+        @"^\/((api|sanctum|storage|up|print|password\/reset|supplier-ledger\/print|customer-ledger\/print|terms-of-service|privacy-policy|server-launch|__karobar_ipc|__desktop)(\/|$)|sale-invoices\/\d+\/dosage-labels(\/|$))",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly NetworkConfigManager _networkConfig;

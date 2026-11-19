@@ -198,8 +198,11 @@ public class ReturnSettlementService
                 tx);
         }
 
-        // Remove old cash drawer transaction for this sale return if any
-        await RemoveCashDrawerTransactionForRefAsync("sale_return", srId, "cash_refund", conn, tx);
+        // Remove old cash drawer transaction for this sale return ONLY if it belongs to the currently open shift
+        var hadDrawerInOpenShift = await RemoveCashDrawerTransactionForRefAsync("sale_return", srId, "cash_refund", conn, tx) > 0;
+        var hadHistoricalDrawerTxn = !hadDrawerInOpenShift && await HasAnyCashDrawerTransactionForRefAsync("sale_return", srId, conn, tx);
+        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
+        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
 
         if (newMode == "cash_refund" && newTotal > 0)
         {
@@ -238,7 +241,31 @@ public class ReturnSettlementService
 
             if (IsDefaultCashDrawerAccount(targetAccount, newPayMethod))
             {
-                await RecordCashDrawerTransactionAsync("cash_refund", newTotal, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx);
+                if (hadDrawerInOpenShift || !hadHistoricalDrawerTxn)
+                {
+                    // Same open shift (or brand-new cash refund): record full updated amount cleanly
+                    if (!hadHistoricalDrawerTxn && updateDrawerIfPreShift == false && oldWasCashRefund)
+                    {
+                        // User explicitly declined touching the current shift drawer for a pre-shift edit
+                    }
+                    else
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_refund", newTotal, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx);
+                    }
+                }
+                else if (updateDrawerIfPreShift == true)
+                {
+                    // Pre-shift return edited with user opting to reflect the net cash delta in the current open shift
+                    var delta = Math.Round(newTotal - (oldWasCashRefund ? oldTotal : 0.0), 2);
+                    if (delta > 0)
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_refund", delta, "sale_return", srId, $"Cash refund adjustment for pre-shift sale return #{postedNumber}", userId, conn, tx);
+                    }
+                    else if (delta < 0)
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_in", Math.Abs(delta), "sale_return", srId, $"Cash refund reduction for pre-shift sale return #{postedNumber}", userId, conn, tx);
+                    }
+                }
             }
         }
         else
@@ -439,7 +466,11 @@ public class ReturnSettlementService
                 tx);
         }
 
-        await RemoveCashDrawerTransactionForRefAsync("purchase_return", prId, "cash_in", conn, tx);
+        var hadDrawerInOpenShift = await RemoveCashDrawerTransactionForRefAsync("purchase_return", prId, "cash_in", conn, tx) > 0;
+        var hadHistoricalDrawerTxn = !hadDrawerInOpenShift && await HasAnyCashDrawerTransactionForRefAsync("purchase_return", prId, conn, tx);
+        var oldMode = (oldSnapshot.TryGetValue("settlement_mode", out var om) ? om?.ToString() : "cash_refund") ?? "cash_refund";
+        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
+        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
 
         if (newMode == "cash_refund" && newTotal > 0)
         {
@@ -478,7 +509,29 @@ public class ReturnSettlementService
 
             if (IsDefaultCashDrawerAccount(targetAccount, newPayMethod))
             {
-                await RecordCashDrawerTransactionAsync("cash_in", newTotal, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx);
+                if (hadDrawerInOpenShift || !hadHistoricalDrawerTxn)
+                {
+                    if (!hadHistoricalDrawerTxn && updateDrawerIfPreShift == false && oldWasCashRefund)
+                    {
+                        // User explicitly declined touching the current shift drawer for a pre-shift edit
+                    }
+                    else
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_in", newTotal, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx);
+                    }
+                }
+                else if (updateDrawerIfPreShift == true)
+                {
+                    var delta = Math.Round(newTotal - (oldWasCashRefund ? oldTotal : 0.0), 2);
+                    if (delta > 0)
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_in", delta, "purchase_return", prId, $"Supplier refund adjustment for pre-shift purchase return #{postedNumber}", userId, conn, tx);
+                    }
+                    else if (delta < 0)
+                    {
+                        await RecordCashDrawerTransactionAsync("cash_out", Math.Abs(delta), "purchase_return", prId, $"Supplier refund reduction for pre-shift purchase return #{postedNumber}", userId, conn, tx);
+                    }
+                }
             }
         }
         else
@@ -1324,12 +1377,8 @@ public class ReturnSettlementService
         {
             var type = account.GetValueOrDefault("type")?.ToString() ?? "";
             var code = account.GetValueOrDefault("code")?.ToString() ?? "";
-            if (string.Equals(type, "cash", StringComparison.OrdinalIgnoreCase) &&
-                (string.Equals(code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase) || IsTruthy(account.GetValueOrDefault("is_default"))))
-            {
-                return true;
-            }
-            return string.Equals(type, "cash", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(type, "cash", StringComparison.OrdinalIgnoreCase) &&
+                   (string.Equals(code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase) || IsTruthy(account.GetValueOrDefault("is_default")));
         }
 
         return string.Equals(paymentMethod ?? "cash", "cash", StringComparison.OrdinalIgnoreCase);
@@ -1365,14 +1414,14 @@ public class ReturnSettlementService
             await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
             {
                 ["account_id"] = accId,
-                ["type"] = "credit",
+                ["user_id"] = userId,
+                ["type"] = "deposit",
                 ["amount"] = Math.Round(amount, 2),
                 ["balance_after"] = nextBalance,
-                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
                 ["reference_type"] = referenceType,
                 ["reference_id"] = referenceId,
-                ["description"] = description,
-                ["created_by"] = userId
+                ["description"] = description
             }, conn, tx);
         }
     }
@@ -1407,14 +1456,14 @@ public class ReturnSettlementService
             await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
             {
                 ["account_id"] = accId,
-                ["type"] = "debit",
+                ["user_id"] = userId,
+                ["type"] = "withdrawal",
                 ["amount"] = Math.Round(amount, 2),
                 ["balance_after"] = nextBalance,
-                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
                 ["reference_type"] = referenceType,
                 ["reference_id"] = referenceId,
-                ["description"] = description,
-                ["created_by"] = userId
+                ["description"] = description
             }, conn, tx);
         }
     }
@@ -1454,19 +1503,39 @@ public class ReturnSettlementService
         }, conn, tx);
     }
 
-    private async Task RemoveCashDrawerTransactionForRefAsync(
+    private async Task<int> RemoveCashDrawerTransactionForRefAsync(
         string referenceType,
         long referenceId,
         string type,
         IDbConnection? conn,
         IDbTransaction? tx)
     {
-        if (!await _db.HasTableAsync("cash_drawer_transactions")) return;
-        await _db.ExecuteAsync(
-            "DELETE FROM cash_drawer_transactions WHERE reference_type = @refType AND reference_id = @refId AND type = @type",
+        if (!await _db.HasTableAsync("cash_drawer_transactions") || !await _db.HasTableAsync("cash_drawer_sessions")) return 0;
+        // Never mutate closed historical shifts — only remove drawer entries inside the currently open session
+        return await _db.ExecuteAsync(
+            @"DELETE FROM cash_drawer_transactions
+              WHERE reference_type = @refType
+                AND reference_id = @refId
+                AND type = @type
+                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
             new { refType = referenceType, refId = referenceId, type },
             conn,
             tx);
+    }
+
+    private async Task<bool> HasAnyCashDrawerTransactionForRefAsync(
+        string referenceType,
+        long referenceId,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        if (!await _db.HasTableAsync("cash_drawer_transactions")) return false;
+        var count = await _db.ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM cash_drawer_transactions WHERE reference_type = @refType AND reference_id = @refId",
+            new { refType = referenceType, refId = referenceId },
+            conn,
+            tx);
+        return count > 0;
     }
 
     private static string NormalizeDateString(object? dateVal)

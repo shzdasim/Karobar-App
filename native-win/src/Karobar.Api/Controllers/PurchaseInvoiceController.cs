@@ -602,12 +602,15 @@ public class PurchaseInvoiceController : ApiControllerBase
 
                 var dueDate = await ResolveDueDateAsync(rawData, supplierId, postedDate, conn, tx);
                 var newPayMethod = rawData.GetValueOrDefault("payment_method")?.ToString() ?? existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var resolvedAccountId = ToNullableLong(rawData.GetValueOrDefault("account_id"))
+                                        ?? ToNullableLong(existing.GetValueOrDefault("account_id"));
 
                 var updatePayload = new Dictionary<string, object?>
                 {
                     ["supplier_id"] = supplierId,
                     ["invoice_type"] = newInvoiceType,
                     ["payment_method"] = newPayMethod,
+                    ["account_id"] = resolvedAccountId,
                     ["posted_number"] = postedNumber,
                     ["posted_date"] = postedDate,
                     ["due_date"] = dueDate,
@@ -745,6 +748,86 @@ public class PurchaseInvoiceController : ApiControllerBase
                                 ["description"] = "Payment made on invoice " + postedNumber,
                                 ["created_by"] = CurrentUserId
                             }, conn, tx);
+                        }
+                    }
+                }
+
+                // Sync financial accounts & cash drawer on purchase invoice update
+                var oldCashPaid = string.Equals(oldInvoiceType, "credit", StringComparison.OrdinalIgnoreCase)
+                    ? ToDouble(existing.GetValueOrDefault("total_paid"))
+                    : (ToDouble(existing.GetValueOrDefault("total_paid")) > 0 ? ToDouble(existing.GetValueOrDefault("total_paid")) : ToDouble(existing.GetValueOrDefault("total_amount")));
+                var newCashPaid = newInvoiceType == "credit"
+                    ? totalPaid
+                    : (totalPaid > 0 ? totalPaid : totalAmount);
+                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var oldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
+                var newAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
+                var oldAccId = oldAcc != null ? ToLong(oldAcc["id"]) : 0L;
+                var newAccId = newAcc != null ? ToLong(newAcc["id"]) : 0L;
+
+                if (oldAccId == newAccId && newAcc != null)
+                {
+                    var accDelta = Math.Round(newCashPaid - oldCashPaid, 2);
+                    if (accDelta > 0)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(newAcc, accDelta, "purchase_invoice", id, $"Edit payment increase for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    else if (accDelta < 0)
+                    {
+                        await _settlementService.DepositToAccountAsync(newAcc, Math.Abs(accDelta), "purchase_invoice", id, $"Edit payment reduction for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+                else
+                {
+                    if (oldAcc != null && oldCashPaid > 0)
+                    {
+                        await _settlementService.DepositToAccountAsync(oldAcc, oldCashPaid, "purchase_invoice", id, $"Reassigned account for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    if (newAcc != null && newCashPaid > 0)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(newAcc, newCashPaid, "purchase_invoice", id, $"Payment for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+
+                // Sync cash drawer honoring update_drawer / update_drawer_if_pre_shift without mutating closed shifts
+                static bool ParseFlag(object? v) => v is true or 1 or 1L || (v?.ToString()?.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on");
+                bool? updateDrawerFlag = null;
+                if (rawData.TryGetValue("update_drawer", out var udObj) && udObj != null)
+                    updateDrawerFlag = ParseFlag(udObj);
+                else if (rawData.TryGetValue("update_drawer_if_pre_shift", out var udpObj) && udpObj != null)
+                    updateDrawerFlag = ParseFlag(udpObj);
+
+                if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
+                {
+                    var removedOpenRows = await Db.ExecuteAsync(
+                        @"DELETE FROM cash_drawer_transactions
+                          WHERE reference_type = 'purchase_invoice'
+                            AND reference_id = @id
+                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+                        new { id }, conn, tx);
+                    var hadHistorical = removedOpenRows == 0 &&
+                        await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM cash_drawer_transactions WHERE reference_type = 'purchase_invoice' AND reference_id = @id", new { id }, conn, tx) > 0;
+
+                    var oldWasDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(oldAcc, oldPayMethodStr);
+                    var newIsDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(newAcc, newPayMethod);
+
+                    if (removedOpenRows > 0 || !hadHistorical)
+                    {
+                        if (newIsDrawer && newCashPaid > 0 && !(hadHistorical == false && updateDrawerFlag == false && oldWasDrawer))
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_out", newCashPaid, "purchase_invoice", id, $"Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                        }
+                    }
+                    else if (updateDrawerFlag == true)
+                    {
+                        var drawerDelta = Math.Round((newIsDrawer ? newCashPaid : 0.0) - (oldWasDrawer ? oldCashPaid : 0.0), 2);
+                        if (drawerDelta > 0)
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_out", drawerDelta, "purchase_invoice", id, $"Pre-shift edit adjustment for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                        }
+                        else if (drawerDelta < 0)
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_in", Math.Abs(drawerDelta), "purchase_invoice", id, $"Pre-shift edit refund for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
                         }
                     }
                 }
@@ -999,10 +1082,13 @@ public class PurchaseInvoiceController : ApiControllerBase
                     }
                 }
 
-                if (await Db.HasTableAsync("cash_drawer_transactions"))
+                if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
                 {
                     await Db.ExecuteAsync(
-                        "DELETE FROM cash_drawer_transactions WHERE reference_type = 'purchase_invoice' AND reference_id = @id",
+                        @"DELETE FROM cash_drawer_transactions
+                          WHERE reference_type = 'purchase_invoice'
+                            AND reference_id = @id
+                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
                         new { id },
                         conn,
                         tx);
@@ -1230,66 +1316,212 @@ public class PurchaseInvoiceController : ApiControllerBase
         IDbConnection conn,
         IDbTransaction tx)
     {
-        foreach (var oldItem in oldItems)
+        // 1. Aggregate OLD vs NEW totals per product_id and per (product_id, batch, expiry) key
+        var oldByProduct = new Dictionary<long, (int Qty, double TotalCost)>();
+        foreach (var oi in oldItems)
         {
-            var pid = ToLong(oldItem.GetValueOrDefault("product_id"));
-            var qty = (int)ToLong(oldItem.GetValueOrDefault("quantity"));
+            var pid = ToLong(oi.GetValueOrDefault("product_id"));
+            if (pid <= 0) continue;
+            var q = Math.Max(0, (int)ToLong(oi.GetValueOrDefault("quantity")));
+            var cost = ToDouble(oi.GetValueOrDefault("avg_price") ?? oi.GetValueOrDefault("unit_purchase_price"));
+            var cur = oldByProduct.GetValueOrDefault(pid);
+            oldByProduct[pid] = (cur.Qty + q, cur.TotalCost + q * cost);
+        }
+
+        var newByProduct = new Dictionary<long, (int Qty, double TotalCost, Dictionary<string, object?> LastItem)>();
+        foreach (var ni in newItems)
+        {
+            var pid = ToLong(ni.GetValueOrDefault("product_id"));
+            if (pid <= 0) continue;
+            var q = Math.Max(0, (int)ToLong(ni.GetValueOrDefault("quantity")));
+            var cost = ToDouble(ni.GetValueOrDefault("avg_price") ?? ni.GetValueOrDefault("unit_purchase_price"));
+            var cur = newByProduct.GetValueOrDefault(pid);
+            newByProduct[pid] = (cur.Qty + q, cur.TotalCost + q * cost, ni);
+        }
+
+        var allProductIds = oldByProduct.Keys.Union(newByProduct.Keys).Distinct().ToList();
+        var productCache = new Dictionary<long, Dictionary<string, object?>>();
+
+        // 2. Pre-validate EVERY net product-level reduction BEFORE mutating any stock
+        foreach (var pid in allProductIds)
+        {
             var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @pid", new { pid }, conn, tx);
-            if (product != null)
+            if (product == null) continue;
+            productCache[pid] = product;
+
+            var oldQty = oldByProduct.TryGetValue(pid, out var oInfo) ? oInfo.Qty : 0;
+            var newQty = newByProduct.TryGetValue(pid, out var nInfo) ? nInfo.Qty : 0;
+            var reduction = oldQty - newQty;
+            var currentStock = (int)ToLong(product.GetValueOrDefault("quantity"));
+            if (reduction > 0 && currentStock < reduction)
             {
-                var newTotalForPid = newItems.Where(ni => ToLong(ni.GetValueOrDefault("product_id")) == pid).Sum(ni => (int)ToLong(ni.GetValueOrDefault("quantity")));
-                var oldTotalForPid = oldItems.Where(oi => ToLong(oi.GetValueOrDefault("product_id")) == pid).Sum(oi => (int)ToLong(oi.GetValueOrDefault("quantity")));
-                var reduction = oldTotalForPid - newTotalForPid;
-                if (reduction > 0 && (int)ToLong(product.GetValueOrDefault("quantity")) < reduction)
+                var pName = product.GetValueOrDefault("name")?.ToString() ?? $"Product #{pid}";
+                var msg = $"Cannot reduce purchase quantity for {pName} by {reduction} units because only {currentStock} units remain in stock.";
+                throw new InvoiceValidationException(msg, new Dictionary<string, string[]> { ["items"] = new[] { msg } });
+            }
+        }
+
+        // 3. Aggregate & pre-validate EVERY net batch-level reduction BEFORE mutating batches
+        static (long Pid, string Batch, string Expiry) BatchKey(Dictionary<string, object?> item) =>
+            (ToLong(item.GetValueOrDefault("product_id")),
+             (item.GetValueOrDefault("batch")?.ToString() ?? "").Trim(),
+             (item.GetValueOrDefault("expiry")?.ToString() ?? "").Trim());
+
+        var oldByBatch = new Dictionary<(long Pid, string Batch, string Expiry), int>();
+        foreach (var oi in oldItems)
+        {
+            var key = BatchKey(oi);
+            if (key.Pid <= 0 || string.IsNullOrEmpty(key.Batch) || string.IsNullOrEmpty(key.Expiry)) continue;
+            oldByBatch[key] = oldByBatch.GetValueOrDefault(key) + Math.Max(0, (int)ToLong(oi.GetValueOrDefault("quantity")));
+        }
+
+        var newByBatch = new Dictionary<(long Pid, string Batch, string Expiry), (int Qty, Dictionary<string, object?> LastItem)>();
+        foreach (var ni in newItems)
+        {
+            var key = BatchKey(ni);
+            if (key.Pid <= 0 || string.IsNullOrEmpty(key.Batch) || string.IsNullOrEmpty(key.Expiry)) continue;
+            var cur = newByBatch.GetValueOrDefault(key);
+            newByBatch[key] = (cur.Qty + Math.Max(0, (int)ToLong(ni.GetValueOrDefault("quantity"))), ni);
+        }
+
+        var hasBatchesTable = await Db.HasTableAsync("batches");
+        if (hasBatchesTable)
+        {
+            foreach (var kv in oldByBatch)
+            {
+                var newBatchQty = newByBatch.TryGetValue(kv.Key, out var nb) ? nb.Qty : 0;
+                var reduction = kv.Value - newBatchQty;
+                if (reduction <= 0) continue;
+
+                var batchRow = await Db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM batches WHERE product_id = @pid AND batch_number = @bn AND expiry_date = @exp LIMIT 1",
+                    new { pid = kv.Key.Pid, bn = kv.Key.Batch, exp = kv.Key.Expiry },
+                    conn,
+                    tx);
+                var currentBatchQty = batchRow != null ? (int)ToLong(batchRow.GetValueOrDefault("quantity")) : 0;
+                if (currentBatchQty < reduction)
                 {
-                    var pName = product.GetValueOrDefault("name")?.ToString() ?? $"Product #{pid}";
-                    var msg = $"Cannot reduce purchase quantity for {pName} by {reduction} units because only {product["quantity"]} units remain in stock.";
+                    var pName = productCache.TryGetValue(kv.Key.Pid, out var pr) ? (pr.GetValueOrDefault("name")?.ToString() ?? $"Product #{kv.Key.Pid}") : $"Product #{kv.Key.Pid}";
+                    var msg = $"Cannot reduce batch '{kv.Key.Batch}' of {pName} by {reduction} units because only {currentBatchQty} units remain in that batch.";
                     throw new InvoiceValidationException(msg, new Dictionary<string, string[]> { ["items"] = new[] { msg } });
                 }
             }
-            await RevertPurchaseItemAsync(oldItem, conn, tx);
         }
 
-        foreach (var newItem in newItems)
+        // 4. Apply true NET DELTAS per product (preserves sold units & weighted average cost accurately!)
+        foreach (var pid in allProductIds)
         {
-            var pid = ToLong(newItem.GetValueOrDefault("product_id"));
-            var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @pid", new { pid }, conn, tx);
-            if (product != null)
+            if (!productCache.TryGetValue(pid, out var product)) continue;
+
+            var oldInfo = oldByProduct.GetValueOrDefault(pid);
+            var hasNew = newByProduct.TryGetValue(pid, out var newInfo);
+            var currentQty = (int)ToLong(product.GetValueOrDefault("quantity"));
+            var currentAvg = ToDouble(product.GetValueOrDefault("avg_price"));
+            var netQtyDelta = (hasNew ? newInfo.Qty : 0) - oldInfo.Qty;
+            var nextQty = Math.Max(0, currentQty + netQtyDelta);
+
+            double nextAvg;
+            if (nextQty <= 0)
             {
-                await ApplyPurchaseToProductAsync(product, newItem, conn, tx);
+                nextAvg = 0.0;
+            }
+            else
+            {
+                var currentVal = currentQty * currentAvg;
+                var netValDelta = (hasNew ? newInfo.TotalCost : 0.0) - oldInfo.TotalCost;
+                var nextVal = Math.Max(0.0, currentVal + netValDelta);
+                nextAvg = Math.Round(nextVal / nextQty, 2);
+                if (nextAvg <= 0 && hasNew && newInfo.Qty > 0)
+                {
+                    nextAvg = Math.Round(newInfo.TotalCost / newInfo.Qty, 2);
+                }
             }
 
-            var batchNo = (newItem.GetValueOrDefault("batch")?.ToString() ?? "").Trim();
-            var expiry = (newItem.GetValueOrDefault("expiry")?.ToString() ?? "").Trim();
-            if (!string.IsNullOrEmpty(batchNo) && !string.IsNullOrEmpty(expiry) && await Db.HasTableAsync("batches"))
+            var updates = new Dictionary<string, object?>
             {
+                ["quantity"] = nextQty,
+                ["avg_price"] = nextAvg
+            };
+
+            if (hasNew && newInfo.LastItem != null)
+            {
+                var item = newInfo.LastItem;
+                var packSize = Math.Max(1, (int)ToLong(item.GetValueOrDefault("pack_size") ?? product.GetValueOrDefault("pack_size") ?? 1));
+                var packPur = ToDouble(item.GetValueOrDefault("pack_purchase_price"));
+                var unitPur = ToDouble(item.GetValueOrDefault("unit_purchase_price"));
+                var packSale = ToDouble(item.GetValueOrDefault("pack_sale_price"));
+                var unitSale = ToDouble(item.GetValueOrDefault("unit_sale_price"));
+                var wsPack = ToDouble(item.GetValueOrDefault("whole_sale_pack_price"));
+                var wsUnit = ToDouble(item.GetValueOrDefault("whole_sale_unit_price"));
+
+                if (packPur > 0) updates["pack_purchase_price"] = packPur;
+                if (unitPur > 0) updates["unit_purchase_price"] = unitPur;
+                if (packSale > 0) updates["pack_sale_price"] = packSale;
+                if (unitSale > 0) updates["unit_sale_price"] = unitSale;
+                if (wsPack > 0) updates["whole_sale_pack_price"] = wsPack;
+                if (wsUnit > 0) updates["whole_sale_unit_price"] = wsUnit;
+                updates["pack_size"] = packSize;
+            }
+
+            var effRetailSale = updates.TryGetValue("unit_sale_price", out var rsObj) ? ToDouble(rsObj) : ToDouble(product.GetValueOrDefault("unit_sale_price"));
+            var effWsSale = updates.TryGetValue("whole_sale_unit_price", out var wsObj) ? ToDouble(wsObj) : ToDouble(product.GetValueOrDefault("whole_sale_unit_price"));
+            updates["margin"] = (effRetailSale > 0 && nextAvg > 0) ? Math.Round(((effRetailSale - nextAvg) / effRetailSale) * 100.0, 2) : 0.0;
+            updates["whole_sale_margin"] = (effWsSale > 0 && nextAvg > 0) ? Math.Round(((effWsSale - nextAvg) / effWsSale) * 100.0, 2) : 0.0;
+
+            await Db.UpdateAsync("products", pid, updates, "id", conn, tx);
+        }
+
+        // 5. Apply true NET DELTAS per batch (preserving storage_location_id & rack on newly created batches!)
+        if (hasBatchesTable)
+        {
+            var allBatchKeys = oldByBatch.Keys.Union(newByBatch.Keys).Distinct().ToList();
+            foreach (var key in allBatchKeys)
+            {
+                var oldQty = oldByBatch.GetValueOrDefault(key);
+                var hasNew = newByBatch.TryGetValue(key, out var newBatchInfo);
+                var delta = (hasNew ? newBatchInfo.Qty : 0) - oldQty;
+
                 var existingBatch = await Db.QuerySingleOrDefaultAsync(
                     "SELECT * FROM batches WHERE product_id = @pid AND batch_number = @bn AND expiry_date = @exp LIMIT 1",
-                    new { pid, bn = batchNo, exp = expiry },
+                    new { pid = key.Pid, bn = key.Batch, exp = key.Expiry },
                     conn,
                     tx);
 
+                productCache.TryGetValue(key.Pid, out var prodRow);
                 if (existingBatch != null)
                 {
-                    var nextQty = (int)ToLong(existingBatch.GetValueOrDefault("quantity")) + (int)ToLong(newItem.GetValueOrDefault("quantity"));
+                    var nextQty = Math.Max(0, (int)ToLong(existingBatch.GetValueOrDefault("quantity")) + delta);
                     var batchUpdates = new Dictionary<string, object?> { ["quantity"] = nextQty };
-                    ApplyBatchPricingFields(batchUpdates, newItem, product);
+                    if (hasNew && newBatchInfo.LastItem != null)
+                    {
+                        ApplyBatchPricingFields(batchUpdates, newBatchInfo.LastItem, prodRow);
+                    }
                     await Db.UpdateAsync("batches", existingBatch["id"]!, batchUpdates, "id", conn, tx);
                 }
-                else
+                else if (hasNew && newBatchInfo.Qty > 0)
                 {
                     var newBatch = new Dictionary<string, object?>
                     {
-                        ["product_id"] = pid,
-                        ["batch_number"] = batchNo,
-                        ["expiry_date"] = expiry,
-                        ["quantity"] = (int)ToLong(newItem.GetValueOrDefault("quantity"))
+                        ["product_id"] = key.Pid,
+                        ["batch_number"] = key.Batch,
+                        ["expiry_date"] = key.Expiry,
+                        ["quantity"] = newBatchInfo.Qty,
+                        ["storage_location_id"] = ToNullableLong(newBatchInfo.LastItem?.GetValueOrDefault("storage_location_id")) ?? ToNullableLong(prodRow?.GetValueOrDefault("storage_location_id")),
+                        ["rack"] = newBatchInfo.LastItem?.GetValueOrDefault("rack") ?? prodRow?.GetValueOrDefault("rack")
                     };
-                    ApplyBatchPricingFields(newBatch, newItem, product);
+                    if (newBatchInfo.LastItem != null)
+                    {
+                        ApplyBatchPricingFields(newBatch, newBatchInfo.LastItem, prodRow);
+                    }
                     await Db.InsertAsync("batches", newBatch, conn, tx);
                 }
             }
+        }
 
+        // 6. Sync product_suppliers link for all updated items
+        foreach (var newItem in newItems)
+        {
+            var pid = ToLong(newItem.GetValueOrDefault("product_id"));
             if (pid > 0 && supplierId > 0)
             {
                 await SyncProductSupplierLinkAsync(pid, supplierId, newItem, conn, tx);

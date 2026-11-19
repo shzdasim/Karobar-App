@@ -251,11 +251,16 @@ public class PurchaseReturnController : ApiControllerBase
                 await RevertItemsAsync(oldItems, conn, tx);
                 await Db.ExecuteAsync("DELETE FROM purchase_return_items WHERE purchase_return_id = @id", new { id }, conn, tx);
 
+                var parsedSupplierId = ToLong(rawData.GetValueOrDefault("supplier_id"));
+                if (parsedSupplierId <= 0) parsedSupplierId = ToLong(existing.GetValueOrDefault("supplier_id"));
+                var parsedDate = (rawData.GetValueOrDefault("date")?.ToString() ?? "").Trim();
+                if (string.IsNullOrEmpty(parsedDate)) parsedDate = existing.GetValueOrDefault("date")?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
+
                 var updatePayload = new Dictionary<string, object?>
                 {
-                    ["supplier_id"] = ToLong(rawData.GetValueOrDefault("supplier_id") ?? existing.GetValueOrDefault("supplier_id")),
+                    ["supplier_id"] = parsedSupplierId,
                     ["posted_number"] = rawData.GetValueOrDefault("posted_number") ?? existing.GetValueOrDefault("posted_number"),
-                    ["date"] = rawData.GetValueOrDefault("date") ?? existing.GetValueOrDefault("date"),
+                    ["date"] = parsedDate,
                     ["purchase_invoice_id"] = ToNullableLong(rawData.GetValueOrDefault("purchase_invoice_id")),
                     ["remarks"] = rawData.GetValueOrDefault("remarks"),
                     ["gross_total"] = calculated["gross_total"],

@@ -14,28 +14,33 @@ public class InvoiceDraftController : ApiControllerBase
     {
     }
 
+    private async Task<bool> CanAccessDraftsAsync() =>
+        await CanAsync("sale-invoice.view", "sale-invoice.create", "sale-invoice.update", "purchase-invoice.view", "purchase-invoice.create", "purchase-invoice.update", "barcode-pos.view", "barcode-pos.create");
+
     private async Task<Dictionary<string, object?>?> ResolveDraftAsync(string idOrUuid)
     {
         if (!await Db.HasTableAsync("invoice_drafts")) return null;
+        var hasDeletedAt = await Db.HasColumnAsync("invoice_drafts", "deleted_at");
+        var notDeleted = hasDeletedAt ? " AND deleted_at IS NULL" : "";
 
         if (long.TryParse(idOrUuid, out var numericId))
         {
-            return await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = numericId });
+            return await Db.QuerySingleOrDefaultAsync($"SELECT * FROM invoice_drafts WHERE id = @id{notDeleted}", new { id = numericId });
         }
 
-        return await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE uuid = @uuid LIMIT 1", new { uuid = idOrUuid });
+        return await Db.QuerySingleOrDefaultAsync($"SELECT * FROM invoice_drafts WHERE uuid = @uuid{notDeleted} LIMIT 1", new { uuid = idOrUuid });
     }
 
     [HttpGet]
     public async Task<IActionResult> Index(
         [FromQuery] long? user_id = null,
-        [FromQuery] bool shared = false,
-        [FromQuery] bool mine_only = false,
+        [FromQuery(Name = "shared")] string? sharedRaw = null,
+        [FromQuery(Name = "mine_only")] string? mineOnlyRaw = null,
         [FromQuery] string? scope = null,
         [FromQuery] string? type = null,
         [FromQuery] string? status = "draft")
     {
-        if (!await CanAsync("sale-invoice.view", "sale-invoice.create", "purchase-invoice.view", "purchase-invoice.create", "barcode-pos.view", "barcode-pos.create"))
+        if (!await CanAccessDraftsAsync())
         {
             return Forbidden();
         }
@@ -45,12 +50,19 @@ public class InvoiceDraftController : ApiControllerBase
             return Ok(new List<Dictionary<string, object?>>());
         }
 
+        var shared = !string.IsNullOrWhiteSpace(sharedRaw) && (sharedRaw.Equals("1", StringComparison.OrdinalIgnoreCase) || sharedRaw.Equals("true", StringComparison.OrdinalIgnoreCase));
+        var mine_only = !string.IsNullOrWhiteSpace(mineOnlyRaw) && (mineOnlyRaw.Equals("1", StringComparison.OrdinalIgnoreCase) || mineOnlyRaw.Equals("true", StringComparison.OrdinalIgnoreCase));
+
         var currentUid = CurrentUserId ?? 0;
         var hasTerminalHeader = Request.Headers.ContainsKey("X-Terminal-Id") ||
                                 (HttpContext.Items.TryGetValue("KarobarTerminal", out var termObj) && termObj != null);
         bool isTerminalContext = hasTerminalHeader || shared || string.Equals(scope, "store", StringComparison.OrdinalIgnoreCase);
 
         var where = new List<string> { "1=1" };
+        if (await Db.HasColumnAsync("invoice_drafts", "deleted_at"))
+        {
+            where.Add("d.deleted_at IS NULL");
+        }
         var dyn = new DynamicParameters();
 
         if (user_id.HasValue && user_id.Value > 0 && await IsAdminAsync())
@@ -137,6 +149,10 @@ public class InvoiceDraftController : ApiControllerBase
                 }
             }
 
+            var partyId = payloadDict.TryGetValue("customer_id", out var cidObj) && cidObj != null
+                ? cidObj
+                : (payloadDict.TryGetValue("supplier_id", out var sidObj) ? sidObj : null);
+
             result.Add(new Dictionary<string, object?>
             {
                 ["id"] = d.GetValueOrDefault("id"),
@@ -146,7 +162,9 @@ public class InvoiceDraftController : ApiControllerBase
                 ["terminal_name"] = d.GetValueOrDefault("terminal_name"),
                 ["type"] = d.GetValueOrDefault("type"),
                 ["title"] = d.GetValueOrDefault("title"),
+                ["party_id"] = partyId,
                 ["party_name"] = d.GetValueOrDefault("party_name"),
+                ["total"] = d.GetValueOrDefault("total_amount"),
                 ["total_amount"] = d.GetValueOrDefault("total_amount"),
                 ["items_count"] = d.GetValueOrDefault("items_count"),
                 ["version"] = d.GetValueOrDefault("version"),
@@ -156,6 +174,7 @@ public class InvoiceDraftController : ApiControllerBase
                 ["created_at"] = d.GetValueOrDefault("created_at"),
                 ["updated_at"] = d.GetValueOrDefault("updated_at"),
                 ["user_name"] = d.GetValueOrDefault("user_name"),
+                ["payload"] = payloadDict,
                 ["items_summary"] = itemsSummary
             });
         }
@@ -166,6 +185,7 @@ public class InvoiceDraftController : ApiControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> Show(string id)
     {
+        if (!await CanAccessDraftsAsync()) return Forbidden();
         var draft = await ResolveDraftAsync(id);
         if (draft == null) return NotFound(new { message = "Draft not found." });
 
@@ -317,6 +337,7 @@ public class InvoiceDraftController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Store()
     {
+        if (!await CanAccessDraftsAsync()) return Forbidden();
         if (!CurrentUserId.HasValue) return Unauthorized(new { message = "Unauthenticated" });
 
         var body = await ReadJsonBodyAsync();
@@ -394,12 +415,14 @@ public class InvoiceDraftController : ApiControllerBase
 
         SyncPulseService.Bump("drafts");
         var created = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId });
+        if (created != null) created["payload"] = payloadDict;
         return StatusCode(201, created);
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id)
     {
+        if (!await CanAccessDraftsAsync()) return Forbidden();
         var draft = await ResolveDraftAsync(id);
         if (draft == null) return NotFound(new { message = "Draft not found." });
 
@@ -478,12 +501,14 @@ public class InvoiceDraftController : ApiControllerBase
 
         SyncPulseService.Bump("drafts");
         var updated = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId });
+        if (updated != null) updated["payload"] = payloadDict;
         return Ok(updated);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Destroy(string id)
     {
+        if (!await CanAccessDraftsAsync()) return Forbidden();
         var draft = await ResolveDraftAsync(id);
         if (draft == null) return NotFound(new { message = "Draft not found." });
 
@@ -500,6 +525,7 @@ public class InvoiceDraftController : ApiControllerBase
     [HttpPost("{id}/post")]
     public async Task<IActionResult> Post(string id)
     {
+        if (!await CanAccessDraftsAsync()) return Forbidden();
         var draft = await ResolveDraftAsync(id);
         if (draft == null) return NotFound(new { message = "Draft not found." });
 

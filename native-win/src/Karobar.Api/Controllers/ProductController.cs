@@ -21,6 +21,7 @@ public class ProductController : ApiControllerBase
         "purchase-invoice.view", "purchase-invoice.create", "purchase-invoice.update",
         "purchase-return.view", "purchase-return.create", "purchase-return.update",
         "purchase-order.view", "purchase-order.create", "purchase-order.update",
+        "user-demands.view", "user-demands.create", "user-demands.update",
         "stock-adjustment.view", "stock-adjustment.create", "stock-adjustment.update",
         "stock-disposal.view", "stock-disposal.create",
         "stocktake.view", "stocktake.create", "stocktake.update",

@@ -737,6 +737,8 @@ public class SaleInvoiceController : ApiControllerBase
                 var newSaleType = (rawData.GetValueOrDefault("sale_type")?.ToString() ?? existing.GetValueOrDefault("sale_type")?.ToString() ?? "retail").ToLowerInvariant();
                 var newPayMethod = rawData.GetValueOrDefault("payment_method")?.ToString() ?? existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
 
+                var resolvedAccountId = ToNullableLong(rawData.GetValueOrDefault("account_id"))
+                                        ?? ToNullableLong(existing.GetValueOrDefault("account_id"));
                 var updateData = new Dictionary<string, object?>
                 {
                     ["customer_id"] = customerId,
@@ -747,6 +749,7 @@ public class SaleInvoiceController : ApiControllerBase
                     ["date"] = date,
                     ["due_date"] = dueDate,
                     ["payment_method"] = newPayMethod,
+                    ["account_id"] = resolvedAccountId,
                     ["doctor_id"] = ToNullableLong(rawData.GetValueOrDefault("doctor_id")),
                     ["remarks"] = rawData.GetValueOrDefault("remarks"),
                     ["doctor_name"] = rawData.GetValueOrDefault("doctor_name"),
@@ -760,6 +763,18 @@ public class SaleInvoiceController : ApiControllerBase
                     ["total"] = serverTotal,
                     ["total_receive"] = submittedTotalReceive
                 };
+
+                foreach (var taxCol in new[] { "fbr_pos_fee", "further_tax_amount", "advance_wht_percentage", "advance_wht_amount" })
+                {
+                    if (rawData.ContainsKey(taxCol))
+                    {
+                        updateData[taxCol] = ToDouble(rawData[taxCol]);
+                    }
+                    else if (calculated.ContainsKey(taxCol))
+                    {
+                        updateData[taxCol] = calculated[taxCol];
+                    }
+                }
 
                 if (verifiedViaPin)
                 {
@@ -851,6 +866,85 @@ public class SaleInvoiceController : ApiControllerBase
                                 ["description"] = "Payment received on invoice " + postedNumber,
                                 ["created_by"] = CurrentUserId
                             }, conn, tx);
+                        }
+                    }
+                }
+
+                // Sync financial accounts & cash drawer on sale invoice update
+                var oldCashRecv = string.Equals(existing.GetValueOrDefault("invoice_type")?.ToString(), "credit", StringComparison.OrdinalIgnoreCase)
+                    ? ToDouble(existing.GetValueOrDefault("total_receive"))
+                    : (ToDouble(existing.GetValueOrDefault("total_receive")) > 0 ? ToDouble(existing.GetValueOrDefault("total_receive")) : ToDouble(existing.GetValueOrDefault("total")));
+                var newCashRecv = newInvoiceType == "credit"
+                    ? submittedTotalReceive
+                    : (submittedTotalReceive > 0 ? submittedTotalReceive : serverTotal);
+                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var oldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
+                var newAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
+                var oldAccId = oldAcc != null ? ToLong(oldAcc["id"]) : 0L;
+                var newAccId = newAcc != null ? ToLong(newAcc["id"]) : 0L;
+
+                if (oldAccId == newAccId && newAcc != null)
+                {
+                    var accDelta = Math.Round(newCashRecv - oldCashRecv, 2);
+                    if (accDelta > 0)
+                    {
+                        await _settlementService.DepositToAccountAsync(newAcc, accDelta, "sale_invoice", id, $"Edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    else if (accDelta < 0)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(newAcc, Math.Abs(accDelta), "sale_invoice", id, $"Edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+                else
+                {
+                    if (oldAcc != null && oldCashRecv > 0)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(oldAcc, oldCashRecv, "sale_invoice", id, $"Reassigned account for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    if (newAcc != null && newCashRecv > 0)
+                    {
+                        await _settlementService.DepositToAccountAsync(newAcc, newCashRecv, "sale_invoice", id, $"Payment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+
+                // Sync cash drawer honoring update_drawer / update_drawer_if_pre_shift without mutating closed shifts
+                bool? updateDrawerFlag = null;
+                if (rawData.TryGetValue("update_drawer", out var udObj) && udObj != null)
+                    updateDrawerFlag = IsTruthy(udObj);
+                else if (rawData.TryGetValue("update_drawer_if_pre_shift", out var udpObj) && udpObj != null)
+                    updateDrawerFlag = IsTruthy(udpObj);
+
+                if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
+                {
+                    var removedOpenRows = await Db.ExecuteAsync(
+                        @"DELETE FROM cash_drawer_transactions
+                          WHERE reference_type = 'sale_invoice'
+                            AND reference_id = @id
+                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+                        new { id }, conn, tx);
+                    var hadHistorical = removedOpenRows == 0 &&
+                        await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM cash_drawer_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id", new { id }, conn, tx) > 0;
+
+                    var oldWasDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(oldAcc, oldPayMethodStr);
+                    var newIsDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(newAcc, newPayMethod);
+
+                    if (removedOpenRows > 0 || !hadHistorical)
+                    {
+                        if (newIsDrawer && newCashRecv > 0 && !(hadHistorical == false && updateDrawerFlag == false && oldWasDrawer))
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", newCashRecv, "sale_invoice", id, $"Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                        }
+                    }
+                    else if (updateDrawerFlag == true)
+                    {
+                        var drawerDelta = Math.Round((newIsDrawer ? newCashRecv : 0.0) - (oldWasDrawer ? oldCashRecv : 0.0), 2);
+                        if (drawerDelta > 0)
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", drawerDelta, "sale_invoice", id, $"Pre-shift edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                        }
+                        else if (drawerDelta < 0)
+                        {
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_refund", Math.Abs(drawerDelta), "sale_invoice", id, $"Pre-shift edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
                         }
                     }
                 }
@@ -967,31 +1061,83 @@ public class SaleInvoiceController : ApiControllerBase
 
             if (revAmount > 0)
             {
-                var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
-                if (acc != null)
+                var priorTxns = await Db.HasTableAsync("account_transactions")
+                    ? await Db.QueryListAsync(
+                        "SELECT account_id, type, amount FROM account_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id ORDER BY id ASC",
+                        new { id }, conn, tx)
+                    : new List<Dictionary<string, object?>>();
+
+                var netByAccount = new Dictionary<long, double>();
+                foreach (var at in priorTxns)
                 {
-                    await _settlementService.WithdrawFromAccountAsync(
-                        acc,
-                        revAmount,
-                        "sale_invoice_reversal",
-                        id,
-                        $"Reversal refund for Sale Invoice #{postedNumber}",
-                        CurrentUserId,
-                        conn,
-                        tx);
+                    var aid = ToLong(at.GetValueOrDefault("account_id"));
+                    if (aid <= 0) continue;
+                    var aType = (at.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                    var amt = ToDouble(at.GetValueOrDefault("amount"));
+                    var signed = aType is "deposit" or "credit" or "transfer_in" ? amt : -amt;
+                    netByAccount[aid] = Math.Round(netByAccount.GetValueOrDefault(aid) + signed, 2);
                 }
-                if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+
+                var positiveLegs = netByAccount.Where(kv => kv.Value > 0).ToList();
+                if (positiveLegs.Count > 0)
                 {
-                    await _settlementService.RecordCashDrawerTransactionAsync(
-                        "cash_refund",
-                        revAmount,
-                        "sale_invoice_reversal",
-                        id,
-                        $"Reversal of Sale Invoice #{postedNumber}: {reason}",
-                        CurrentUserId,
-                        conn,
-                        tx);
+                    foreach (var leg in positiveLegs)
+                    {
+                        var legAcc = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid = leg.Key }, conn, tx);
+                        if (legAcc != null)
+                        {
+                            await _settlementService.WithdrawFromAccountAsync(
+                                legAcc,
+                                leg.Value,
+                                "sale_invoice_reversal",
+                                id,
+                                $"Reversal refund for Sale Invoice #{postedNumber}",
+                                CurrentUserId,
+                                conn,
+                                tx);
+                            if (ReturnSettlementService.IsDefaultCashDrawerAccount(legAcc, null))
+                            {
+                                await _settlementService.RecordCashDrawerTransactionAsync(
+                                    "cash_refund",
+                                    leg.Value,
+                                    "sale_invoice_reversal",
+                                    id,
+                                    $"Reversal of Sale Invoice #{postedNumber}: {reason}",
+                                    CurrentUserId,
+                                    conn,
+                                    tx);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                    var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
+                    if (acc != null)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(
+                            acc,
+                            revAmount,
+                            "sale_invoice_reversal",
+                            id,
+                            $"Reversal refund for Sale Invoice #{postedNumber}",
+                            CurrentUserId,
+                            conn,
+                            tx);
+                    }
+                    if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                    {
+                        await _settlementService.RecordCashDrawerTransactionAsync(
+                            "cash_refund",
+                            revAmount,
+                            "sale_invoice_reversal",
+                            id,
+                            $"Reversal of Sale Invoice #{postedNumber}: {reason}",
+                            CurrentUserId,
+                            conn,
+                            tx);
+                    }
                 }
             }
 
@@ -1105,26 +1251,69 @@ public class SaleInvoiceController : ApiControllerBase
                     }
                     if (delAmount > 0)
                     {
-                        var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                        var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
-                        if (acc != null)
+                        var priorTxns = await Db.HasTableAsync("account_transactions")
+                            ? await Db.QueryListAsync(
+                                "SELECT account_id, type, amount FROM account_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id ORDER BY id ASC",
+                                new { id }, conn, tx)
+                            : new List<Dictionary<string, object?>>();
+
+                        var netByAccount = new Dictionary<long, double>();
+                        foreach (var at in priorTxns)
                         {
-                            await _settlementService.WithdrawFromAccountAsync(
-                                acc,
-                                delAmount,
-                                "sale_invoice_deletion",
-                                id,
-                                $"Refund for deleted sale invoice #{postedNumber}",
-                                CurrentUserId,
-                                conn,
-                                tx);
+                            var aid = ToLong(at.GetValueOrDefault("account_id"));
+                            if (aid <= 0) continue;
+                            var aType = (at.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                            var amt = ToDouble(at.GetValueOrDefault("amount"));
+                            var signed = aType is "deposit" or "credit" or "transfer_in" ? amt : -amt;
+                            netByAccount[aid] = Math.Round(netByAccount.GetValueOrDefault(aid) + signed, 2);
+                        }
+
+                        var positiveLegs = netByAccount.Where(kv => kv.Value > 0).ToList();
+                        if (positiveLegs.Count > 0)
+                        {
+                            foreach (var leg in positiveLegs)
+                            {
+                                var legAcc = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid = leg.Key }, conn, tx);
+                                if (legAcc != null)
+                                {
+                                    await _settlementService.WithdrawFromAccountAsync(
+                                        legAcc,
+                                        leg.Value,
+                                        "sale_invoice_deletion",
+                                        id,
+                                        $"Refund for deleted sale invoice #{postedNumber}",
+                                        CurrentUserId,
+                                        conn,
+                                        tx);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                            var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
+                            if (acc != null)
+                            {
+                                await _settlementService.WithdrawFromAccountAsync(
+                                    acc,
+                                    delAmount,
+                                    "sale_invoice_deletion",
+                                    id,
+                                    $"Refund for deleted sale invoice #{postedNumber}",
+                                    CurrentUserId,
+                                    conn,
+                                    tx);
+                            }
                         }
                     }
 
-                    if (await Db.HasTableAsync("cash_drawer_transactions"))
+                    if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
                     {
                         await Db.ExecuteAsync(
-                            "DELETE FROM cash_drawer_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id",
+                            @"DELETE FROM cash_drawer_transactions
+                              WHERE reference_type = 'sale_invoice'
+                                AND reference_id = @id
+                                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
                             new { id },
                             conn,
                             tx);
@@ -1623,14 +1812,27 @@ public class SaleInvoiceController : ApiControllerBase
 
     [AllowAnonymous]
     [HttpGet("/sale-invoices/{invoice:long}/dosage-labels")]
-    public async Task<IActionResult> PrintDosageLabels(long invoice, [FromQuery] bool json = false)
+    public async Task<IActionResult> PrintDosageLabels(
+        long invoice,
+        [FromQuery(Name = "json")] string? jsonRaw = null,
+        [FromQuery(Name = "width_mm")] double? widthMm = null,
+        [FromQuery(Name = "height_mm")] double? heightMm = null,
+        [FromQuery(Name = "auto_print")] string? autoPrintRaw = null,
+        [FromQuery(Name = "silent_print")] string? silentPrintRaw = null)
     {
         var loaded = await LoadSaleInvoiceAsync(invoice);
         if (loaded == null) return NotFound("Sale invoice not found.");
 
-        var html = await RenderDosageLabelsHtmlAsync(loaded);
+        var isJson = !string.IsNullOrWhiteSpace(jsonRaw) &&
+            (jsonRaw.Equals("1", StringComparison.OrdinalIgnoreCase) || jsonRaw.Equals("true", StringComparison.OrdinalIgnoreCase));
+        var isSilent = !string.IsNullOrWhiteSpace(silentPrintRaw) &&
+            (silentPrintRaw.Equals("1", StringComparison.OrdinalIgnoreCase) || silentPrintRaw.Equals("true", StringComparison.OrdinalIgnoreCase));
+        var isAutoPrint = !isSilent && !string.IsNullOrWhiteSpace(autoPrintRaw) &&
+            (autoPrintRaw.Equals("1", StringComparison.OrdinalIgnoreCase) || autoPrintRaw.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+        var html = await RenderDosageLabelsHtmlAsync(loaded, widthMm, heightMm, isAutoPrint);
         var acceptHeader = Request.Headers["Accept"].ToString();
-        if (json || acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase))
+        if (isJson || acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase))
         {
             var fullUrl = $"{Request.Scheme}://{Request.Host}{Request.Path}{Request.QueryString}";
             return Ok(new Dictionary<string, object?>
@@ -2411,7 +2613,11 @@ public class SaleInvoiceController : ApiControllerBase
         return sb.ToString();
     }
 
-    private async Task<string> RenderDosageLabelsHtmlAsync(Dictionary<string, object?> invoice)
+    private async Task<string> RenderDosageLabelsHtmlAsync(
+        Dictionary<string, object?> invoice,
+        double? widthMm = null,
+        double? heightMm = null,
+        bool autoPrint = false)
     {
         var setting = await Db.HasTableAsync("settings")
             ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
@@ -2423,9 +2629,14 @@ public class SaleInvoiceController : ApiControllerBase
         var patientName = WebUtility.HtmlEncode(invoice.GetValueOrDefault("patient_name")?.ToString() ?? cust?.GetValueOrDefault("name")?.ToString() ?? "Patient");
         var items = invoice.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new List<Dictionary<string, object?>>();
 
+        var w = widthMm is > 10 and <= 210 ? widthMm.Value : 50;
+        var h = heightMm is > 10 and <= 297 ? heightMm.Value : 25;
+
+        var wStr = w.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var hStr = h.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Dosage Labels " + postedNumber + "</title>");
-        sb.AppendLine("<style>body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:4px;font-size:11px;}.label{border:1px solid #000;padding:6px;margin-bottom:6px;page-break-inside:avoid;}</style></head><body>");
+        sb.AppendLine($"<style>@page{{size:{wStr}mm {hStr}mm;margin:1mm;}}body{{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:2px;font-size:10px;}}.label{{width:{wStr}mm;min-height:{hStr}mm;box-sizing:border-box;border:1px solid #000;padding:4px;margin-bottom:4px;page-break-after:always;page-break-inside:avoid;}}</style></head><body>");
 
         foreach (var it in items)
         {
@@ -2435,9 +2646,13 @@ public class SaleInvoiceController : ApiControllerBase
             var prod = it.GetValueOrDefault("product") as Dictionary<string, object?>;
             var pName = WebUtility.HtmlEncode(prod?.GetValueOrDefault("name")?.ToString() ?? $"Product #{it.GetValueOrDefault("product_id")}");
             var qty = ToLong(it.GetValueOrDefault("quantity"));
-            sb.AppendLine($"<div class=\"label\"><div><strong>{storeName}</strong> - {postedNumber}</div><div><strong>Patient:</strong> {patientName}</div><div><strong>{pName}</strong> (Qty: {qty})</div><div style=\"margin-top:4px;font-weight:700;\">{WebUtility.HtmlEncode(dosage)}</div></div>");
+            sb.AppendLine($"<div class=\"label\"><div><strong>{storeName}</strong> - {postedNumber}</div><div><strong>Patient:</strong> {patientName}</div><div><strong>{pName}</strong> (Qty: {qty})</div><div style=\"margin-top:3px;font-weight:700;\">{WebUtility.HtmlEncode(dosage)}</div></div>");
         }
 
+        if (autoPrint)
+        {
+            sb.AppendLine("<script>window.onload=function(){try{window.print();}catch(e){}};</script>");
+        }
         sb.AppendLine("</body></html>");
         return sb.ToString();
     }

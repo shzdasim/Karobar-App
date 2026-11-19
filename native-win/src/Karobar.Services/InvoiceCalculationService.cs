@@ -696,11 +696,22 @@ public class InvoiceCalculationService
 
             rowsTotal += netTotal;
 
+            var unitSalePrice = ToDouble(raw.GetValueOrDefault("unit_sale_price"));
+            var packSalePrice = ToDouble(raw.GetValueOrDefault("pack_sale_price"));
+            if (packSalePrice <= 0 && unitSalePrice > 0) packSalePrice = Math.Round(unitSalePrice * packSize, 2);
+            else if (unitSalePrice <= 0 && packSalePrice > 0) unitSalePrice = Math.Round(packSalePrice / packSize, 4);
+            var itemMargin = raw.TryGetValue("margin", out var mObj) && mObj != null && !string.IsNullOrWhiteSpace(mObj.ToString())
+                ? ToDouble(mObj)
+                : (unitSalePrice > 0 && avgPrice > 0 ? Math.Round(((unitSalePrice - avgPrice) / unitSalePrice) * 100.0, 2) : 0.0);
+
             raw["pack_size"] = packSize;
             raw["pack_quantity"] = packQty;
             raw["unit_quantity"] = unitQty;
             raw["pack_purchase_price"] = packPurchasePrice;
             raw["unit_purchase_price"] = unitPurchasePrice;
+            raw["pack_sale_price"] = packSalePrice;
+            raw["unit_sale_price"] = unitSalePrice;
+            raw["margin"] = itemMargin;
             raw["pack_bonus"] = packBonus;
             raw["unit_bonus"] = unitBonus;
             raw["quantity"] = totalUnits;

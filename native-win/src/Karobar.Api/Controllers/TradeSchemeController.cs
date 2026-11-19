@@ -349,9 +349,9 @@ public class TradeSchemeController : ApiControllerBase
 
                     if (minQty < 0.01m) errors[$"slabs.{idx}.min_qty"] = new[] { "Minimum quantity must be at least 0.01." };
                     if (bonusQty < 0.01m) errors[$"slabs.{idx}.bonus_qty"] = new[] { "Bonus quantity must be at least 0.01." };
-                    if (!isUpdate && maxQty.HasValue && maxQty.Value <= minQty)
+                    if (maxQty.HasValue && maxQty.Value < minQty)
                     {
-                        errors[$"slabs.{idx}.max_qty"] = new[] { "Max quantity must be greater than min quantity." };
+                        errors[$"slabs.{idx}.max_qty"] = new[] { "Max quantity must be greater than or equal to min quantity." };
                     }
 
                     slabs.Add(new Dictionary<string, object?>

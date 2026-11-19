@@ -111,6 +111,12 @@ public class DocumentHistoryController : ApiControllerBase
             });
         }
 
+        if (!await IsAdminAsync() &&
+            !await CanAsync("sale-invoice.view", "purchase-invoice.view", "sale-return.view", "purchase-return.view", "stock-adjustment.view", "payment.view"))
+        {
+            return Forbidden();
+        }
+
         var resolvedType = TryResolveEntityType(entity_type);
         if (resolvedType == null)
         {
@@ -179,7 +185,7 @@ public class DocumentHistoryController : ApiControllerBase
             "sale_invoice" or "sale-invoice" or "saleinvoice" or "sale" or "app\\models\\saleinvoice" => "App\\Models\\SaleInvoice",
             "purchase_invoice" or "purchase-invoice" or "purchaseinvoice" or "purchase" or "app\\models\\purchaseinvoice" => "App\\Models\\PurchaseInvoice",
             "stock_adjustment" or "stock-adjustment" or "stockadjustment" or "app\\models\\stockadjustment" => "App\\Models\\StockAdjustment",
-            "payment" or "app\\models\\payment" => "App\\Models\\Payment",
+            "payment" or "supplier_payment" or "customer_payment" or "supplier-payment" or "customer-payment" or "app\\models\\payment" => "App\\Models\\Payment",
             "sale_return" or "sale-return" or "salereturn" or "app\\models\\salereturn" => "App\\Models\\SaleReturn",
             "purchase_return" or "purchase-return" or "purchasereturn" or "app\\models\\purchasereturn" => "App\\Models\\PurchaseReturn",
             "stock_disposal" or "stock-disposal" or "stockdisposal" or "app\\models\\stockdisposal" => "App\\Models\\StockDisposal",

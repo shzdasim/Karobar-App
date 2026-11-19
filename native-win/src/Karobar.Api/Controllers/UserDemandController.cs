@@ -19,7 +19,7 @@ public class UserDemandController : ApiControllerBase
     [HttpGet("count")]
     public async Task<IActionResult> Count()
     {
-        if (!await CanAsync("user-demand.view", "purchase-order.view", "purchase-invoice.view", "product.view"))
+        if (!await CanAsync("user-demands.view", "user-demand.view", "purchase-order.view", "purchase-invoice.view", "product.view"))
         {
             return Forbidden();
         }
@@ -48,7 +48,7 @@ public class UserDemandController : ApiControllerBase
         [FromQuery] string? status = null,
         [FromQuery] int limit = 100)
     {
-        if (!await CanAsync("user-demand.view", "purchase-order.view", "purchase-invoice.view", "product.view"))
+        if (!await CanAsync("user-demands.view", "user-demand.view", "purchase-order.view", "purchase-invoice.view", "product.view"))
         {
             return Forbidden();
         }
@@ -110,7 +110,7 @@ public class UserDemandController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Store()
     {
-        if (!await CanAsync("user-demand.create", "purchase-order.create", "sale-invoice.create", "product.create"))
+        if (!await CanAsync("user-demands.create", "user-demand.create", "purchase-order.create", "sale-invoice.create", "product.create"))
         {
             return Forbidden();
         }
@@ -209,7 +209,7 @@ public class UserDemandController : ApiControllerBase
     [HttpPut("{id:long}")]
     public async Task<IActionResult> Update(long id)
     {
-        if (!await CanAsync("user-demand.update", "purchase-order.create", "product.update"))
+        if (!await CanAsync("user-demands.update", "user-demand.update", "purchase-order.create", "product.update"))
         {
             return Forbidden();
         }
@@ -259,7 +259,7 @@ public class UserDemandController : ApiControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Destroy(long id)
     {
-        if (!await CanAsync("user-demand.delete", "purchase-order.delete", "product.delete"))
+        if (!await CanAsync("user-demands.delete", "user-demand.delete", "purchase-order.delete", "product.delete"))
         {
             return Forbidden();
         }
@@ -308,9 +308,13 @@ public class UserDemandController : ApiControllerBase
             productId = Convert.ToInt64(product["id"]);
         }
 
-        var status = validated.TryGetValue("status", out var stObj) && stObj != null && !string.IsNullOrWhiteSpace(stObj.ToString())
+        var status = (validated.TryGetValue("status", out var stObj) && stObj != null && !string.IsNullOrWhiteSpace(stObj.ToString())
             ? stObj.ToString()!
-            : "pending";
+            : "pending").Trim().ToLowerInvariant();
+        if (status is not ("pending" or "ordered" or "fulfilled" or "cancelled"))
+        {
+            throw new ArgumentException("Invalid status. Must be pending, ordered, fulfilled, or cancelled.");
+        }
 
         var demandId = await Db.InsertAsync("user_demands", new Dictionary<string, object?>
         {
@@ -358,15 +362,37 @@ public class UserDemandController : ApiControllerBase
         var packSize = Math.Max(1, Convert.ToInt32(validated.TryGetValue("pack_size", out var ps) && ps != null ? ps : 1));
         var name = (validated.TryGetValue("name", out var n) ? n?.ToString() : "")?.Trim() ?? "Product";
 
+        var catId = validated.TryGetValue("category_id", out var cObj) && cObj != null && ToLong(cObj) > 0 ? ToLong(cObj) : 0L;
+        if (catId <= 0 && await Db.HasTableAsync("categories"))
+        {
+            catId = await Db.ExecuteScalarAsync<long>("SELECT COALESCE((SELECT id FROM categories ORDER BY id ASC LIMIT 1), 0)", null, conn, tx);
+            if (catId <= 0)
+            {
+                catId = await Db.InsertAsync("categories", new Dictionary<string, object?> { ["name"] = "General" }, conn, tx);
+            }
+        }
+
+        var brId = validated.TryGetValue("brand_id", out var bObj) && bObj != null && ToLong(bObj) > 0 ? ToLong(bObj) : 0L;
+        if (brId <= 0 && await Db.HasTableAsync("brands"))
+        {
+            brId = await Db.ExecuteScalarAsync<long>("SELECT COALESCE((SELECT id FROM brands ORDER BY id ASC LIMIT 1), 0)", null, conn, tx);
+            if (brId <= 0)
+            {
+                brId = await Db.InsertAsync("brands", new Dictionary<string, object?> { ["name"] = "General" }, conn, tx);
+            }
+        }
+
+        var supId = validated.TryGetValue("supplier_id", out var sObj) && sObj != null && ToLong(sObj) > 0 ? (object?)ToLong(sObj) : null;
+
         var newProdId = await Db.InsertAsync("products", new Dictionary<string, object?>
         {
             ["product_code"] = productCode,
             ["name"] = name,
             ["pack_size"] = packSize,
             ["quantity"] = 0,
-            ["category_id"] = validated.TryGetValue("category_id", out var catId) ? catId : null,
-            ["brand_id"] = validated.TryGetValue("brand_id", out var brId) ? brId : null,
-            ["supplier_id"] = validated.TryGetValue("supplier_id", out var supId) ? supId : null,
+            ["category_id"] = catId > 0 ? (object?)catId : null,
+            ["brand_id"] = brId > 0 ? (object?)brId : null,
+            ["supplier_id"] = supId,
             ["barcode"] = barcode,
             ["narcotic"] = "no",
             ["pack_purchase_price"] = 0,
