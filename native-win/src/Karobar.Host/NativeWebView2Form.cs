@@ -8,16 +8,23 @@ using Microsoft.Web.WebView2.WinForms;
 namespace Karobar.Host;
 
 /// <summary>
-/// Real native Windows Form hosting Microsoft Edge WebView2 (CoreWebView2) with
-/// native menu strip, icon, system tray integration, and zero-overhead IPC bridge.
+/// Single-window Waseela-style Multi-Tab MDI Host powered by Microsoft Edge WebView2.
+/// All screens (Dashboard, POS, parallel Retail/Wholesale Sale Invoices, Purchase Invoices,
+/// Products, Ledgers, Reports) open as instant-switching tabs inside ONE native window sharing
+/// a single CoreWebView2Environment so form state is 100% preserved across tabs.
 /// </summary>
 public sealed class NativeWebView2Form : Form
 {
     private readonly AppWindowInstance _winInstance;
     private readonly WebView2WindowManager _windowManager;
     private readonly KarobarDesktopBridge _desktopBridge;
-    private readonly WebView2 _webView;
-    private CoreWebView2Environment? _env;
+    private readonly NativeTabWorkspace _workspace = new();
+    private readonly NativeTabStripControl _tabStrip;
+    private readonly Panel _tabContentPanel;
+    private readonly Dictionary<string, WebView2> _tabWebViews = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _envInitLock = new(1, 1);
+    private CoreWebView2Environment? _sharedEnv;
+    private readonly string _baseOrigin;
 
     public NativeWebView2Form(
         AppWindowInstance winInstance,
@@ -27,12 +34,14 @@ public sealed class NativeWebView2Form : Form
         _winInstance = winInstance;
         _windowManager = windowManager;
         _desktopBridge = desktopBridge;
+        _baseOrigin = ResolveBaseOrigin(winInstance.Url);
 
         Text = string.IsNullOrWhiteSpace(winInstance.Title) ? Program.ApplicationDisplayName : winInstance.Title;
         Width = winInstance.Width > 0 ? winInstance.Width : 1440;
         Height = winInstance.Height > 0 ? winInstance.Height : 900;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(15, 23, 42); // #0f172a
+        KeyPreview = true;
 
         var iconPath = windowManager.ResolveIconPath();
         if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath) && iconPath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
@@ -52,19 +61,86 @@ public sealed class NativeWebView2Form : Form
             WindowState = FormWindowState.Maximized;
         }
 
-        _webView = new WebView2
+        // WinForms Z-order: Fill panel first, TabStrip second, MenuStrip last (sits at top y=0)
+        _tabContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = Color.FromArgb(15, 23, 42)
+            BackColor = Color.FromArgb(15, 23, 42)
         };
-        Controls.Add(_webView);
+        Controls.Add(_tabContentPanel);
+
+        _tabStrip = new NativeTabStripControl(_workspace);
+        WireTabStripEvents();
+        Controls.Add(_tabStrip);
 
         BuildNativeMenuBar();
 
-        Load += async (_, _) => await InitializeWebViewAsync();
+        // Route windowManager messages & navigation to the active tab's WebView2
+        _winInstance.WebMessageSender = BroadcastMessageToActiveTab;
+        _winInstance.UrlNavigator = targetUrl => OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
+
+        Load += async (_, _) => await InitializeInitialTabAsync();
         Activated += (_, _) => _winInstance.IsFocused = true;
         Deactivate += (_, _) => _winInstance.IsFocused = false;
-        FormClosed += (_, _) => _windowManager.CloseWindow(_winInstance.Id);
+        FormClosed += (_, _) =>
+        {
+            foreach (var wv in _tabWebViews.Values)
+            {
+                try { wv.Dispose(); } catch { }
+            }
+            _tabWebViews.Clear();
+            _windowManager.CloseWindow(_winInstance.Id);
+        };
+    }
+
+    private void WireTabStripEvents()
+    {
+        _tabStrip.TabSelected += tabId => ActivateTab(tabId);
+        _tabStrip.TabCloseRequested += tabId => CloseTabById(tabId);
+        _tabStrip.NewTabRequested += () => _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
+        _tabStrip.QuickOpenRequested += (route, title, allowDup) => _ = OpenTabAsync(route, title, allowDuplicate: allowDup);
+        _tabStrip.TabReloadRequested += tabId =>
+        {
+            if (_tabWebViews.TryGetValue(tabId, out var wv) && wv.CoreWebView2 != null)
+            {
+                wv.CoreWebView2.Reload();
+            }
+        };
+        _tabStrip.TabDuplicateRequested += tabId =>
+        {
+            var tab = _workspace.Tabs.FirstOrDefault(t => t.TabId == tabId);
+            if (tab != null)
+            {
+                _ = OpenTabAsync(tab.RoutePath, tab.Title, allowDuplicate: true);
+            }
+        };
+        _tabStrip.TabPinToggled += tabId =>
+        {
+            _workspace.TogglePin(tabId);
+            _tabStrip.RefreshTabs();
+        };
+        _tabStrip.CloseOthersRequested += keepId =>
+        {
+            var removed = _workspace.CloseOtherTabs(keepId);
+            DisposeTabControls(removed);
+            SyncActiveTabVisuals();
+        };
+        _tabStrip.CloseToRightRequested += fromId =>
+        {
+            var removed = _workspace.CloseTabsToRight(fromId);
+            DisposeTabControls(removed);
+            SyncActiveTabVisuals();
+        };
+        _tabStrip.ReopenClosedRequested += () =>
+        {
+            var restored = _workspace.ReopenLastClosedTab();
+            if (restored != null)
+            {
+                _ = EnsureTabWebViewInitializedAsync(restored);
+                SyncActiveTabVisuals();
+            }
+        };
+        _tabStrip.DetachTabRequested += tabId => DetachTabToSeparateWindow(tabId);
     }
 
     private void BuildNativeMenuBar()
@@ -87,17 +163,14 @@ public sealed class NativeWebView2Form : Form
             {
                 var route = item.Path;
                 var label = item.Label;
-                var subItem = new ToolStripMenuItem(label);
+                var cleanLabel = label.StartsWith("Quick Window:", StringComparison.OrdinalIgnoreCase)
+                    ? label.Replace("Quick Window:", "").Trim()
+                    : label;
+                var subItem = new ToolStripMenuItem(cleanLabel);
                 subItem.Click += (_, _) =>
                 {
-                    if (label.StartsWith("Quick Window:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _windowManager.SendOpenNewWindow(route, label.Replace("Quick Window:", "").Trim());
-                    }
-                    else
-                    {
-                        _windowManager.SendNavigate(route, label);
-                    }
+                    // Every menu selection opens cleanly as a Waseela-style tab inside THIS window
+                    _ = OpenTabAsync(route, cleanLabel, allowDuplicate: false);
                 };
                 topItem.DropDownItems.Add(subItem);
             }
@@ -105,30 +178,269 @@ public sealed class NativeWebView2Form : Form
             menuStrip.Items.Add(topItem);
         }
 
+        // Dedicated "Tabs" menu for discoverable Waseela keyboard multitasking
+        var tabsMenu = new ToolStripMenuItem("Tabs") { ForeColor = Color.FromArgb(248, 250, 252) };
+        tabsMenu.DropDownItems.Add("New Tab (Ctrl+T)", null, (_, _) => _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true));
+        tabsMenu.DropDownItems.Add("New Retail Sale Tab (Ctrl+Shift+R)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/create/retail", "Retail Sale", allowDuplicate: true));
+        tabsMenu.DropDownItems.Add("New Wholesale Sale Tab (Ctrl+Shift+W)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/create/wholesale", "Wholesale Sale", allowDuplicate: true));
+        tabsMenu.DropDownItems.Add("New Purchase Invoice Tab (Ctrl+Shift+G)", null, (_, _) => _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true));
+        tabsMenu.DropDownItems.Add("Open Barcode POS Tab (Ctrl+Shift+P)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false));
+        tabsMenu.DropDownItems.Add(new ToolStripSeparator());
+        tabsMenu.DropDownItems.Add("Duplicate Active Tab (Ctrl+Shift+D)", null, (_, _) => DuplicateActiveTab());
+        tabsMenu.DropDownItems.Add("Close Active Tab (Ctrl+W)", null, (_, _) =>
+        {
+            if (_workspace.ActiveTabId != null) CloseTabById(_workspace.ActiveTabId);
+        });
+        tabsMenu.DropDownItems.Add("Reopen Closed Tab (Ctrl+Shift+T)", null, (_, _) =>
+        {
+            var restored = _workspace.ReopenLastClosedTab();
+            if (restored != null)
+            {
+                _ = EnsureTabWebViewInitializedAsync(restored);
+                SyncActiveTabVisuals();
+            }
+        });
+        menuStrip.Items.Add(tabsMenu);
+
         MainMenuStrip = menuStrip;
         Controls.Add(menuStrip);
     }
 
-    private async Task InitializeWebViewAsync()
+    private async Task InitializeInitialTabAsync()
     {
+        _winInstance.Hwnd = Handle;
+        var initialRoute = NativeTabWorkspace.NormalizeRoutePath(_winInstance.RoutePath);
+        var (tab, _) = _workspace.OpenTab(initialRoute, NativeTabWorkspace.ResolveTitleForRoute(initialRoute), allowDuplicate: true, focus: true, pinned: initialRoute == "/dashboard");
+        await EnsureTabWebViewInitializedAsync(tab, explicitUrl: _winInstance.Url);
+        SyncActiveTabVisuals();
+    }
+
+    /// <summary>
+    /// Thread-safe entrypoint used by Program.cs and IPC handlers so "openWindow" / "openSubWindow"
+    /// opens a Waseela tab inside THIS single window instead of spawning a second OS window.
+    /// </summary>
+    public void OpenTabFromExternal(string routePath, string? title = null, bool allowDuplicate = false)
+    {
+        if (IsDisposed) return;
+
+        void DoOpen()
+        {
+            if (IsDisposed) return;
+            _ = OpenTabAsync(routePath, title, allowDuplicate);
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+            Activate();
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke((Action)DoOpen);
+        }
+        else
+        {
+            DoOpen();
+        }
+    }
+
+    public async Task OpenTabAsync(string routePath, string? title = null, bool allowDuplicate = false)
+    {
+        if (IsDisposed) return;
+
+        var (tab, createdNew) = _workspace.OpenTab(routePath, title, allowDuplicate: allowDuplicate, focus: true);
+        if (createdNew || !_tabWebViews.ContainsKey(tab.TabId))
+        {
+            await EnsureTabWebViewInitializedAsync(tab);
+        }
+        else if (_tabWebViews.TryGetValue(tab.TabId, out var existingWv) && existingWv.CoreWebView2 != null)
+        {
+            // If caller navigated to a different query string on the same singleton route, update it
+            var targetUrl = BuildAbsoluteUrl(tab.RoutePath);
+            if (!string.Equals(existingWv.CoreWebView2.Source, targetUrl, StringComparison.OrdinalIgnoreCase) &&
+                tab.RoutePath.Contains('?'))
+            {
+                existingWv.CoreWebView2.Navigate(targetUrl);
+            }
+        }
+
+        SyncActiveTabVisuals();
+    }
+
+    private void OpenOrNavigateTabFromUrl(string targetUrl, bool openNewTab)
+    {
+        if (IsDisposed) return;
+
+        void Run()
+        {
+            if (IsDisposed) return;
+            var route = NativeTabWorkspace.NormalizeRoutePath(targetUrl);
+            if (openNewTab)
+            {
+                _ = OpenTabAsync(route, null, allowDuplicate: false);
+                return;
+            }
+
+            if (_workspace.ActiveTabId != null &&
+                _tabWebViews.TryGetValue(_workspace.ActiveTabId, out var wv) &&
+                wv.CoreWebView2 != null)
+            {
+                wv.CoreWebView2.Navigate(targetUrl);
+            }
+            else
+            {
+                _ = OpenTabAsync(route, null, allowDuplicate: false);
+            }
+        }
+
+        if (InvokeRequired) BeginInvoke((Action)Run);
+        else Run();
+    }
+
+    private void ActivateTab(string tabId)
+    {
+        if (_workspace.FocusTab(tabId))
+        {
+            SyncActiveTabVisuals();
+        }
+    }
+
+    private void CloseTabById(string tabId)
+    {
+        if (_workspace.CloseTab(tabId))
+        {
+            DisposeTabControls([tabId]);
+            SyncActiveTabVisuals();
+        }
+    }
+
+    private void DuplicateActiveTab()
+    {
+        var active = _workspace.ActiveTab;
+        if (active != null)
+        {
+            _ = OpenTabAsync(active.RoutePath, active.Title, allowDuplicate: true);
+        }
+    }
+
+    private void DetachTabToSeparateWindow(string tabId)
+    {
+        var tab = _workspace.Tabs.FirstOrDefault(t => t.TabId == tabId);
+        if (tab == null) return;
+
+        var detachedWin = new AppWindowInstance(
+            id: Random.Shared.Next(10000, 99999),
+            title: tab.Title,
+            routePath: tab.RoutePath,
+            url: BuildAbsoluteUrl(tab.RoutePath),
+            width: 1360,
+            height: 860);
+
+        var detachedForm = new NativeWebView2Form(detachedWin, _windowManager, _desktopBridge);
+        detachedForm.Show();
+
+        if (_workspace.Tabs.Count > 1 && !tab.IsPinned)
+        {
+            CloseTabById(tabId);
+        }
+    }
+
+    private void DisposeTabControls(IEnumerable<string> tabIds)
+    {
+        foreach (var id in tabIds)
+        {
+            if (_tabWebViews.Remove(id, out var wv))
+            {
+                try
+                {
+                    _tabContentPanel.Controls.Remove(wv);
+                    wv.Dispose();
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+        }
+    }
+
+    private void SyncActiveTabVisuals()
+    {
+        if (IsDisposed) return;
+
+        var activeId = _workspace.ActiveTabId;
+        foreach (var kv in _tabWebViews)
+        {
+            var isThisActive = kv.Key == activeId;
+            if (kv.Value.Visible != isThisActive)
+            {
+                kv.Value.Visible = isThisActive;
+            }
+            if (isThisActive)
+            {
+                kv.Value.BringToFront();
+                kv.Value.Focus();
+            }
+        }
+
+        var activeTab = _workspace.ActiveTab;
+        if (activeTab != null)
+        {
+            Text = $"{activeTab.Title} — {Program.ApplicationDisplayName}";
+            _winInstance.Title = Text;
+            _winInstance.RoutePath = activeTab.RoutePath;
+        }
+
+        _tabStrip.RefreshTabs();
+    }
+
+    private async Task<CoreWebView2Environment> GetOrCreateSharedEnvironmentAsync()
+    {
+        if (_sharedEnv != null) return _sharedEnv;
+
+        await _envInitLock.WaitAsync();
         try
         {
-            _winInstance.Hwnd = Handle;
-
-            _env = await CoreWebView2Environment.CreateAsync(
+            if (_sharedEnv != null) return _sharedEnv;
+            _sharedEnv = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: _windowManager.SharedWebView2UserDataFolder,
                 options: new CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection"));
+            return _sharedEnv;
+        }
+        finally
+        {
+            _envInitLock.Release();
+        }
+    }
 
-            await _webView.EnsureCoreWebView2Async(_env);
+    private async Task EnsureTabWebViewInitializedAsync(WorkspaceTabRecord tab, string? explicitUrl = null)
+    {
+        if (IsDisposed) return;
 
-            var core = _webView.CoreWebView2;
+        try
+        {
+            if (!_tabWebViews.TryGetValue(tab.TabId, out var wv))
+            {
+                wv = new WebView2
+                {
+                    Dock = DockStyle.Fill,
+                    DefaultBackgroundColor = Color.FromArgb(15, 23, 42),
+                    Visible = tab.TabId == _workspace.ActiveTabId
+                };
+                _tabWebViews[tab.TabId] = wv;
+                _tabContentPanel.Controls.Add(wv);
+            }
+
+            var env = await GetOrCreateSharedEnvironmentAsync();
+            await wv.EnsureCoreWebView2Async(env);
+
+            var core = wv.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.AreDevToolsEnabled = true;
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsZoomControlEnabled = true;
 
-            // Inject window.karobarDesktop preload bridge before any DOM script runs
             var preloadJs = "window.__karobarUseNativeWebView2PostMessage = true;\n" +
                             KarobarPreloadScript.GetPreloadScript(_winInstance.IsOffscreenPrintWorker);
             await core.AddScriptToExecuteOnDocumentCreatedAsync(preloadJs);
@@ -137,8 +449,21 @@ public sealed class NativeWebView2Form : Form
             {
                 if (!string.IsNullOrWhiteSpace(core.DocumentTitle))
                 {
-                    Text = core.DocumentTitle;
-                    _winInstance.Title = core.DocumentTitle;
+                    _workspace.UpdateTabMetadata(tab.TabId, core.DocumentTitle, null);
+                    if (tab.TabId == _workspace.ActiveTabId)
+                    {
+                        Text = $"{tab.Title} — {Program.ApplicationDisplayName}";
+                    }
+                    _tabStrip.RefreshTabs();
+                }
+            };
+
+            core.SourceChanged += (_, _) =>
+            {
+                if (!string.IsNullOrWhiteSpace(core.Source))
+                {
+                    _workspace.UpdateTabMetadata(tab.TabId, null, core.Source);
+                    _tabStrip.RefreshTabs();
                 }
             };
 
@@ -153,9 +478,20 @@ public sealed class NativeWebView2Form : Form
                         await _desktopBridge.PrintUrlAsync(doc.RootElement);
                     });
 
-                if (decision != "allow-preview")
+                if (decision == "allow-preview")
                 {
-                    e.Handled = true;
+                    return;
+                }
+
+                e.Handled = true;
+                if (decision != "silent-print-intercepted" && !string.IsNullOrWhiteSpace(e.Uri))
+                {
+                    // Open internal links as a Waseela-style tab inside THIS window instead of a new OS window
+                    if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var targetUri) &&
+                        string.Equals(targetUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = OpenTabAsync(targetUri.PathAndQuery, null, allowDuplicate: false);
+                    }
                 }
             };
 
@@ -186,9 +522,9 @@ public sealed class NativeWebView2Form : Form
                                 id,
                                 result
                             });
-                            if (!IsDisposed && _webView.CoreWebView2 != null)
+                            if (!IsDisposed && wv.CoreWebView2 != null)
                             {
-                                _webView.CoreWebView2.PostWebMessageAsString(responseJson);
+                                wv.CoreWebView2.PostWebMessageAsString(responseJson);
                             }
                         }
                         catch (Exception ex)
@@ -199,9 +535,9 @@ public sealed class NativeWebView2Form : Form
                                 id,
                                 error = ex.Message
                             });
-                            if (!IsDisposed && _webView.CoreWebView2 != null)
+                            if (!IsDisposed && wv.CoreWebView2 != null)
                             {
-                                _webView.CoreWebView2.PostWebMessageAsString(errJson);
+                                wv.CoreWebView2.PostWebMessageAsString(errJson);
                             }
                         }
                     }
@@ -212,64 +548,13 @@ public sealed class NativeWebView2Form : Form
                 }
             };
 
-            _winInstance.WebMessageSender = json =>
-            {
-                if (IsDisposed) return;
-                try
-                {
-                    if (InvokeRequired)
-                    {
-                        BeginInvoke(new Action(() =>
-                        {
-                            if (!IsDisposed && _webView.CoreWebView2 != null)
-                            {
-                                _webView.CoreWebView2.PostWebMessageAsString(json);
-                            }
-                        }));
-                    }
-                    else if (_webView.CoreWebView2 != null)
-                    {
-                        _webView.CoreWebView2.PostWebMessageAsString(json);
-                    }
-                }
-                catch
-                {
-                    // Ignore
-                }
-            };
-
-            _winInstance.UrlNavigator = targetUrl =>
-            {
-                if (IsDisposed) return;
-                try
-                {
-                    if (InvokeRequired)
-                    {
-                        BeginInvoke(new Action(() =>
-                        {
-                            if (!IsDisposed && _webView.CoreWebView2 != null)
-                            {
-                                _webView.CoreWebView2.Navigate(targetUrl);
-                            }
-                        }));
-                    }
-                    else if (_webView.CoreWebView2 != null)
-                    {
-                        _webView.CoreWebView2.Navigate(targetUrl);
-                    }
-                }
-                catch
-                {
-                    // Ignore
-                }
-            };
-
             core.NavigationCompleted += (_, _) =>
             {
                 _windowManager.CloseSplashWindow();
             };
 
-            core.Navigate(_winInstance.Url);
+            var navUrl = !string.IsNullOrWhiteSpace(explicitUrl) ? explicitUrl : BuildAbsoluteUrl(tab.RoutePath);
+            core.Navigate(navUrl);
         }
         catch (Exception ex)
         {
@@ -279,6 +564,123 @@ public sealed class NativeWebView2Form : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
+    }
+
+    private void BroadcastMessageToActiveTab(string json)
+    {
+        if (IsDisposed) return;
+
+        void Send()
+        {
+            if (IsDisposed) return;
+            var activeId = _workspace.ActiveTabId;
+            if (activeId != null && _tabWebViews.TryGetValue(activeId, out var wv) && wv.CoreWebView2 != null)
+            {
+                try { wv.CoreWebView2.PostWebMessageAsString(json); } catch { }
+            }
+        }
+
+        if (InvokeRequired) BeginInvoke((Action)Send);
+        else Send();
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        // Waseela & Chrome-style Tab Multitasking Shortcuts
+        if (keyData == (Keys.Control | Keys.T))
+        {
+            _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.W) || keyData == (Keys.Control | Keys.F4))
+        {
+            if (_workspace.ActiveTabId != null) CloseTabById(_workspace.ActiveTabId);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.T))
+        {
+            var restored = _workspace.ReopenLastClosedTab();
+            if (restored != null)
+            {
+                _ = EnsureTabWebViewInitializedAsync(restored);
+                SyncActiveTabVisuals();
+            }
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Tab) || keyData == (Keys.Control | Keys.PageDown))
+        {
+            if (_workspace.CycleTab(1) != null) SyncActiveTabVisuals();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.Tab) || keyData == (Keys.Control | Keys.PageUp))
+        {
+            if (_workspace.CycleTab(-1) != null) SyncActiveTabVisuals();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.D))
+        {
+            DuplicateActiveTab();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.P))
+        {
+            _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.R))
+        {
+            _ = OpenTabAsync("/sale-invoices/create/retail", "Retail Sale", allowDuplicate: true);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.W))
+        {
+            _ = OpenTabAsync("/sale-invoices/create/wholesale", "Wholesale Sale", allowDuplicate: true);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.G))
+        {
+            _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.L))
+        {
+            _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false);
+            return true;
+        }
+
+        // Ctrl+1 .. Ctrl+8 jump to tab index; Ctrl+9 jumps to last tab
+        if ((keyData & Keys.Control) == Keys.Control && (keyData & (Keys.Shift | Keys.Alt)) == 0)
+        {
+            var keyCode = keyData & Keys.KeyCode;
+            if (keyCode is >= Keys.D1 and <= Keys.D8)
+            {
+                var idx = (int)(keyCode - Keys.D1);
+                if (_workspace.FocusByIndex(idx) != null) SyncActiveTabVisuals();
+                return true;
+            }
+            if (keyCode == Keys.D9)
+            {
+                if (_workspace.FocusLastTab() != null) SyncActiveTabVisuals();
+                return true;
+            }
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private string BuildAbsoluteUrl(string routePath)
+    {
+        var norm = NativeTabWorkspace.NormalizeRoutePath(routePath);
+        return _baseOrigin.TrimEnd('/') + norm;
+    }
+
+    private static string ResolveBaseOrigin(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return $"{uri.Scheme}://{uri.Authority}";
+        }
+        return $"http://127.0.0.1:{NetworkConfigManager.DefaultPort}";
     }
 }
 

@@ -24,8 +24,30 @@ public class SystemUpdateController : ApiControllerBase
 
     [HttpGet("check-update")]
     [AllowAnonymous]
-    public IActionResult CheckUpdate([FromQuery] bool force = false)
+    public async Task<IActionResult> CheckUpdate([FromQuery] bool force = false)
     {
+        var bridge = ResolveDesktopBridge();
+        if (bridge != null)
+        {
+            try
+            {
+                var method = bridge.GetType().GetMethod("CheckForUpdatesAsync");
+                if (method != null)
+                {
+                    var taskObj = method.Invoke(bridge, new object?[] { null, HttpContext.RequestAborted });
+                    if (taskObj is Task<object> resTask)
+                    {
+                        var result = await resTask;
+                        return Ok(result);
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to local version metadata if offline
+            }
+        }
+
         var local = ReadLocalVersion();
         return Ok(new
         {
@@ -39,7 +61,7 @@ public class SystemUpdateController : ApiControllerBase
             latest_version = local["version"],
             latest_build = local["build_number"],
             latest_commit = local["commit_sha"],
-            release_name = $"Karobar-App v{local["version"]}",
+            release_name = $"Karobar-App Native v{local["version"]}",
             released_at = local["released_at"],
             notes = "Running native Windows build.",
             zero_data_loss = true
@@ -100,6 +122,29 @@ public class SystemUpdateController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var mode = GetString(body, "mode") ?? "download_and_install";
 
+        var bridge = ResolveDesktopBridge();
+        if (bridge != null)
+        {
+            try
+            {
+                var method = bridge.GetType().GetMethod("DownloadAndInstallUpdateAsync");
+                if (method != null)
+                {
+                    using var doc = JsonDocument.Parse(JsonSerializer.Serialize(body));
+                    var taskObj = method.Invoke(bridge, new object?[] { doc.RootElement.Clone(), HttpContext.RequestAborted });
+                    if (taskObj is Task<object> resTask)
+                    {
+                        var result = await resTask;
+                        return Ok(result);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { ok = false, message = ex.Message });
+            }
+        }
+
         return Ok(new
         {
             ok = true,
@@ -107,6 +152,14 @@ public class SystemUpdateController : ApiControllerBase
             installing = mode != "download",
             is_patch = GetBool(body, "is_patch", false)
         });
+    }
+
+    private object? ResolveDesktopBridge()
+    {
+        var bridgeType = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetType("Karobar.Host.KarobarDesktopBridge"))
+            .FirstOrDefault(t => t != null);
+        return bridgeType != null ? HttpContext.RequestServices.GetService(bridgeType) : null;
     }
 
     public Dictionary<string, object?> ReadLocalVersion()

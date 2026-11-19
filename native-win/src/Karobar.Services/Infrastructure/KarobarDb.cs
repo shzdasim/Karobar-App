@@ -621,6 +621,10 @@ public class KarobarDb
                                r.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
         {
             var allPerms = await QueryListAsync("SELECT name FROM permissions WHERE guard_name = 'sanctum' ORDER BY name ASC");
+            if (allPerms.Count == 0)
+            {
+                allPerms = await QueryListAsync("SELECT DISTINCT name FROM permissions ORDER BY name ASC");
+            }
             return allPerms
                 .Select(p => p.TryGetValue("name", out var n) ? n?.ToString() ?? "" : "")
                 .Where(n => !string.IsNullOrEmpty(n))

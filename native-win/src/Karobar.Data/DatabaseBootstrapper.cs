@@ -287,7 +287,156 @@ public sealed class DatabaseBootstrapper
         if (tableCount == 0)
         {
             await context.Database.EnsureCreatedAsync(cancellationToken);
+            return;
         }
+
+        // Non-destructive schema upgrade for existing / imported SQLite databases:
+        // 1) Create any missing tables defined in KarobarDbContext
+        // 2) Add any missing columns via safe ALTER TABLE ... ADD COLUMN statements
+        var existingTables = (await conn.QueryAsync<string>(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entityType in context.Model.GetEntityTypes())
+        {
+            var tableName = entityType.GetTableName();
+            if (string.IsNullOrWhiteSpace(tableName)) continue;
+
+            var escapedTable = tableName.Replace("\"", "\"\"");
+
+            if (!existingTables.Contains(tableName))
+            {
+                var colDefs = new List<string>();
+                var pkProps = entityType.FindPrimaryKey()?.Properties ?? [];
+                var singleIntPk = pkProps.Count == 1 &&
+                                  (pkProps[0].ClrType == typeof(long) || pkProps[0].ClrType == typeof(int));
+
+                foreach (var prop in entityType.GetProperties())
+                {
+                    var colName = prop.GetColumnName();
+                    if (string.IsNullOrWhiteSpace(colName)) continue;
+                    var escapedCol = colName.Replace("\"", "\"\"");
+                    var sqlType = MapClrTypeToSqlite(prop.ClrType);
+
+                    if (singleIntPk && prop == pkProps[0])
+                    {
+                        colDefs.Add($"\"{escapedCol}\" INTEGER PRIMARY KEY AUTOINCREMENT");
+                    }
+                    else
+                    {
+                        var defClause = BuildSqliteDefaultClause(prop);
+                        colDefs.Add($"\"{escapedCol}\" {sqlType}{defClause}");
+                    }
+                }
+
+                if (!singleIntPk && pkProps.Count > 0)
+                {
+                    var pkCols = string.Join(", ", pkProps.Select(p => $"\"{p.GetColumnName().Replace("\"", "\"\"")}\""));
+                    colDefs.Add($"PRIMARY KEY ({pkCols})");
+                }
+
+                if (colDefs.Count > 0)
+                {
+                    var createSql = $"CREATE TABLE IF NOT EXISTS \"{escapedTable}\" ({string.Join(", ", colDefs)});";
+                    try
+                    {
+                        await conn.ExecuteAsync(createSql);
+                        existingTables.Add(tableName);
+                    }
+                    catch
+                    {
+                        // Non-fatal if table already created concurrently
+                    }
+                }
+                continue;
+            }
+
+            // Existing table: inspect columns and add any missing columns non-destructively
+            var pragmaRows = await conn.QueryAsync($"PRAGMA table_info(\"{escapedTable}\")");
+            var actualCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in pragmaRows)
+            {
+                if (row is IDictionary<string, object> dict &&
+                    dict.TryGetValue("name", out var colNameObj) &&
+                    colNameObj != null)
+                {
+                    actualCols.Add(colNameObj.ToString()!);
+                }
+            }
+
+            foreach (var prop in entityType.GetProperties())
+            {
+                var colName = prop.GetColumnName();
+                if (string.IsNullOrWhiteSpace(colName) || actualCols.Contains(colName)) continue;
+
+                var escapedCol = colName.Replace("\"", "\"\"");
+                var sqlType = MapClrTypeToSqlite(prop.ClrType);
+                var defClause = BuildSqliteDefaultClause(prop);
+                var alterSql = $"ALTER TABLE \"{escapedTable}\" ADD COLUMN \"{escapedCol}\" {sqlType}{defClause};";
+                try
+                {
+                    await conn.ExecuteAsync(alterSql);
+                    actualCols.Add(colName);
+                }
+                catch
+                {
+                    // Ignore if column cannot be added or already exists
+                }
+            }
+        }
+    }
+
+    private static string MapClrTypeToSqlite(Type clrType)
+    {
+        var underlying = Nullable.GetUnderlyingType(clrType) ?? clrType;
+        if (underlying == typeof(bool) || underlying == typeof(int) || underlying == typeof(long) ||
+            underlying == typeof(short) || underlying == typeof(byte))
+        {
+            return "INTEGER";
+        }
+
+        if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+        {
+            return "REAL";
+        }
+
+        return "TEXT";
+    }
+
+    private static string BuildSqliteDefaultClause(Microsoft.EntityFrameworkCore.Metadata.IProperty prop)
+    {
+        var defSql = prop.GetDefaultValueSql();
+        if (!string.IsNullOrWhiteSpace(defSql))
+        {
+            return $" DEFAULT {defSql}";
+        }
+
+        var defVal = prop.GetDefaultValue();
+        if (defVal != null)
+        {
+            return defVal switch
+            {
+                bool b => $" DEFAULT {(b ? 1 : 0)}",
+                int or long or short or byte => $" DEFAULT {Convert.ToInt64(defVal, System.Globalization.CultureInfo.InvariantCulture)}",
+                decimal or double or float => $" DEFAULT {Convert.ToDouble(defVal, System.Globalization.CultureInfo.InvariantCulture).ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                string s => $" DEFAULT '{s.Replace("'", "''")}'",
+                _ => ""
+            };
+        }
+
+        var underlying = Nullable.GetUnderlyingType(prop.ClrType);
+        if (underlying != null || !prop.ClrType.IsValueType)
+        {
+            return " DEFAULT NULL";
+        }
+
+        if (prop.ClrType == typeof(bool) || prop.ClrType == typeof(int) || prop.ClrType == typeof(long) ||
+            prop.ClrType == typeof(decimal) || prop.ClrType == typeof(double) || prop.ClrType == typeof(float))
+        {
+            return " DEFAULT 0";
+        }
+
+        return "";
     }
 
     public void EnsureSchemaReady() => EnsureSchemaReadyAsync().GetAwaiter().GetResult();

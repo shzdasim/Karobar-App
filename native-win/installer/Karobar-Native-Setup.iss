@@ -26,7 +26,9 @@
 #define MyAppURL "https://github.com/shzdasim/Karobar-App"
 #define MyAppSupportURL "https://github.com/shzdasim"
 #define MyAppExeName "Karobar-Native.exe"
+#define MyPrecheckExeName "Karobar-Precheck.exe"
 #define BuildStageDir "..\..\dist\native-stage"
+#define PrecheckStageDir "..\..\dist\cache\precheck"
 
 [Setup]
 AppId={{D4E91A72-8C3B-4F60-B52E-9A18C47E6309}
@@ -89,8 +91,8 @@ Name: "{app}\storage\backups"; Permissions: users-modify
 Name: "{app}\storage\logs"; Permissions: users-modify
 
 [Files]
-; Native single-file executable extracted on wizard boot to compute Machine ID & verify Ed25519 signature BEFORE installation
-Source: "{#BuildStageDir}\{#MyAppExeName}"; Flags: dontcopy
+; Lightweight standalone precheck helper extracted on wizard boot to compute Machine ID & verify Ed25519 signature BEFORE installation
+Source: "{#PrecheckStageDir}\{#MyPrecheckExeName}"; Flags: dontcopy
 Source: "..\..\desktop\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Full staged Native C#/.NET 9 + WebView2 + React 19 SPA bundle (+ portable Node.js for optional WhatsApp sidecar)
 ; CRITICAL ZERO-DATA-LOSS EXCLUSIONS: Never overwrite existing SQLite database, .env, machine-id, license-clock, WhatsApp session, uploaded logos/files, or backups!
@@ -221,10 +223,10 @@ begin
     Exit;
   end;
   try
-    TmpExe := ExpandConstant('{tmp}\{#MyAppExeName}');
+    TmpExe := ExpandConstant('{tmp}\{#MyPrecheckExeName}');
     MidFile := ExpandConstant('{tmp}\machine-id.txt');
     if not FileExists(TmpExe) then
-      ExtractTemporaryFile('{#MyAppExeName}');
+      ExtractTemporaryFile('{#MyPrecheckExeName}');
     if Exec(
       TmpExe,
       '--cli license:machine-id --out="' + MidFile + '"',
@@ -748,11 +750,11 @@ begin
     end;
 
     SaveStringToFile(ExpandConstant('{tmp}\input-key.txt'), KeyText, False);
-    if not FileExists(ExpandConstant('{tmp}\{#MyAppExeName}')) then
-      ExtractTemporaryFile('{#MyAppExeName}');
+    if not FileExists(ExpandConstant('{tmp}\{#MyPrecheckExeName}')) then
+      ExtractTemporaryFile('{#MyPrecheckExeName}');
 
     if not Exec(
-      ExpandConstant('{tmp}\{#MyAppExeName}'),
+      ExpandConstant('{tmp}\{#MyPrecheckExeName}'),
       '--cli license:verify-installer --allow-unbound --key-file="' + ExpandConstant('{tmp}\input-key.txt') + '" --seal-out="' + ExpandConstant('{tmp}\install-license.seal') + '" --error-out="' + ExpandConstant('{tmp}\license-error.txt') + '"',
       ExpandConstant('{tmp}'),
       SW_HIDE,

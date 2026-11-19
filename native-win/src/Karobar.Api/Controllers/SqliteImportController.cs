@@ -465,6 +465,37 @@ public class SqliteImportController : ApiControllerBase
             var tableReports = new List<Dictionary<string, object?>>();
             var tablesBySource = new Dictionary<string, object?>();
             int totalInserted = 0;
+            int totalUpdated = 0;
+            int totalSkipped = 0;
+
+            // Create an automatic safety backup of the current SQLite DB before modifying any data
+            string? safetyBackupName = null;
+            try
+            {
+                if (System.IO.File.Exists(Db.SqlitePath))
+                {
+                    var backupDir = Db.StoragePath("app/backups");
+                    Directory.CreateDirectory(backupDir);
+                    safetyBackupName = $"pre-sqlite-import-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite";
+                    System.IO.File.Copy(Db.SqlitePath, Path.Combine(backupDir, safetyBackupName), overwrite: true);
+                }
+            }
+            catch
+            {
+                safetyBackupName = null;
+            }
+
+            // Ensure target schema has all latest tables/columns before importing
+            try
+            {
+                var factory = new Karobar.Data.DbConnectionFactory(explicitSqlitePath: Db.SqlitePath);
+                await new Karobar.Data.DatabaseBootstrapper(factory).EnsureSchemaReadyAsync();
+                KarobarDb.FlushSchemaCache();
+            }
+            catch
+            {
+                // Continue with existing schema
+            }
 
             await using var srcConn = new SqliteConnection($"Data Source={stagedPath};Mode=ReadOnly");
             await srcConn.OpenAsync();
@@ -472,6 +503,60 @@ public class SqliteImportController : ApiControllerBase
             var srcTables = (await srcConn.QueryAsync<string>(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).ToList();
 
+            // Parent-before-child topological import priority so master tables always load before transactions
+            var priorityOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["categories"] = 10,
+                ["brands"] = 11,
+                ["formulations"] = 12,
+                ["storage_locations"] = 13,
+                ["tax_rates"] = 14,
+                ["expense_categories"] = 15,
+                ["chart_of_accounts"] = 16,
+                ["accounts"] = 17,
+                ["doctors"] = 18,
+                ["suppliers"] = 19,
+                ["customers"] = 20,
+                ["employees"] = 21,
+                ["products"] = 30,
+                ["product_suppliers"] = 31,
+                ["batches"] = 32,
+                ["customer_whole_sale_prices"] = 33,
+                ["customer_regular_items"] = 34,
+                ["trade_schemes"] = 35,
+                ["trade_scheme_slabs"] = 36,
+                ["purchase_orders"] = 40,
+                ["purchase_order_items"] = 41,
+                ["purchase_invoices"] = 42,
+                ["purchase_invoice_items"] = 43,
+                ["purchase_returns"] = 44,
+                ["purchase_return_items"] = 45,
+                ["sale_invoices"] = 50,
+                ["sale_invoice_items"] = 51,
+                ["sale_returns"] = 52,
+                ["sale_return_items"] = 53,
+                ["payments"] = 60,
+                ["payment_allocations"] = 61,
+                ["customer_ledgers"] = 62,
+                ["supplier_ledgers"] = 63,
+                ["cash_drawer_sessions"] = 64,
+                ["cash_drawer_transactions"] = 65,
+                ["account_transactions"] = 66,
+                ["expenses"] = 67,
+                ["journal_entries"] = 68,
+                ["journal_entry_lines"] = 69,
+                ["stock_adjustments"] = 70,
+                ["stock_adjustment_items"] = 71,
+                ["stocktake_sessions"] = 72,
+                ["stocktake_items"] = 73,
+                ["stock_disposals"] = 74,
+                ["stock_disposal_items"] = 75,
+                ["user_demands"] = 76,
+                ["document_sequences"] = 80,
+                ["document_histories"] = 81
+            };
+
+            var importPlan = new List<(string SrcTable, string TargetTable, int Priority)>();
             foreach (var srcTbl in srcTables)
             {
                 if (ProtectedTables.Contains(srcTbl) || OptionalConfigTables.Contains(srcTbl))
@@ -485,40 +570,204 @@ public class SqliteImportController : ApiControllerBase
                     continue;
                 }
 
-                var escapedSrc = srcTbl.Replace("\"", "\"\"");
-                var rows = (await srcConn.QueryAsync($"SELECT * FROM \"{escapedSrc}\"")).Select(KarobarDb.NormalizeRow).ToList();
-                int insertedForTable = 0;
-                int skippedForTable = 0;
+                var prio = priorityOrder.TryGetValue(targetTbl, out var p) ? p : 100;
+                importPlan.Add((srcTbl, targetTbl, prio));
+            }
 
-                foreach (var row in rows)
+            importPlan = importPlan.OrderBy(x => x.Priority).ThenBy(x => x.TargetTable, StringComparer.OrdinalIgnoreCase).ToList();
+
+            // Resolve valid user IDs in target DB so orphan user_id / reversed_by_id foreign keys remap cleanly to Admin
+            var validUserIds = new HashSet<long>();
+            long fallbackUserId = CurrentUserId ?? 1;
+            if (await Db.HasTableAsync("users"))
+            {
+                var uRows = await Db.QueryListAsync("SELECT id FROM users ORDER BY id ASC");
+                foreach (var ur in uRows)
                 {
-                    try
+                    if (ur.TryGetValue("id", out var idObj) && idObj != null && long.TryParse(idObj.ToString(), out var uid))
                     {
-                        var copy = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
-                        copy.Remove("id");
-                        await Db.InsertAsync(targetTbl, copy);
-                        insertedForTable++;
-                        totalInserted++;
+                        validUserIds.Add(uid);
                     }
-                    catch
+                }
+                if (validUserIds.Count > 0 && !validUserIds.Contains(fallbackUserId))
+                {
+                    fallbackUserId = validUserIds.First();
+                }
+            }
+
+            var isReplaceMode = string.Equals(mode, "replace", StringComparison.OrdinalIgnoreCase);
+
+            await using var dstConn = await Db.OpenConnectionAsync();
+            // Disable FK enforcement during atomic bulk import so cross-referenced rows & preserved IDs load cleanly
+            await dstConn.ExecuteAsync("PRAGMA foreign_keys = OFF;");
+            await using var tx = await dstConn.BeginTransactionAsync();
+
+            try
+            {
+                // In Replace mode, clear target tables in reverse topological order first so preserved IDs never collide
+                if (isReplaceMode)
+                {
+                    foreach (var item in importPlan.AsEnumerable().Reverse())
                     {
-                        skippedForTable++;
+                        var escapedDst = item.TargetTable.Replace("\"", "\"\"");
+                        await dstConn.ExecuteAsync($"DELETE FROM \"{escapedDst}\";", transaction: tx);
                     }
                 }
 
-                var report = new Dictionary<string, object?>
+                foreach (var item in importPlan)
                 {
-                    ["source_table"] = srcTbl,
-                    ["target_table"] = targetTbl,
-                    ["source_rows"] = rows.Count,
-                    ["inserted"] = insertedForTable,
-                    ["updated"] = 0,
-                    ["skipped"] = skippedForTable,
-                    ["warnings"] = Array.Empty<string>()
-                };
-                tableReports.Add(report);
-                tablesBySource[srcTbl] = report;
+                    var srcTbl = item.SrcTable;
+                    var targetTbl = item.TargetTable;
+                    var escapedSrc = srcTbl.Replace("\"", "\"\"");
+                    var escapedDst = targetTbl.Replace("\"", "\"\"");
+
+                    var targetCols = await Db.GetTableColumnsAsync(targetTbl);
+                    if (targetCols.Count == 0) continue;
+
+                    // Inspect target table NOT NULL + DEFAULT metadata so NULL source values fall back cleanly to column defaults
+                    var notNullWithDefault = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    try
+                    {
+                        var pragmaInfo = await dstConn.QueryAsync($"PRAGMA table_info(\"{escapedDst}\");", transaction: tx);
+                        foreach (var pr in pragmaInfo)
+                        {
+                            if (pr is IDictionary<string, object> pd &&
+                                pd.TryGetValue("name", out var cn) && cn != null &&
+                                pd.TryGetValue("notnull", out var nn) && Convert.ToInt32(nn ?? 0) == 1 &&
+                                pd.TryGetValue("dflt_value", out var dv) && dv != null)
+                            {
+                                notNullWithDefault.Add(cn.ToString()!);
+                            }
+                        }
+                    }
+                    catch { }
+
+                    var rows = (await srcConn.QueryAsync($"SELECT * FROM \"{escapedSrc}\"")).Select(KarobarDb.NormalizeRow).ToList();
+                    int insertedForTable = 0;
+                    int updatedForTable = 0;
+                    int skippedForTable = 0;
+                    var warnings = new List<string>();
+
+                    foreach (var row in rows)
+                    {
+                        try
+                        {
+                            var filtered = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var kv in row)
+                            {
+                                if (!targetCols.Contains(kv.Key)) continue;
+                                var val = KarobarDb.PrepareDbValue(kv.Value);
+                                if (val == null && notNullWithDefault.Contains(kv.Key))
+                                {
+                                    // Omit NULL for NOT NULL columns that have a SQL DEFAULT so SQLite applies the default
+                                    continue;
+                                }
+
+                                // Remap orphan user references to active Admin user so audit & FK checks stay valid
+                                if ((kv.Key.Equals("user_id", StringComparison.OrdinalIgnoreCase) ||
+                                     kv.Key.Equals("reversed_by_id", StringComparison.OrdinalIgnoreCase) ||
+                                     kv.Key.Equals("created_by", StringComparison.OrdinalIgnoreCase)) &&
+                                    val != null &&
+                                    long.TryParse(val.ToString(), out var refUid) &&
+                                    refUid > 0 &&
+                                    validUserIds.Count > 0 &&
+                                    !validUserIds.Contains(refUid))
+                                {
+                                    val = fallbackUserId;
+                                }
+
+                                filtered[kv.Key] = val;
+                            }
+
+                            if (filtered.Count == 0)
+                            {
+                                skippedForTable++;
+                                continue;
+                            }
+
+                            // Preserve original primary keys (`id`) so all FK links (products->suppliers/brands,
+                            // batches->products, sale_invoices->customers, sale_invoice_items->sale_invoices) stay 100% intact!
+                            var cols = filtered.Keys.ToList();
+                            var colList = string.Join(", ", cols.Select(c => $"\"{c.Replace("\"", "\"\"")}\""));
+                            var paramList = string.Join(", ", cols.Select((_, idx) => $"@p{idx}"));
+                            var dynParams = new DynamicParameters();
+                            for (int i = 0; i < cols.Count; i++)
+                            {
+                                dynParams.Add($"p{i}", filtered[cols[i]]);
+                            }
+
+                            var verb = isReplaceMode ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
+                            var insertSql = $"{verb} INTO \"{escapedDst}\" ({colList}) VALUES ({paramList});";
+                            var affected = await dstConn.ExecuteAsync(insertSql, dynParams, tx);
+                            if (affected > 0)
+                            {
+                                insertedForTable++;
+                                totalInserted++;
+                            }
+                            else
+                            {
+                                updatedForTable++;
+                                totalUpdated++;
+                            }
+                        }
+                        catch (Exception rowEx)
+                        {
+                            skippedForTable++;
+                            totalSkipped++;
+                            if (warnings.Count < 5)
+                            {
+                                warnings.Add(rowEx.Message);
+                            }
+                        }
+                    }
+
+                    // Sync sqlite_sequence so future inserts continue cleanly after MAX(id)
+                    if (targetCols.Contains("id"))
+                    {
+                        try
+                        {
+                            var maxId = await dstConn.ExecuteScalarAsync<long?>($"SELECT MAX(id) FROM \"{escapedDst}\";", transaction: tx);
+                            if (maxId.HasValue && maxId.Value > 0)
+                            {
+                                await dstConn.ExecuteAsync(
+                                    "DELETE FROM sqlite_sequence WHERE name = @tbl; INSERT INTO sqlite_sequence (name, seq) VALUES (@tbl, @maxId);",
+                                    new { tbl = targetTbl, maxId = maxId.Value },
+                                    tx);
+                            }
+                        }
+                        catch
+                        {
+                            // sqlite_sequence may not exist if no AUTOINCREMENT table was created yet
+                        }
+                    }
+
+                    var report = new Dictionary<string, object?>
+                    {
+                        ["source_table"] = srcTbl,
+                        ["target_table"] = targetTbl,
+                        ["source_rows"] = rows.Count,
+                        ["inserted"] = insertedForTable,
+                        ["updated"] = updatedForTable,
+                        ["skipped"] = skippedForTable,
+                        ["warnings"] = warnings
+                    };
+                    tableReports.Add(report);
+                    tablesBySource[srcTbl] = report;
+                }
+
+                await tx.CommitAsync();
             }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+            finally
+            {
+                try { await dstConn.ExecuteAsync("PRAGMA foreign_keys = ON;"); } catch { }
+            }
+
+            KarobarDb.FlushSchemaCache();
 
             return Ok(new Dictionary<string, object?>
             {
@@ -528,15 +777,15 @@ public class SqliteImportController : ApiControllerBase
                 ["totals"] = new Dictionary<string, int>
                 {
                     ["inserted"] = totalInserted,
-                    ["updated"] = 0,
-                    ["skipped"] = 0
+                    ["updated"] = totalUpdated,
+                    ["skipped"] = totalSkipped
                 },
                 ["stats"] = new Dictionary<string, object?>
                 {
                     ["total_inserted"] = totalInserted,
-                    ["total_updated"] = 0,
-                    ["total_skipped"] = 0,
-                    ["safety_backup"] = null,
+                    ["total_updated"] = totalUpdated,
+                    ["total_skipped"] = totalSkipped,
+                    ["safety_backup"] = safetyBackupName,
                     ["reconciliation"] = new Dictionary<string, object?>(),
                     ["tables"] = tablesBySource
                 }

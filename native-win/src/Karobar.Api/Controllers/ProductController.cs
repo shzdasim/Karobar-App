@@ -199,12 +199,14 @@ public class ProductController : ApiControllerBase
         [FromQuery(Name = "q_formulation")] string? qFormulation = "",
         [FromQuery(Name = "q_barcode")] string? qBarcode = "",
         [FromQuery(Name = "q_rack")] string? qRack = "",
-        [FromQuery(Name = "low_stock")] int lowStock = 0)
+        [FromQuery(Name = "low_stock")] string? lowStockRaw = null)
     {
         if (!await CanAsync("product.view")) return Forbidden();
 
         perPage = Math.Clamp(perPage <= 0 ? 25 : perPage, 1, 100);
         page = Math.Max(1, page);
+        var lowStock = string.Equals(lowStockRaw?.Trim(), "1", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(lowStockRaw?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
         var search = (q ?? "").Trim();
         var nameFilter = (qName ?? "").Trim();
@@ -214,25 +216,30 @@ public class ProductController : ApiControllerBase
         var barcodeFilter = (qBarcode ?? "").Trim();
         var rackFilter = (qRack ?? "").Trim();
 
-        var hasCategories = await Db.HasTableAsync("categories");
+        var hasCategories = await Db.HasTableAsync("categories") && await Db.HasColumnAsync("products", "category_id");
         var hasLocations = await Db.HasTableAsync("storage_locations") && await Db.HasColumnAsync("products", "storage_location_id");
         var hasBatches = await Db.HasTableAsync("batches");
         var hasProductSuppliers = await Db.HasTableAsync("product_suppliers");
+        var hasBarcode = await Db.HasColumnAsync("products", "barcode");
+        var hasFormulation = await Db.HasColumnAsync("products", "formulation");
+        var hasRack = await Db.HasColumnAsync("products", "rack");
 
         var where = new List<string>();
         var param = new DynamicParameters();
 
         if (!string.IsNullOrEmpty(search))
         {
-            where.Add(@"(
-                p.name LIKE @sPrefix OR
-                p.product_code LIKE @sPrefix OR
-                br.name LIKE @sPrefix OR
-                s.name LIKE @sPrefix OR
-                p.barcode LIKE @sPrefix OR
-                p.formulation LIKE @sContains OR
-                p.rack LIKE @sPrefix
-            )");
+            var searchParts = new List<string>
+            {
+                "p.name LIKE @sPrefix",
+                "p.product_code LIKE @sPrefix",
+                "br.name LIKE @sPrefix",
+                "s.name LIKE @sPrefix"
+            };
+            if (hasBarcode) searchParts.Add("p.barcode LIKE @sPrefix");
+            if (hasFormulation) searchParts.Add("p.formulation LIKE @sContains");
+            if (hasRack) searchParts.Add("p.rack LIKE @sPrefix");
+            where.Add("(" + string.Join(" OR ", searchParts) + ")");
             param.Add("sPrefix", $"{search}%");
             param.Add("sContains", $"%{search}%");
         }
@@ -263,22 +270,22 @@ public class ProductController : ApiControllerBase
             }
             param.Add("qSupp", $"{supplierFilter}%");
         }
-        if (!string.IsNullOrEmpty(formulationFilter))
+        if (!string.IsNullOrEmpty(formulationFilter) && hasFormulation)
         {
             where.Add("p.formulation LIKE @qForm");
             param.Add("qForm", $"%{formulationFilter}%");
         }
-        if (!string.IsNullOrEmpty(barcodeFilter))
+        if (!string.IsNullOrEmpty(barcodeFilter) && hasBarcode)
         {
             where.Add("p.barcode LIKE @qBarcode");
             param.Add("qBarcode", $"{barcodeFilter}%");
         }
-        if (!string.IsNullOrEmpty(rackFilter))
+        if (!string.IsNullOrEmpty(rackFilter) && hasRack)
         {
             where.Add("p.rack LIKE @qRack");
             param.Add("qRack", $"{rackFilter}%");
         }
-        if (lowStock == 1 && await Db.HasTableAsync("purchase_invoice_items"))
+        if (lowStock && await Db.HasTableAsync("purchase_invoice_items"))
         {
             where.Add(@"p.id IN (SELECT DISTINCT pii.product_id FROM purchase_invoice_items pii WHERE pii.product_id IS NOT NULL)
                         AND p.quantity IS NOT NULL AND p.quantity < p.pack_size");

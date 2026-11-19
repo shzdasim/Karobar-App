@@ -131,20 +131,23 @@ public class SaleInvoiceController : ApiControllerBase
         var where = new List<string> { "1=1" };
         var dyn = new DynamicParameters();
 
+        var normSaleType = (sale_type ?? "").Trim().ToLowerInvariant();
+        var normInvoiceType = (invoice_type ?? "").Trim().ToLowerInvariant();
+
         if (customer_id.HasValue && customer_id.Value > 0)
         {
             where.Add("si.customer_id = @cid");
             dyn.Add("cid", customer_id.Value);
         }
-        if (!string.IsNullOrWhiteSpace(sale_type) && sale_type is "retail" or "wholesale")
+        if (normSaleType is "retail" or "wholesale")
         {
-            where.Add("si.sale_type = @saleType");
-            dyn.Add("saleType", sale_type);
+            where.Add("LOWER(COALESCE(si.sale_type, 'retail')) = @saleType");
+            dyn.Add("saleType", normSaleType);
         }
-        if (!string.IsNullOrWhiteSpace(invoice_type) && invoice_type is "credit" or "debit")
+        if (normInvoiceType is "credit" or "debit")
         {
-            where.Add("si.invoice_type = @invoiceType");
-            dyn.Add("invoiceType", invoice_type);
+            where.Add("LOWER(COALESCE(si.invoice_type, 'debit')) = @invoiceType");
+            dyn.Add("invoiceType", normInvoiceType);
         }
         if (!string.IsNullOrWhiteSpace(posted))
         {
@@ -2343,7 +2346,11 @@ public class SaleInvoiceController : ApiControllerBase
         var employees = new Dictionary<long, Dictionary<string, object?>>();
         if (empIds.Length > 0 && await Db.HasTableAsync("employees"))
         {
-            var eRows = await Db.QueryListAsync("SELECT id, name, employee_code FROM employees WHERE id IN @ids", new { ids = empIds });
+            var hasEmpCode = await Db.HasColumnAsync("employees", "employee_code");
+            var empSql = hasEmpCode
+                ? "SELECT id, name, employee_code FROM employees WHERE id IN @ids"
+                : "SELECT id, name FROM employees WHERE id IN @ids";
+            var eRows = await Db.QueryListAsync(empSql, new { ids = empIds });
             foreach (var er in eRows) employees[ToLong(er["id"])] = er;
         }
 

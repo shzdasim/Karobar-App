@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Automated Native Windows Single-Binary (.NET 9 + Kestrel + WebView2) Build,
     Authenticode Code Signing & Zero-Data-Loss Inno Setup Release Pipeline for Karobar-App Native.
@@ -31,13 +31,14 @@ $RepoSlug    = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { "sh
 
 Write-Host "==> [0/6] Stamping Karobar-App Native Version Metadata: v$AppVersion (Build #$BuildNumber, Commit $CommitSha)..." -ForegroundColor Cyan
 $VersionMeta = [ordered]@{
-    app_name     = "Karobar-App Native"
-    version      = $AppVersion
-    build_number = $BuildNumber
-    commit_sha   = $CommitSha
-    repository   = $RepoSlug
-    released_at  = $ReleasedAt
-    runtime      = "native-dotnet9-win-x64"
+    app_name       = "Karobar-App Native"
+    version        = $AppVersion
+    build_number   = $BuildNumber
+    commit_sha     = $CommitSha
+    repository     = $RepoSlug
+    released_at    = $ReleasedAt
+    runtime        = "native-dotnet9-win-x64"
+    runtime_layout = "split-v2"
 }
 $VersionMetaJson = $VersionMeta | ConvertTo-Json -Depth 4
 Set-Content -Path (Join-Path $RepoRoot "public\version.json") -Value $VersionMetaJson -Encoding UTF8
@@ -56,7 +57,7 @@ if (-not $env:KAROBAR_SKIP_NPM_BUILD) {
     npm run build
 }
 
-Write-Host "==> [2/6] Publishing Karobar.Host (.NET 9 Single-Binary Self-Contained win-x64 -> Karobar-Native.exe)..." -ForegroundColor Cyan
+Write-Host "==> [2/6] Publishing Karobar.Host (Split Self-Contained win-x64 for ~3-5MB OTA Patches) + Karobar.Precheck..." -ForegroundColor Cyan
 if (Test-Path $PublishDir) {
     Remove-Item -Recurse -Force $PublishDir
 }
@@ -66,16 +67,37 @@ dotnet publish $HostProjectPath `
     -c Release `
     -r win-x64 `
     --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
+    -p:PublishSingleFile=false `
     -p:DebugType=none `
     -p:DebugSymbols=false `
     -p:Version=$AppVersion `
     -o $PublishDir
 
 if ($LASTEXITCODE -ne 0) {
-    throw "dotnet publish failed with exit code $LASTEXITCODE"
+    throw "dotnet publish Karobar.Host failed with exit code $LASTEXITCODE"
+}
+
+$PrecheckOutDir     = Join-Path $CacheDir "precheck"
+$PrecheckProjectPath = Join-Path $RepoRoot "native-win\src\Karobar.Precheck\Karobar.Precheck.csproj"
+if (Test-Path $PrecheckOutDir) { Remove-Item -Recurse -Force $PrecheckOutDir }
+dotnet publish $PrecheckProjectPath `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true `
+    -p:DebugType=none `
+    -p:DebugSymbols=false `
+    -p:Version=$AppVersion `
+    -o $PrecheckOutDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish Karobar.Precheck failed with exit code $LASTEXITCODE"
+}
+$PrecheckExe = Join-Path $PrecheckOutDir "Karobar-Precheck.exe"
+if (-not (Test-Path $PrecheckExe)) {
+    throw "Expected precheck binary not found at $PrecheckExe"
 }
 
 Write-Host "==> [3/6] Staging Native Application Payload into dist/native-stage..." -ForegroundColor Cyan
@@ -142,8 +164,8 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     if (Test-Path $IsolatedTmp) { Remove-Item -Recurse -Force $IsolatedTmp }
     New-Item -ItemType Directory -Force -Path $IsolatedTmp | Out-Null
 
-    $IsolatedExe = Join-Path $IsolatedTmp "Karobar-Native.exe"
-    Copy-Item -Path $TargetAppExe -Destination $IsolatedExe -Force
+    $IsolatedExe = Join-Path $IsolatedTmp "Karobar-Precheck.exe"
+    Copy-Item -Path $PrecheckExe -Destination $IsolatedExe -Force
 
     $TestMidOut = Join-Path $IsolatedTmp "machine-id.txt"
     $MidProc = Start-Process -FilePath $IsolatedExe `
@@ -277,6 +299,7 @@ function Invoke-KarobarAuthenticodeSign([string]$TargetExe) {
 }
 
 Invoke-KarobarAuthenticodeSign $TargetAppExe
+Invoke-KarobarAuthenticodeSign $PrecheckExe
 Invoke-KarobarAuthenticodeSign $PublishedHostExe
 
 Write-Host "==> [6/6] Compiling Inno Setup 6 Native Windows Installer (Karobar-Native-Setup.iss)..." -ForegroundColor Cyan
@@ -329,13 +352,42 @@ start "" "%~dp0Karobar-Native-Setup.exe"
 "@
 Set-Content -Path $HelperBatPath -Value $HelperBatContent -Encoding ASCII
 
-# Package differential OTA patch zip and latest-native-release.json manifest
+# Package LIGHTWEIGHT differential OTA patch zip (~3-5 MB ONLY — app assemblies + React SPA + print templates, NEVER the .NET 9 runtime!)
+$PatchStageDir = Join-Path $CacheDir "native-patch-stage"
+if (Test-Path $PatchStageDir) { Remove-Item -Recurse -Force $PatchStageDir }
+New-Item -ItemType Directory -Force -Path $PatchStageDir | Out-Null
+
+# 1. Copy only Karobar app binaries & runtime metadata (~1.5 MB zipped vs ~90 MB .NET runtime)
+Get-ChildItem -Path $StageDir -File | Where-Object {
+    $_.Name -like "Karobar*"
+} | ForEach-Object {
+    Copy-Item -Path $_.FullName -Destination (Join-Path $PatchStageDir $_.Name) -Force
+}
+
+# 2. Copy React SPA, print templates, scripts, desktop assets, and Cube AI knowledge (never database or user storage!)
+foreach ($relDir in @("public", "resources\views", "scripts", "desktop")) {
+    $srcSub = Join-Path $StageDir $relDir
+    if (Test-Path $srcSub) {
+        $dstSub = Join-Path $PatchStageDir $relDir
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dstSub) | Out-Null
+        Copy-Item -Path $srcSub -Destination $dstSub -Recurse -Force
+    }
+}
+$StagedCubeKb = Join-Path $StageDir "storage\app\cube-knowledge.json"
+if (Test-Path $StagedCubeKb) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $PatchStageDir "storage\app") | Out-Null
+    Copy-Item -Path $StagedCubeKb -Destination (Join-Path $PatchStageDir "storage\app\cube-knowledge.json") -Force
+}
+
 $PatchZipPath = Join-Path $InstallerOutDir "Karobar-Native-Patch.zip"
 if (Test-Path $PatchZipPath) { Remove-Item -Force $PatchZipPath }
-Compress-Archive -Path "$StageDir\*" -DestinationPath $PatchZipPath -CompressionLevel Optimal -Force
+Compress-Archive -Path "$PatchStageDir\*" -DestinationPath $PatchZipPath -CompressionLevel Optimal -Force
+Remove-Item -Recurse -Force $PatchStageDir -ErrorAction SilentlyContinue
 
 $PatchSize   = (Get-Item $PatchZipPath).Length
+$PatchSizeMB = [Math]::Round($PatchSize / 1MB, 2)
 $PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
+Write-Host "    Differential OTA Patch packaged: Karobar-Native-Patch.zip ($PatchSizeMB MB, SHA256=$PatchSha256)" -ForegroundColor Green
 
 $LatestReleaseManifest = [ordered]@{
     app_name          = "Karobar-App Native"
@@ -344,14 +396,15 @@ $LatestReleaseManifest = [ordered]@{
     commit_sha        = $CommitSha
     release_name      = "Karobar-App Native v$AppVersion (Build #$BuildNumber)"
     released_at       = $ReleasedAt
-    notes             = "Native Windows C#/.NET 9 + Kestrel + WebView2 Single-Binary Release."
-    download_url      = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Setup.exe"
-    bundle_url        = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Setup-Bundle.zip"
-    patch_url         = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Patch.zip"
+    notes             = "Native Windows C#/.NET 9 + Kestrel + Waseela Multi-Tab WebView2 Release (Fast Differential Patch: ${PatchSizeMB} MB)."
+    runtime_layout    = "split-v2"
+    download_url      = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup.exe"
+    bundle_url        = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip"
+    patch_url         = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Patch.zip"
     patch_size        = [int64]$PatchSize
     patch_sha256      = $PatchSha256
     min_patch_version = "2.0.0"
-    release_url       = "https://github.com/$RepoSlug/releases/latest"
+    release_url       = "https://github.com/$RepoSlug/releases/tag/native-latest"
     zero_data_loss    = $true
 }
 Set-Content -Path (Join-Path $InstallerOutDir "latest-native-release.json") -Value ($LatestReleaseManifest | ConvertTo-Json -Depth 4) -Encoding UTF8

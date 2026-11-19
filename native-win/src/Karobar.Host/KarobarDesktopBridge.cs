@@ -78,6 +78,9 @@ public sealed class LocalVersionMeta
 
     [JsonPropertyName("repository")]
     public string Repository { get; set; } = "shzdasim/Karobar-App";
+
+    [JsonPropertyName("runtime_layout")]
+    public string RuntimeLayout { get; set; } = "";
 }
 
 /// <summary>
@@ -1168,73 +1171,89 @@ public sealed class KarobarDesktopBridge
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Karobar-App-Desktop-Updater/2.0");
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        // 1. Primary manifest: latest-native-release.json
-        try
-        {
-            var manifestUrl = $"https://github.com/{repo}/releases/latest/download/latest-native-release.json";
-            var jsonText = await client.GetStringAsync(manifestUrl, cancellationToken);
-            using var doc = JsonDocument.Parse(jsonText);
-            var remote = doc.RootElement;
+        // 1. Primary manifest: dedicated `native-latest` rolling channel (never collides with Electron `latest`)
+        string[] manifestCandidates =
+        [
+            $"https://github.com/{repo}/releases/download/native-latest/latest-native-release.json",
+            $"https://github.com/{repo}/releases/latest/download/latest-native-release.json"
+        ];
 
-            if (remote.TryGetProperty("version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
+        foreach (var manifestUrl in manifestCandidates)
+        {
+            try
             {
-                var remoteVer = (vProp.GetString() ?? "").TrimStart('v', 'V');
-                var remoteBuild = remote.TryGetProperty("build_number", out var bProp) && bProp.TryGetInt32(out var bVal) ? bVal : 0;
-                var isNewer = remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
-                    ? remoteBuild > local.BuildNumber
-                    : CompareSemverNewer(remoteVer, local.Version);
+                var jsonText = await client.GetStringAsync(manifestUrl, cancellationToken);
+                using var doc = JsonDocument.Parse(jsonText);
+                var remote = doc.RootElement;
 
-                var minPatchVer = (remote.TryGetProperty("min_patch_version", out var mpProp) && mpProp.ValueKind == JsonValueKind.String
-                    ? mpProp.GetString() ?? "2.0.0"
-                    : "2.0.0").TrimStart('v', 'V');
-
-                var patchUrl = remote.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
-                    ? puProp.GetString()
-                    : null;
-
-                var canPatch = !string.IsNullOrWhiteSpace(patchUrl) && !CompareSemverNewer(minPatchVer, local.Version);
-
-                return new
+                if (remote.TryGetProperty("version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
                 {
-                    ok = true,
-                    update_available = isNewer,
-                    is_patch = canPatch,
-                    app_name = "Karobar-App Native",
-                    current_version = local.Version,
-                    current_build = local.BuildNumber,
-                    latest_version = remoteVer,
-                    latest_build = remoteBuild,
-                    release_name = remote.TryGetProperty("release_name", out var rn) && rn.ValueKind == JsonValueKind.String
-                        ? rn.GetString()
-                        : $"Karobar-App Native v{remoteVer}",
-                    released_at = remote.TryGetProperty("released_at", out var ra) && ra.ValueKind == JsonValueKind.String
-                        ? ra.GetString()
-                        : "",
-                    notes = remote.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String
-                        ? nt.GetString()
-                        : "Performance improvements, bug fixes, and new features.",
-                    download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
-                        ? du.GetString()
-                        : $"https://github.com/{repo}/releases/latest/download/Karobar-Native-Setup.exe",
-                    bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
-                        ? bu.GetString()
-                        : $"https://github.com/{repo}/releases/latest/download/Karobar-Native-Setup-Bundle.zip",
-                    patch_url = patchUrl,
-                    patch_size = remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
-                    patch_sha256 = remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
-                        ? pSha.GetString()
-                        : null,
-                    min_patch_version = minPatchVer,
-                    release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
-                        ? ru.GetString()
-                        : $"https://github.com/{repo}/releases/latest",
-                    zero_data_loss = true
-                };
+                    var remoteVer = (vProp.GetString() ?? "").TrimStart('v', 'V');
+                    var remoteBuild = remote.TryGetProperty("build_number", out var bProp) && bProp.TryGetInt32(out var bVal) ? bVal : 0;
+                    var isNewer = remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
+                        ? remoteBuild > local.BuildNumber
+                        : CompareSemverNewer(remoteVer, local.Version);
+
+                    var minPatchVer = (remote.TryGetProperty("min_patch_version", out var mpProp) && mpProp.ValueKind == JsonValueKind.String
+                        ? mpProp.GetString() ?? "2.0.0"
+                        : "2.0.0").TrimStart('v', 'V');
+
+                    var patchUrl = remote.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
+                        ? puProp.GetString()
+                        : null;
+
+                    var remoteLayout = remote.TryGetProperty("runtime_layout", out var rlProp) && rlProp.ValueKind == JsonValueKind.String
+                        ? rlProp.GetString() ?? ""
+                        : "";
+                    var layoutCompatible = string.IsNullOrEmpty(remoteLayout) ||
+                                           string.Equals(remoteLayout, local.RuntimeLayout, StringComparison.OrdinalIgnoreCase);
+
+                    var canPatch = !string.IsNullOrWhiteSpace(patchUrl) &&
+                                   layoutCompatible &&
+                                   !CompareSemverNewer(minPatchVer, local.Version);
+
+                    return new
+                    {
+                        ok = true,
+                        update_available = isNewer,
+                        is_patch = canPatch,
+                        app_name = "Karobar-App Native",
+                        current_version = local.Version,
+                        current_build = local.BuildNumber,
+                        latest_version = remoteVer,
+                        latest_build = remoteBuild,
+                        release_name = remote.TryGetProperty("release_name", out var rn) && rn.ValueKind == JsonValueKind.String
+                            ? rn.GetString()
+                            : $"Karobar-App Native v{remoteVer}",
+                        released_at = remote.TryGetProperty("released_at", out var ra) && ra.ValueKind == JsonValueKind.String
+                            ? ra.GetString()
+                            : "",
+                        notes = remote.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String
+                            ? nt.GetString()
+                            : "Performance improvements, bug fixes, and new features.",
+                        download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
+                            ? du.GetString()
+                            : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe",
+                        bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
+                            ? bu.GetString()
+                            : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
+                        patch_url = patchUrl,
+                        patch_size = remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
+                        patch_sha256 = remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
+                            ? pSha.GetString()
+                            : null,
+                        min_patch_version = minPatchVer,
+                        release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
+                            ? ru.GetString()
+                            : $"https://github.com/{repo}/releases/tag/native-latest",
+                        zero_data_loss = true
+                    };
+                }
             }
-        }
-        catch
-        {
-            // Fall through to GitHub Releases REST API
+            catch
+            {
+                // Try next manifest candidate
+            }
         }
 
         // 2. Fallback: GitHub Releases REST API
@@ -1341,6 +1360,7 @@ public sealed class KarobarDesktopBridge
         var forceFull = false;
         var isPatchFlag = false;
         string? candidatePatchUrl = null;
+        string? candidatePatchSha256 = null;
         string? candidateDownloadUrl = null;
         var rawVersion = "latest";
 
@@ -1360,6 +1380,10 @@ public sealed class KarobarDesktopBridge
                 candidatePatchUrl = pu1.GetString();
             if (payload.TryGetProperty("patch_url", out var pu2) && pu2.ValueKind == JsonValueKind.String)
                 candidatePatchUrl ??= pu2.GetString();
+            if (payload.TryGetProperty("patchSha256", out var ps1) && ps1.ValueKind == JsonValueKind.String)
+                candidatePatchSha256 = ps1.GetString();
+            if (payload.TryGetProperty("patch_sha256", out var ps2) && ps2.ValueKind == JsonValueKind.String)
+                candidatePatchSha256 ??= ps2.GetString();
             if (payload.TryGetProperty("downloadUrl", out var du1) && du1.ValueKind == JsonValueKind.String)
                 candidateDownloadUrl = du1.GetString();
             if (payload.TryGetProperty("download_url", out var du2) && du2.ValueKind == JsonValueKind.String)
@@ -1380,10 +1404,10 @@ public sealed class KarobarDesktopBridge
         var downloadUrl = isPatch
             ? (IsTrustedReleaseUrl(candidatePatchUrl)
                 ? candidatePatchUrl!
-                : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-Native-Patch.zip")
+                : "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Patch.zip")
             : (IsTrustedReleaseUrl(candidateDownloadUrl)
                 ? candidateDownloadUrl!
-                : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-Native-Setup.exe");
+                : "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Setup.exe");
 
         var fileExt = isPatch ? "zip" : "exe";
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"Karobar-Native-Update-{versionLabel}.{fileExt}");
@@ -1392,6 +1416,13 @@ public sealed class KarobarDesktopBridge
         try
         {
             var alreadyDownloaded = File.Exists(tempFilePath) && new FileInfo(tempFilePath).Length >= minValidSize;
+            if (alreadyDownloaded && isPatch && !string.IsNullOrWhiteSpace(candidatePatchSha256) &&
+                !VerifyFileSha256(tempFilePath, candidatePatchSha256))
+            {
+                try { File.Delete(tempFilePath); } catch { }
+                alreadyDownloaded = false;
+            }
+
             if (!alreadyDownloaded)
             {
                 _windowManager.SendUpdateProgress(new
@@ -1399,10 +1430,17 @@ public sealed class KarobarDesktopBridge
                     status = "starting",
                     percent = 2,
                     is_patch = isPatch,
-                    message = isPatch ? "Starting fast patch download…" : "Starting background update download…"
+                    message = isPatch ? "Starting fast differential patch download…" : "Starting background update download…"
                 });
 
                 await DownloadFileWithProgressAsync(downloadUrl, tempFilePath, isPatch, cancellationToken);
+
+                if (isPatch && !string.IsNullOrWhiteSpace(candidatePatchSha256) &&
+                    !VerifyFileSha256(tempFilePath, candidatePatchSha256))
+                {
+                    try { File.Delete(tempFilePath); } catch { }
+                    throw new InvalidOperationException("Downloaded patch failed SHA-256 integrity verification. Please retry.");
+                }
             }
 
             if (mode == "download")
@@ -1414,7 +1452,7 @@ public sealed class KarobarDesktopBridge
                     is_patch = isPatch,
                     installerPath = tempFilePath,
                     message = isPatch
-                        ? "Fast patch downloaded and ready to apply."
+                        ? "Fast patch downloaded & verified. Ready to apply."
                         : "Update downloaded and ready to install."
                 });
 
@@ -1435,28 +1473,39 @@ public sealed class KarobarDesktopBridge
                 status = "installing",
                 percent = 100,
                 is_patch = isPatch,
-                message = "Launching Karobar-App Native installer & restarting…"
+                message = isPatch
+                    ? "Applying fast differential patch & restarting Karobar-App Native…"
+                    : "Launching Karobar-App Native installer & restarting…"
             });
 
-            if (OperatingSystem.IsWindows() && !isPatch && File.Exists(tempFilePath))
+            if (OperatingSystem.IsWindows() && File.Exists(tempFilePath))
             {
-                var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-                var otaFlagPath = Path.Combine(Path.GetTempPath(), "karobar-native-ota-upgrade.flag");
-                try
+                var installDir = _networkConfig.AppRoot.TrimEnd(Path.DirectorySeparatorChar);
+                if (isPatch)
                 {
-                    await File.WriteAllTextAsync(otaFlagPath, installDir, Encoding.UTF8, cancellationToken);
+                    LaunchWindowsDifferentialPatchSwap(tempFilePath, installDir);
+                    _windowManager.OnQuitRequested?.Invoke();
                 }
-                catch
+                else
                 {
-                    // Ignore flag error
-                }
+                    var otaFlagPath = Path.Combine(Path.GetTempPath(), "karobar-native-ota-upgrade.flag");
+                    try
+                    {
+                        await File.WriteAllTextAsync(otaFlagPath, installDir, new UTF8Encoding(false), cancellationToken);
+                    }
+                    catch
+                    {
+                        // Ignore flag error
+                    }
 
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = tempFilePath,
-                    Arguments = $"/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 \"/DIR={installDir}\"",
-                    UseShellExecute = true
-                });
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = tempFilePath,
+                        Arguments = $"/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 \"/DIR={installDir}\"",
+                        UseShellExecute = true
+                    });
+                    _windowManager.OnQuitRequested?.Invoke();
+                }
             }
 
             return new { ok = true, installing = true, is_patch = isPatch };
@@ -1469,6 +1518,113 @@ public sealed class KarobarDesktopBridge
                 message = ex.Message
             };
         }
+    }
+
+    public static readonly string[] ProtectedPatchExclusionPrefixes =
+    [
+        "database/database.sqlite",
+        "database\\database.sqlite",
+        "storage/app/.machine-id",
+        "storage\\app\\.machine-id",
+        "storage/app/.license-clock",
+        "storage\\app\\.license-clock",
+        "storage/app/public/",
+        "storage\\app\\public\\",
+        "storage/app/whatsapp-auth/",
+        "storage\\app\\whatsapp-auth\\",
+        "storage/app/backups/",
+        "storage\\app\\backups\\",
+        "storage/backups/",
+        "storage\\backups\\",
+        ".env"
+    ];
+
+    public static bool IsProtectedPatchPath(string relativePath)
+    {
+        var norm = (relativePath ?? "").Replace('\\', '/').TrimStart('/');
+        if (string.IsNullOrEmpty(norm)) return true;
+        if (norm.Equals(".env", StringComparison.OrdinalIgnoreCase)) return true;
+        return ProtectedPatchExclusionPrefixes.Any(p =>
+            norm.StartsWith(p.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool VerifyFileSha256(string filePath, string expectedSha256Hex)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha256Hex) || !File.Exists(filePath)) return false;
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        using var fs = File.OpenRead(filePath);
+        var actualHex = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+        return string.Equals(actualHex, expectedSha256Hex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+    }
+
+    private static void LaunchWindowsDifferentialPatchSwap(string patchZipPath, string installDir)
+    {
+        var pid = Environment.ProcessId;
+        var helperScriptPath = Path.Combine(Path.GetTempPath(), $"karobar-apply-patch-{pid}.ps1");
+        var exePath = Path.Combine(installDir, Program.ExecutableFileName);
+
+        var ps1 = $$"""
+            $ErrorActionPreference = 'Stop'
+            $targetPid = {{pid}}
+            $zipPath = '{{patchZipPath.Replace("'", "''")}}'
+            $installDir = '{{installDir.Replace("'", "''")}}'
+            $exePath = '{{exePath.Replace("'", "''")}}'
+            $stageDir = Join-Path $env:TEMP "karobar-patch-stage-$targetPid"
+
+            for ($i = 0; $i -lt 60; $i++) {
+                if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) { break }
+                Start-Sleep -Milliseconds 250
+            }
+
+            if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue }
+            Expand-Archive -Path $zipPath -DestinationPath $stageDir -Force
+
+            $protected = @(
+                'database\database.sqlite',
+                'storage\app\.machine-id',
+                'storage\app\.license-clock',
+                'storage\app\public\',
+                'storage\app\whatsapp-auth\',
+                'storage\app\backups\',
+                'storage\backups\',
+                '.env'
+            )
+
+            Get-ChildItem -Path $stageDir -Recurse -File | ForEach-Object {
+                $rel = $_.FullName.Substring($stageDir.Length).TrimStart('\', '/')
+                $skip = $false
+                foreach ($p in $protected) {
+                    if ($rel.StartsWith($p, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $skip = $true
+                        break
+                    }
+                }
+                if (-not $skip) {
+                    $dest = Join-Path $installDir $rel
+                    $destDir = Split-Path -Parent $dest
+                    if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+                    Copy-Item -Path $_.FullName -Destination $dest -Force
+                }
+            }
+
+            if (Test-Path $exePath) {
+                $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
+                Start-Process -FilePath $exePath -WorkingDirectory $installDir
+            }
+
+            Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
+            Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+            """;
+
+        File.WriteAllText(helperScriptPath, ps1, new UTF8Encoding(false));
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{helperScriptPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
     }
 
     public Task<object> downloadAndInstallUpdate(JsonElement payload) => DownloadAndInstallUpdateAsync(payload);

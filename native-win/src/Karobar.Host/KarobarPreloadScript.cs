@@ -299,6 +299,37 @@ public static class KarobarPreloadScript
               }
             }
           } catch (_) {}
+
+          // Waseela-style Multi-Tab ergonomics: Middle-click or Ctrl+Click any internal link opens it
+          // in a new tab inside the single native main window instead of spawning a separate OS window.
+          try {
+            if (!isOffscreenPrintWorker && !window.__karobarTabLinkHooked) {
+              window.__karobarTabLinkHooked = true;
+              var openInternalLinkInTab = function (e) {
+                var anchor = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+                if (!anchor) return;
+                var href = anchor.getAttribute("href") || "";
+                if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) return;
+                try {
+                  var url = new URL(href, window.location.origin);
+                  if (url.origin !== window.location.origin) return;
+                  if (url.pathname.startsWith("/print/")) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var label = (anchor.getAttribute("title") || anchor.textContent || "").trim().slice(0, 40);
+                  desktopApi.openWindow(url.pathname + url.search, label || "Workspace");
+                } catch (_) {}
+              };
+              document.addEventListener("auxclick", function (e) {
+                if (e.button === 1) openInternalLinkInTab(e);
+              }, true);
+              document.addEventListener("click", function (e) {
+                if (e.button === 0 && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+                  openInternalLinkInTab(e);
+                }
+              }, true);
+            }
+          } catch (_) {}
         })();
         """;
     }
