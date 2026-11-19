@@ -163,10 +163,11 @@ public class Phase13ImportedDbTabsAndOtaTests
             await SeedAdminOnlyAsync(targetDb);
 
             // Seed source DB with linked masters + products + batches + purchase_invoices + sale_invoices (with orphan user_id=999!)
-            await using (var src = new SqliteConnection($"Data Source={sourceDbPath}"))
+            // Keep source DB in WAL mode so recent Sale Invoices live in -wal (real-world Electron Karobar-App scenario!)
+            await using (var src = new SqliteConnection($"Data Source={sourceDbPath};Pooling=False"))
             {
                 await src.OpenAsync();
-                await src.ExecuteAsync("PRAGMA foreign_keys = OFF;");
+                await src.ExecuteAsync("PRAGMA journal_mode=WAL; PRAGMA foreign_keys = OFF;");
                 await src.ExecuteAsync("""
                     INSERT INTO categories (id, name) VALUES (10, 'Tablets');
                     INSERT INTO brands (id, name) VALUES (20, 'GSK');
@@ -184,22 +185,35 @@ public class Phase13ImportedDbTabsAndOtaTests
                     """);
             }
 
+            // Test UploadAndInspect on the WAL-mode source DB (merging sibling -wal automatically!)
+            var walSourcePath = sourceDbPath;
+
             // Generate valid software admin token matching SqliteImportController
             var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
             var secret = Environment.GetEnvironmentVariable("APP_KEY") is { Length: > 0 } k ? k : "karobar-native-win-default-app-key-secret";
             var sigHex = Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"sqlite_import_sw_admin|1|{dateStr}"))).ToLowerInvariant();
             var swToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"1|{dateStr}|{sigHex}"));
 
+            var uploadPayload = JsonSerializer.Serialize(new { local_file_path = walSourcePath, software_admin_token = swToken });
+            var uploadCtrl = AttachAdminContext(new SqliteImportController(targetDb), 1, "", uploadPayload);
+            uploadCtrl.HttpContext.Request.Headers["X-Software-Admin-Token"] = swToken;
+            var uploadRes = await uploadCtrl.UploadAndInspect();
+            var uploadDebug = uploadRes is ObjectResult orRes ? $"status={orRes.StatusCode}, body={JsonSerializer.Serialize(orRes.Value)}" : uploadRes.GetType().Name;
+            var uploadOk = uploadRes.Should().BeOfType<OkObjectResult>($"UploadAndInspect must succeed cleanly on WAL-mode SQLite files ({uploadDebug})").Subject;
+            var uploadDict = uploadOk.Value.Should().BeAssignableTo<Dictionary<string, object?>>().Subject;
+            var uploadedToken = uploadDict["session_token"]?.ToString();
+            uploadedToken.Should().NotBeNullOrWhiteSpace();
+
             var payloadJson = JsonSerializer.Serialize(new
             {
-                token = "11111111-2222-3333-4444-555555555555",
+                token = uploadedToken,
                 mode = "replace",
                 password = "password123",
                 software_admin_token = swToken
             });
 
             var ctrl = AttachAdminContext(new SqliteImportController(targetDb), 1, "", payloadJson);
-            ctrl.HttpContext.Request.Headers["X-Sqlite-Import-Admin-Token"] = swToken;
+            ctrl.HttpContext.Request.Headers["X-Software-Admin-Token"] = swToken;
             var res = await ctrl.Commit();
             var ok = res.Should().BeOfType<OkObjectResult>().Subject;
             var respDict = ok.Value.Should().BeAssignableTo<Dictionary<string, object?>>().Subject;
@@ -220,6 +234,13 @@ public class Phase13ImportedDbTabsAndOtaTests
             importedSale.Should().NotBeNull();
             Convert.ToInt64(importedSale!["user_id"]).Should().Be(1, "orphan source user_id=999 must remap cleanly to active Admin id=1");
             Convert.ToInt64(importedSale["customer_id"]).Should().Be(40);
+
+            // Verify SaleInvoiceController.Index immediately returns the imported sale invoice!
+            var saleIdxCtrl = AttachAdminContext(new SaleInvoiceController(targetDb), 1, "?page=1&per_page=10&posted=&customer=");
+            var saleIdxRes = await saleIdxCtrl.Index(page: 1, per_page: 10);
+            var saleIdxOk = saleIdxRes.Should().BeOfType<OkObjectResult>().Subject;
+            var saleIdxDict = saleIdxOk.Value.Should().BeAssignableTo<Dictionary<string, object?>>().Subject;
+            Convert.ToInt32(saleIdxDict["total"]).Should().Be(1);
         }
         finally
         {

@@ -284,6 +284,26 @@ public sealed class KarobarCliCommandRunner
             File.Copy(importPath, destDb, overwrite: true);
             try { if (File.Exists(destDb + "-wal")) File.Delete(destDb + "-wal"); } catch { }
             try { if (File.Exists(destDb + "-shm")) File.Delete(destDb + "-shm"); } catch { }
+
+            // Preserve any uncheckpointed sibling -wal/-shm frames from the source DB (e.g. recent Sale Invoices)
+            if (File.Exists(importPath + "-wal"))
+            {
+                try { File.Copy(importPath + "-wal", destDb + "-wal", overwrite: true); } catch { }
+            }
+            if (File.Exists(importPath + "-shm"))
+            {
+                try { File.Copy(importPath + "-shm", destDb + "-shm", overwrite: true); } catch { }
+            }
+
+            try
+            {
+                using var ckConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={destDb};Mode=ReadWrite;Pooling=False");
+                ckConn.Open();
+                using var ckCmd = ckConn.CreateCommand();
+                ckCmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                ckCmd.ExecuteNonQuery();
+            }
+            catch { }
         }
 
         return true;

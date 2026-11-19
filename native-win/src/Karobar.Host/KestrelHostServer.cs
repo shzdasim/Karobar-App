@@ -638,6 +638,16 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
+        builder.WebHost.ConfigureKestrel(k =>
+        {
+            k.Limits.MaxRequestBodySize = 1024L * 1024 * 1024; // 1 GB for large SQLite / backup uploads
+        });
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+        {
+            o.MultipartBodyLengthLimit = 1024L * 1024 * 1024;
+            o.ValueLengthLimit = int.MaxValue;
+            o.MultipartHeadersLengthLimit = int.MaxValue;
+        });
 
         // Register Host Singletons
         builder.Services.AddSingleton(_networkConfig);

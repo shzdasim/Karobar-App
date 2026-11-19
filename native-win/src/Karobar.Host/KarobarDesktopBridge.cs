@@ -988,11 +988,11 @@ public sealed class KarobarDesktopBridge
 
     public Task<string?> selectDirectory() => SelectDirectoryAsync();
 
-    public async Task<string?> SelectSqliteFileAsync()
+    public async Task<object> SelectSqliteFileAsync()
     {
         if (!OperatingSystem.IsWindows())
         {
-            return null;
+            return new { canceled = true, filePath = (string?)null };
         }
 
         try
@@ -1017,18 +1017,22 @@ public sealed class KarobarDesktopBridge
                 StandardOutputEncoding = Encoding.UTF8
             });
 
-            if (proc == null) return null;
+            if (proc == null) return new { canceled = true, filePath = (string?)null };
             var output = (await proc.StandardOutput.ReadToEndAsync()).Trim();
             await proc.WaitForExitAsync();
-            return string.IsNullOrWhiteSpace(output) ? null : output;
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return new { canceled = true, filePath = (string?)null };
+            }
+            return new { canceled = false, filePath = output };
         }
         catch
         {
-            return null;
+            return new { canceled = true, filePath = (string?)null };
         }
     }
 
-    public Task<string?> selectSqliteFile() => SelectSqliteFileAsync();
+    public Task<object> selectSqliteFile() => SelectSqliteFileAsync();
 
     // =========================================================================
     // 13. runBackupNow (karobar:run-backup-now)
