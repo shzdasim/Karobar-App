@@ -68,7 +68,7 @@ public class SyncPulseService
             {
                 if (await _db.HasTableAsync("terminals"))
                 {
-                    var cutoff = DateTime.UtcNow.AddSeconds(-25).ToString("yyyy-MM-dd HH:mm:ss");
+                    var cutoff = DateTime.UtcNow.AddSeconds(-45).ToString("yyyy-MM-dd HH:mm:ss");
                     onlineTerminals = await _db.ExecuteScalarAsync<int>(
                         "SELECT COUNT(1) FROM terminals WHERE is_authorized = 1 AND last_seen_at >= @cutoff",
                         new { cutoff });

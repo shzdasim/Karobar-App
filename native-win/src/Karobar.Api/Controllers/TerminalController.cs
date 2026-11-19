@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Net;
@@ -10,11 +11,13 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Data;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Karobar.Api.Controllers;
 
@@ -455,56 +458,136 @@ public class TerminalController : ApiControllerBase
         var port = Request.Host.Port ?? 18960;
         var hostname = Dns.GetHostName();
 
+        // 1. Live SQLite WAL & Latency Check
+        var dbStatus = "ok";
+        double dbLatencyMs = 0;
+        var journalMode = "unknown";
+        var busyTimeout = 0;
+        var dbHint = "High-concurrency WAL + Private Cache pragmas active (15s busy_timeout).";
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            await using var conn = await Db.OpenConnectionAsync();
+            journalMode = (await conn.ExecuteScalarAsync<string>("PRAGMA journal_mode;") ?? "unknown").Trim();
+            busyTimeout = await conn.ExecuteScalarAsync<int>("PRAGMA busy_timeout;");
+            sw.Stop();
+            dbLatencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+            if (!journalMode.Equals("wal", StringComparison.OrdinalIgnoreCase))
+            {
+                dbStatus = "warn";
+                dbHint = $"SQLite is in '{journalMode}' mode instead of WAL. Restart the server to re-apply WAL mode.";
+            }
+        }
+        catch (Exception ex)
+        {
+            dbStatus = "error";
+            dbHint = ex.Message;
+        }
+
+        // 2. Document Sequences Check
+        var sequences = await Db.HasTableAsync("document_sequences")
+            ? await Db.QueryListAsync("SELECT sequence_key, prefix, last_number, padding, updated_at FROM document_sequences ORDER BY sequence_key")
+            : new List<Dictionary<string, object?>>();
+
+        // 3. Disk Free Space & Storage Writability Check
+        var storageStatus = "ok";
+        var storageSummary = "All directories writable";
+        var storageHint = "Required for database backups, portable SQLite exports, and invoice PDFs.";
+        try
+        {
+            var storageAppDir = Db.StoragePath("app");
+            Directory.CreateDirectory(storageAppDir);
+            var probeFile = Path.Combine(storageAppDir, $".write-probe-{Guid.NewGuid():N}");
+            await System.IO.File.WriteAllTextAsync(probeFile, "ok");
+            System.IO.File.Delete(probeFile);
+
+            var rootPath = Path.GetPathRoot(Path.GetFullPath(Db.SqlitePath));
+            if (!string.IsNullOrWhiteSpace(rootPath))
+            {
+                var drive = new DriveInfo(rootPath);
+                var freeGb = Math.Round(drive.AvailableFreeSpace / (1024.0 * 1024.0 * 1024.0), 2);
+                storageSummary = $"Writable • {freeGb:0.00} GB free on {drive.Name}";
+                if (freeGb < 1.0)
+                {
+                    storageStatus = "warn";
+                    storageHint = "Low disk space (< 1 GB free). Clear old backups or free space on the server drive.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            storageStatus = "error";
+            storageSummary = "Storage write test failed";
+            storageHint = ex.Message;
+        }
+
+        // 4. LAN Network & Port Check
+        var netStatus = lanIps.Count > 0 ? (port == 18960 ? "ok" : "warn") : "warn";
+        var netSummary = lanIps.Count > 0
+            ? $"LAN IP: {string.Join(", ", lanIps)} (Port {port})"
+            : $"No active LAN IPv4 detected (127.0.0.1:{port})";
+        var netHint = port != 18960
+            ? $"Port 18960 was busy so Kestrel bound to fallback port {port}. Update terminal URLs to :{port} or free port 18960."
+            : $"Connect Counter PCs to http://{lanIps.FirstOrDefault() ?? "127.0.0.1"}:{port} (set a Router DHCP Reservation for this PC).";
+
+        // 5. Windows Firewall TCP 18960 Check
+        var (fwStatus, fwSummary, fwHint) = CheckFirewallPortStatus(port);
+
         var checks = new object[]
         {
             new
             {
                 id = "database",
-                title = "Database Engine & Row Locking",
-                status = "ok",
-                latency_ms = 0.5,
-                summary = "SQLite WAL Mode connected (0.5 ms)",
-                hint = "High-concurrency WAL pragmas active."
+                title = "Database Engine & Multi-Counter Locking",
+                status = dbStatus,
+                latency_ms = dbLatencyMs,
+                summary = $"SQLite {journalMode.ToUpperInvariant()} ({dbLatencyMs:0.##} ms • timeout {busyTimeout}ms)",
+                hint = dbHint
             },
             new
             {
                 id = "cache_sync",
-                title = "Real-Time SyncPulse & Cache Engine",
+                title = "Real-Time SyncPulse Engine",
                 status = "ok",
                 latency_ms = 0.1,
-                summary = $"In-Memory • Stock v{pulseVersions.GetValueOrDefault("stock_version")} • Drafts v{pulseVersions.GetValueOrDefault("drafts_version")}",
-                hint = "Broadcasts 3-second stock, held-bill, and cash-drawer updates to all attached POS terminals."
+                summary = $"Active • Stock v{pulseVersions.GetValueOrDefault("stock_version")} • Drafts v{pulseVersions.GetValueOrDefault("drafts_version")}",
+                hint = "Broadcasts 4-second stock, held-bill, and cash-drawer updates to all attached POS counters."
             },
             new
             {
                 id = "sequences",
                 title = "Atomic Document Sequence Allocator",
                 status = "ok",
-                summary = "Active (atomic row-locked sequence counters)",
-                hint = "Prevents duplicate SI / SLRET / PRINV / PRRET numbers across counters."
+                summary = $"{sequences.Count} sequence counter(s) tracked",
+                hint = "Prevents duplicate SI / SLRET / PRINV / PRRET numbers across simultaneous counters."
             },
             new
             {
                 id = "storage",
                 title = "Disk Space & Storage Permissions",
-                status = "ok",
-                summary = "All directories writable",
-                hint = "Required for database backups, portable SQLite exports, and invoice PDFs."
+                status = storageStatus,
+                summary = storageSummary,
+                hint = storageHint
             },
             new
             {
                 id = "network",
-                title = "LAN Network & mDNS Discovery",
-                status = lanIps.Count > 0 ? "ok" : "warn",
-                summary = lanIps.Count > 0
-                    ? $"LAN IPs: {string.Join(", ", lanIps)} (Port {port}) • mDNS: http://{hostname}.local:{port}"
-                    : $"Bound to 127.0.0.1:{port}"
+                title = "LAN Network & Static IP",
+                status = netStatus,
+                summary = netSummary,
+                hint = netHint
+            },
+            new
+            {
+                id = "firewall",
+                title = $"Windows Firewall (TCP {port})",
+                status = fwStatus,
+                summary = fwSummary,
+                hint = fwHint
             }
         };
 
-        var sequences = await Db.HasTableAsync("document_sequences")
-            ? await Db.QueryListAsync("SELECT sequence_key, prefix, last_number, padding, updated_at FROM document_sequences ORDER BY sequence_key")
-            : new List<Dictionary<string, object?>>();
+        var (logSizeKb, recentLogs) = ReadNativeServerLogs();
 
         return Ok(new
         {
@@ -512,13 +595,14 @@ public class TerminalController : ApiControllerBase
             checked_at = DateTime.UtcNow.ToString("O"),
             checks,
             sequences,
-            log_size_kb = 0,
-            recent_logs = Array.Empty<string>(),
+            log_size_kb = logSizeKb,
+            recent_logs = recentLogs,
             cli_commands = new
             {
                 status = "Karobar-Native.exe --cli install --upgrade-only",
                 export_sqlite = "Karobar-Native.exe --cli karobar:export-sqlite",
-                import_sqlite = "Karobar-Native.exe --cli karobar:import-sqlite"
+                import_sqlite = "Karobar-Native.exe --cli karobar:import-sqlite",
+                headless_server = "Karobar-Native.exe --server-only"
             }
         });
     }
@@ -585,12 +669,17 @@ public class TerminalController : ApiControllerBase
 
             case "run_migrations":
                 KarobarDb.FlushSchemaCache();
+                var bootstrapper = HttpContext.RequestServices.GetService<DatabaseBootstrapper>();
+                if (bootstrapper != null)
+                {
+                    await bootstrapper.EnsureSchemaReadyAsync(HttpContext.RequestAborted);
+                }
                 return Ok(new
                 {
                     ok = true,
                     action,
-                    message = "Database migrations executed successfully.",
-                    output = "Nothing to migrate (all tables up to date)."
+                    message = "Database schema verified and all missing tables/columns upgraded cleanly.",
+                    output = "Schema verification complete."
                 });
 
             case "prune_offline_terminals":
@@ -609,11 +698,12 @@ public class TerminalController : ApiControllerBase
                 });
 
             case "clear_logs":
+                ClearNativeServerLogs();
                 return Ok(new
                 {
                     ok = true,
                     action,
-                    message = "Server error log cleared."
+                    message = "Server startup & runtime logs cleared."
                 });
 
             default:
@@ -715,36 +805,176 @@ public class TerminalController : ApiControllerBase
         };
     }
 
+    private (int SizeKb, string[] RecentLines) ReadNativeServerLogs()
+    {
+        var candidates = new List<string>
+        {
+            Db.StoragePath("logs/native-startup.log"),
+            Db.StoragePath("logs/laravel.log")
+        };
+        try
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (!string.IsNullOrWhiteSpace(appData))
+            {
+                candidates.Add(Path.Combine(appData, "Karobar-App-Native", "startup-error.log"));
+            }
+        }
+        catch { }
+
+        long totalBytes = 0;
+        var lines = new List<string>();
+        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (!System.IO.File.Exists(path)) continue;
+                var fi = new FileInfo(path);
+                totalBytes += fi.Length;
+                if (fi.Length > 0)
+                {
+                    var fileLines = System.IO.File.ReadAllLines(path);
+                    foreach (var ln in fileLines.TakeLast(40))
+                    {
+                        lines.Add($"[{Path.GetFileName(path)}] {ln}");
+                    }
+                }
+            }
+            catch { }
+        }
+
+        return ((int)Math.Round(totalBytes / 1024.0), lines.TakeLast(60).ToArray());
+    }
+
+    private void ClearNativeServerLogs()
+    {
+        var candidates = new List<string>
+        {
+            Db.StoragePath("logs/native-startup.log"),
+            Db.StoragePath("logs/laravel.log")
+        };
+        try
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (!string.IsNullOrWhiteSpace(appData))
+            {
+                candidates.Add(Path.Combine(appData, "Karobar-App-Native", "startup-error.log"));
+            }
+        }
+        catch { }
+
+        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (System.IO.File.Exists(path)) System.IO.File.WriteAllText(path, string.Empty);
+            }
+            catch { }
+        }
+    }
+
+    private static (string Status, string Summary, string Hint) CheckFirewallPortStatus(int port)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return ("ok", $"Port {port} listening on 0.0.0.0", "Ensure your OS firewall allows inbound TCP traffic from the local LAN subnet.");
+        }
+
+        try
+        {
+            using var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "netsh",
+                    Arguments = "advfirewall firewall show rule name=\"Karobar-App Native LAN Server (TCP 18960)\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            proc.Start();
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(2500);
+
+            if (proc.ExitCode == 0 && output.Contains("Enabled:", StringComparison.OrdinalIgnoreCase) &&
+                output.Contains("Yes", StringComparison.OrdinalIgnoreCase))
+            {
+                var coversAllProfiles = output.Contains("Domain,Private,Public", StringComparison.OrdinalIgnoreCase) ||
+                                        output.Contains("Any", StringComparison.OrdinalIgnoreCase);
+                return coversAllProfiles
+                    ? ("ok", $"TCP {port} inbound rule active (LAN subnet)", "Windows Defender Firewall allows local LAN Counter PCs on Private, Domain & Public profiles.")
+                    : ("warn", $"TCP {port} rule active (Private profile only)", "If your Wi-Fi/Ethernet is set to 'Public', switch Windows Network Profile to Private or re-run the Karobar installer.");
+            }
+
+            return ("warn", $"No Karobar firewall rule found for TCP {port}", $"Run as Administrator: netsh advfirewall firewall add rule name=\"Karobar-App Native LAN Server (TCP {port})\" dir=in action=allow protocol=TCP localport={port} remoteip=localsubnet profile=any");
+        }
+        catch
+        {
+            return ("warn", $"Could not query Windows Firewall for TCP {port}", "Verify Windows Defender Firewall allows inbound TCP 18960 from your local LAN.");
+        }
+    }
+
+    private static readonly Regex VirtualAdapterRegex = new(
+        @"(vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|Loopback|Pseudo|Npcap|TAP-|WireGuard|ZeroTier|Tailscale|Hamachi|Bluetooth|Teredo|isatap|Fortinet|Cisco AnyConnect|OpenVPN)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static List<string> DetectLanIpv4Addresses()
     {
-        var list = new List<string>();
+        var ranked = new List<(int Priority, string Ip)>();
         try
         {
             foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (ni.OperationalStatus != OperationalStatus.Up ||
-                    ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
                 {
                     continue;
                 }
 
-                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                var nameDesc = $"{ni.Name} {ni.Description}";
+                var isVirtual = VirtualAdapterRegex.IsMatch(nameDesc);
+                var props = ni.GetIPProperties();
+                var hasGateway = props.GatewayAddresses.Any(g =>
+                    g.Address.AddressFamily == AddressFamily.InterNetwork &&
+                    !IPAddress.IsLoopback(g.Address) &&
+                    !g.Address.Equals(IPAddress.Any));
+
+                foreach (var ua in props.UnicastAddresses)
                 {
-                    if (ua.Address.AddressFamily == AddressFamily.InterNetwork &&
-                        !IPAddress.IsLoopback(ua.Address))
+                    if (ua.Address.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(ua.Address))
                     {
-                        var ipStr = ua.Address.ToString();
-                        if (!ipStr.StartsWith("169.254.") && !list.Contains(ipStr))
-                        {
-                            list.Add(ipStr);
-                        }
+                        continue;
                     }
+
+                    var ipStr = ua.Address.ToString();
+                    if (ipStr.StartsWith("169.254.", StringComparison.Ordinal)) continue;
+
+                    var isPrivateLan = ipStr.StartsWith("192.168.", StringComparison.Ordinal) ||
+                                       ipStr.StartsWith("10.", StringComparison.Ordinal) ||
+                                       Regex.IsMatch(ipStr, @"^172\.(1[6-9]|2\d|3[0-1])\.");
+
+                    // Lower score = higher priority: physical Ethernet/Wi-Fi with default gateway & RFC1918 LAN IP first!
+                    var score = 0;
+                    if (isVirtual) score += 100;
+                    if (!hasGateway) score += 50;
+                    if (!isPrivateLan) score += 20;
+                    if (ni.NetworkInterfaceType == NetworkInterfaceType.Ethernet) score -= 5;
+                    else if (ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211) score -= 2;
+
+                    ranked.Add((score, ipStr));
                 }
             }
         }
         catch
         {
         }
-        return list;
+
+        return ranked
+            .OrderBy(x => x.Priority)
+            .Select(x => x.Ip)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

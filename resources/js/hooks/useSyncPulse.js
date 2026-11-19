@@ -85,6 +85,16 @@ export function useSyncPulse({ enabled = true, intervalMs = 4000 } = {}) {
           if (cfg?.mode) {
             localStorage.setItem("karobar_terminal_mode", cfg.mode);
           }
+          if (cfg?.hostname) {
+            localStorage.setItem("karobar_terminal_hostname", cfg.hostname);
+          }
+          if (typeof cfg?.pairingToken === "string") {
+            if (cfg.pairingToken.trim()) {
+              localStorage.setItem("karobar_pairing_token", cfg.pairingToken.trim());
+            } else {
+              localStorage.removeItem("karobar_pairing_token");
+            }
+          }
         })
         .catch(() => {});
     }

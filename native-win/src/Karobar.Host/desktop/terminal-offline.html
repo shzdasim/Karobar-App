@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Karobar-App — Server Connection</title>
+  <title>Karobar-App — Store Server Connection</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -18,7 +18,7 @@
     }
     .card {
       width: 100%;
-      max-width: 540px;
+      max-width: 560px;
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 16px;
@@ -54,10 +54,23 @@
       font-size: 14px;
       color: #94a3b8;
       line-height: 1.5;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
+    }
+    .retry-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgba(37, 99, 235, 0.14);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      font-size: 12.5px;
+      margin-bottom: 18px;
     }
     .field {
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     label {
       display: block;
@@ -86,7 +99,7 @@
       padding: 12px 14px;
       border-radius: 10px;
       font-size: 13px;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
       display: none;
     }
     .status-box.ok {
@@ -133,15 +146,28 @@
       color: #94a3b8;
       font-size: 13px;
     }
+    .tips {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid #334155;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="badge"><span class="dot"></span> Terminal Disconnected from Store Server</div>
-    <h1>Cannot Reach Karobar Linux Server</h1>
+    <h1>Cannot Reach Karobar Store Server</h1>
     <p class="sub">
-      This PC is configured as a <strong>Multi-PC POS Terminal</strong>, but the central Store Server is currently unreachable on your local network (LAN).
+      This PC is configured as a <strong>Multi-PC POS Terminal</strong>, but the Store Server is currently unreachable on your local network (LAN).
     </p>
+
+    <div class="retry-banner">
+      <span id="autoRetryText">Auto-checking Store Server in 10s…</span>
+      <button type="button" id="toggleAutoBtn" style="padding:4px 10px;font-size:11.5px;background:#1e3a8a;color:#dbeafe;border-radius:8px;">Pause</button>
+    </div>
 
     <div id="statusBox" class="status-box"></div>
 
@@ -152,7 +178,12 @@
 
     <div class="field">
       <label for="terminalName">This Terminal / Counter Name</label>
-      <input id="terminalName" type="text" placeholder="Counter 1 — Main POS" />
+      <input id="terminalName" type="text" placeholder="Counter 2 — Pharmacy" />
+    </div>
+
+    <div class="field">
+      <label for="pairingToken">Server Pairing Token (Optional — KRB-NET-...)</label>
+      <input id="pairingToken" type="text" placeholder="KRB-NET-XXXXXXXXXXXX" />
     </div>
 
     <div class="actions">
@@ -163,29 +194,86 @@
     <button class="btn-ghost" id="standaloneBtn" type="button">
       Switch to Standalone Local PC Mode (Use Local SQLite Database)
     </button>
+
+    <div class="tips">
+      <strong>Quick Checklist:</strong> Make sure Karobar-App Native is running on the Store Server PC, both PCs are on the same router/LAN, and Windows Firewall allows TCP port <code>18960</code> on the Store Server.
+    </div>
   </div>
 
   <script>
     const serverUrlInput = document.getElementById("serverUrl");
     const terminalNameInput = document.getElementById("terminalName");
+    const pairingTokenInput = document.getElementById("pairingToken");
     const statusBox = document.getElementById("statusBox");
     const testBtn = document.getElementById("testBtn");
     const connectBtn = document.getElementById("connectBtn");
     const standaloneBtn = document.getElementById("standaloneBtn");
+    const autoRetryText = document.getElementById("autoRetryText");
+    const toggleAutoBtn = document.getElementById("toggleAutoBtn");
+
+    let autoPaused = false;
+    let countdown = 10;
+    let isEditing = false;
 
     function setStatus(type, msg) {
       statusBox.className = "status-box " + (type === "ok" ? "ok" : "err");
       statusBox.textContent = msg;
     }
 
+    for (const el of [serverUrlInput, terminalNameInput, pairingTokenInput]) {
+      el.addEventListener("focus", () => { isEditing = true; });
+      el.addEventListener("blur", () => { isEditing = false; });
+    }
+
+    toggleAutoBtn.addEventListener("click", () => {
+      autoPaused = !autoPaused;
+      toggleAutoBtn.textContent = autoPaused ? "Resume" : "Pause";
+      autoRetryText.textContent = autoPaused ? "Auto-reconnect paused" : "Auto-checking Store Server in " + countdown + "s…";
+    });
+
     async function init() {
       if (!window.karobarDesktop || !window.karobarDesktop.getNetworkConfig) return;
       try {
         const cfg = await window.karobarDesktop.getNetworkConfig();
         serverUrlInput.value = cfg.serverUrl || "http://192.168.1.10:18960";
-        terminalNameInput.value = cfg.terminalName || "Counter 1";
+        terminalNameInput.value = cfg.terminalName || "Counter 2";
+        pairingTokenInput.value = cfg.pairingToken || "";
       } catch (e) {}
     }
+
+    async function probeAndAutoConnect() {
+      const url = serverUrlInput.value.trim();
+      if (!url || !window.karobarDesktop?.testServerConnection) return;
+      autoRetryText.textContent = "Checking Store Server…";
+      try {
+        const res = await window.karobarDesktop.testServerConnection({
+          serverUrl: url,
+          terminalName: terminalNameInput.value.trim(),
+          pairingToken: pairingTokenInput.value.trim(),
+        });
+        if (res && res.ok) {
+          setStatus("ok", "Store Server is back online (" + (res.storeName || "Karobar Server") + ")! Reconnecting…");
+          await window.karobarDesktop.saveNetworkConfig({
+            mode: "terminal",
+            serverUrl: url,
+            terminalName: terminalNameInput.value.trim() || "Counter 2",
+            pairingToken: pairingTokenInput.value.trim(),
+            relaunch: true,
+          });
+        }
+      } catch (_) {}
+    }
+
+    setInterval(() => {
+      if (autoPaused || isEditing) return;
+      countdown -= 1;
+      if (countdown <= 0) {
+        countdown = 10;
+        probeAndAutoConnect();
+      } else {
+        autoRetryText.textContent = "Auto-checking Store Server in " + countdown + "s…";
+      }
+    }, 1000);
 
     testBtn.addEventListener("click", async () => {
       const url = serverUrlInput.value.trim();
@@ -198,11 +286,12 @@
         const res = await window.karobarDesktop.testServerConnection({
           serverUrl: url,
           terminalName: terminalNameInput.value.trim(),
+          pairingToken: pairingTokenInput.value.trim(),
         });
         if (res && res.ok) {
           setStatus(
             "ok",
-            "Connected to " + (res.storeName || "Karobar Server") + " (" + (res.dbDriver || "DB") + ", " + (res.latencyMs || 1) + "ms)!"
+            "Connected to " + (res.storeName || "Karobar Store Server") + " (" + (res.dbDriver || "DB") + ", " + (res.latencyMs || 1) + "ms)!"
           );
         } else {
           setStatus("err", (res && res.error) || "Could not connect to server.");
@@ -215,7 +304,7 @@
     connectBtn.addEventListener("click", async () => {
       const url = serverUrlInput.value.trim();
       if (!url) {
-        setStatus("err", "Please enter the Linux Server URL.");
+        setStatus("err", "Please enter the Store Server URL.");
         return;
       }
       setStatus("ok", "Saving terminal configuration and connecting...");
@@ -223,7 +312,8 @@
         await window.karobarDesktop.saveNetworkConfig({
           mode: "terminal",
           serverUrl: url,
-          terminalName: terminalNameInput.value.trim() || "Counter 1",
+          terminalName: terminalNameInput.value.trim() || "Counter 2",
+          pairingToken: pairingTokenInput.value.trim(),
           relaunch: true,
         });
       } catch (err) {

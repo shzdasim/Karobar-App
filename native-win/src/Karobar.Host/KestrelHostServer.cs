@@ -778,12 +778,17 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 return;
             }
 
-            // Inject X-Terminal-* headers if not already present on local WebView2 requests
-            foreach (var kv in _networkConfig.GetTerminalIdentityHeaders())
+            // Inject X-Terminal-* headers ONLY for local loopback WebView2 requests on this PC.
+            // Remote LAN terminals send their own X-Terminal-* and X-Network-Token headers; never overwrite them with the server's identity!
+            var remoteIp = context.Connection.RemoteIpAddress;
+            if (remoteIp == null || IPAddress.IsLoopback(remoteIp))
             {
-                if (!context.Request.Headers.ContainsKey(kv.Key))
+                foreach (var kv in _networkConfig.GetTerminalIdentityHeaders())
                 {
-                    context.Request.Headers[kv.Key] = kv.Value;
+                    if (!context.Request.Headers.ContainsKey(kv.Key))
+                    {
+                        context.Request.Headers[kv.Key] = kv.Value;
+                    }
                 }
             }
 

@@ -395,6 +395,8 @@ export function initAxiosAuth() {
         }
         const termName = localStorage.getItem("karobar_terminal_name") || "";
         const termMode = localStorage.getItem("karobar_terminal_mode") || (window.karobarDesktop?.isDesktop ? "standalone" : "browser");
+        const termHost = localStorage.getItem("karobar_terminal_hostname") || "";
+        const pairingToken = localStorage.getItem("karobar_pairing_token") || "";
         if (!config.headers["X-Terminal-Id"]) {
           config.headers["X-Terminal-Id"] = termUid;
         }
@@ -403,6 +405,12 @@ export function initAxiosAuth() {
         }
         if (!config.headers["X-Terminal-Mode"]) {
           config.headers["X-Terminal-Mode"] = termMode;
+        }
+        if (termHost && !config.headers["X-Terminal-Hostname"]) {
+          config.headers["X-Terminal-Hostname"] = termHost;
+        }
+        if (pairingToken && !config.headers["X-Network-Token"]) {
+          config.headers["X-Network-Token"] = pairingToken;
         }
       } catch {
         // ignore storage access errors
@@ -486,6 +494,43 @@ export function initAxiosAuth() {
       // Never trigger a full-page browser navigation for background Cube / GuideBot requests;
       // let FeatureGuideBot catch errors and gracefully fall back without refreshing the screen.
       if (isCubeApi) {
+        return Promise.reject(err);
+      }
+
+      // Handle blocked / pending-approval LAN Terminal (HTTP 403 TERMINAL_UNAUTHORIZED)
+      if (status === 403 && err?.response?.data?.code === "TERMINAL_UNAUTHORIZED") {
+        try {
+          const detail = err.response.data || {};
+          window.dispatchEvent(new CustomEvent("karobar:terminal-unauthorized", { detail }));
+          if (typeof document !== "undefined" && !document.getElementById("karobar-terminal-blocked-overlay")) {
+            const overlay = document.createElement("div");
+            overlay.id = "karobar-terminal-blocked-overlay";
+            overlay.style.cssText =
+              "position:fixed;inset:0;z-index:2147483640;background:rgba(15,23,42,0.92);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#f8fafc;";
+            const tName = String(detail.terminal_name || localStorage.getItem("karobar_terminal_name") || "This Terminal").replace(/[<>&"]/g, "");
+            const tUid = String(detail.terminal_uid || localStorage.getItem("karobar_terminal_uid") || "").replace(/[<>&"]/g, "");
+            const isDesktopHost = Boolean(window.karobarDesktop?.isDesktop);
+            overlay.innerHTML =
+              '<div style="max-width:520px;width:100%;background:#1e293b;border:1px solid #475569;border-radius:16px;padding:28px;box-shadow:0 25px 50px rgba(0,0,0,0.5);">' +
+              '<div style="display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:rgba(245,158,11,0.18);color:#fcd34d;font-size:12px;font-weight:700;margin-bottom:14px;">Terminal Authorization Required</div>' +
+              '<h2 style="font-size:20px;font-weight:800;margin:0 0 8px 0;color:#fff;">' + tName + ' Is Pending Approval or Blocked</h2>' +
+              '<p style="font-size:13.5px;color:#cbd5e1;line-height:1.55;margin:0 0 14px 0;">Ask the Store Administrator to open <strong>Settings &rarr; Server &amp; Terminals</strong> on the Store Server PC and click <strong>Authorize</strong> for Terminal ID <code style="background:#0f172a;padding:2px 6px;border-radius:6px;color:#38bdf8;">' + tUid + '</code>.</p>' +
+              '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">' +
+              '<button id="krb-term-retry-btn" style="flex:1;padding:10px 16px;border-radius:10px;border:none;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;">Retry Connection</button>' +
+              (isDesktopHost ? '<button id="krb-term-standalone-btn" style="padding:10px 16px;border-radius:10px;border:1px solid #475569;background:transparent;color:#cbd5e1;font-weight:600;cursor:pointer;">Switch to Standalone Mode</button>' : '') +
+              '</div></div>';
+            document.body.appendChild(overlay);
+            document.getElementById("krb-term-retry-btn")?.addEventListener("click", () => {
+              overlay.remove();
+              window.location.reload();
+            });
+            document.getElementById("krb-term-standalone-btn")?.addEventListener("click", async () => {
+              try {
+                await window.karobarDesktop?.saveNetworkConfig?.({ mode: "standalone", relaunch: true });
+              } catch {}
+            });
+          }
+        } catch {}
         return Promise.reject(err);
       }
 

@@ -255,9 +255,9 @@ public sealed class DatabaseBootstrapper
         {
             DataSource = sqlitePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
+            Cache = SqliteCacheMode.Default,
             Pooling = true,
-            DefaultTimeout = 15
+            DefaultTimeout = 20
         }.ToString();
     }
 

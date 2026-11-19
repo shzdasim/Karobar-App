@@ -336,7 +336,6 @@ public sealed class KarobarDesktopBridge
 
     public async Task<object> SaveNetworkConfigAsync(JsonElement payload)
     {
-        var prevMode = _networkConfig.LoadNetworkConfig().Mode;
         var update = new NetworkConfigUpdate();
 
         if (payload.ValueKind == JsonValueKind.Object)
@@ -359,11 +358,11 @@ public sealed class KarobarDesktopBridge
 
         if (update.Relaunch)
         {
-            if (updated.Mode == "standalone" && prevMode == "terminal" && OnStartBackendServices != null)
+            if (updated.Mode == "standalone" && OnStartBackendServices != null)
             {
                 await OnStartBackendServices();
             }
-            else if (updated.Mode == "terminal" && prevMode == "standalone" && OnStopBackendServices != null)
+            else if (updated.Mode == "terminal" && !string.IsNullOrWhiteSpace(updated.ServerUrl) && OnStopBackendServices != null)
             {
                 await OnStopBackendServices();
             }
@@ -398,6 +397,7 @@ public sealed class KarobarDesktopBridge
     {
         var serverUrl = "";
         var terminalName = "";
+        string? pairingToken = null;
 
         if (payload.ValueKind == JsonValueKind.Object)
         {
@@ -405,6 +405,8 @@ public sealed class KarobarDesktopBridge
                 serverUrl = sProp.GetString() ?? "";
             if (payload.TryGetProperty("terminalName", out var tProp) && tProp.ValueKind == JsonValueKind.String)
                 terminalName = tProp.GetString() ?? "";
+            if (payload.TryGetProperty("pairingToken", out var pProp) && pProp.ValueKind == JsonValueKind.String)
+                pairingToken = pProp.GetString();
         }
         else if (payload.ValueKind == JsonValueKind.String)
         {
@@ -412,7 +414,7 @@ public sealed class KarobarDesktopBridge
         }
 
         var version = ReadLocalVersionMeta().Version;
-        return await _networkConfig.TestServerConnectionAsync(serverUrl, terminalName, version, cancellationToken);
+        return await _networkConfig.TestServerConnectionAsync(serverUrl, terminalName, version, cancellationToken, pairingToken);
     }
 
     public Task<ServerConnectionTestResult> testServerConnection(JsonElement payload) => TestServerConnectionAsync(payload);

@@ -128,9 +128,15 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: runhidden waituntilterminated; \
   Check: not IsTerminalModeSelected
 
-; Open Windows Firewall on Private LAN profiles for Multi-PC POS Terminal mode (TCP 18960)
+; Open Windows Firewall strictly for the local LAN subnet (all network profiles: Private, Domain & Public) on TCP 18960
+; Delete any prior rule with the same name first so re-installs never accumulate duplicate rules.
 Filename: "{sys}\netsh.exe"; \
-  Parameters: "advfirewall firewall add rule name=""Karobar-App Native LAN Server (TCP 18960)"" dir=in action=allow protocol=TCP localport=18960 profile=private"; \
+  Parameters: "advfirewall firewall delete rule name=""Karobar-App Native LAN Server (TCP 18960)"""; \
+  Flags: runhidden waituntilterminated; \
+  Check: not IsTerminalModeSelected
+
+Filename: "{sys}\netsh.exe"; \
+  Parameters: "advfirewall firewall add rule name=""Karobar-App Native LAN Server (TCP 18960)"" dir=in action=allow protocol=TCP localport=18960 remoteip=localsubnet profile=any"; \
   Flags: runhidden waituntilterminated; \
   Check: not IsTerminalModeSelected
 
@@ -160,6 +166,7 @@ var
   BrowseSqliteBtn: TNewButton;
   ServerUrlEdit: TNewEdit;
   TerminalNameEdit: TNewEdit;
+  PairingTokenEdit: TNewEdit;
 
   LicenseKeyPage: TWizardPage;
   MachineIdEdit: TNewEdit;
@@ -323,6 +330,8 @@ begin
     ServerUrlEdit.Enabled := TerminalModeRadio.Checked;
   if Assigned(TerminalNameEdit) then
     TerminalNameEdit.Enabled := TerminalModeRadio.Checked;
+  if Assigned(PairingTokenEdit) then
+    PairingTokenEdit.Enabled := TerminalModeRadio.Checked;
 end;
 
 procedure OnBrowseSqliteClick(Sender: TObject);
@@ -346,7 +355,7 @@ end;
 
 procedure CreateDatabaseImportPage();
 var
-  FileLabel, ServerUrlLabel, TerminalNameLabel: TNewStaticText;
+  FileLabel, ServerUrlLabel, TerminalNameLabel, PairingTokenLabel: TNewStaticText;
 begin
   DatabaseImportPage := CreateCustomPage(
     wpSelectDir,
@@ -438,8 +447,22 @@ begin
   TerminalNameEdit.Left := TerminalNameLabel.Left;
   TerminalNameEdit.Top := ServerUrlEdit.Top;
   TerminalNameEdit.Width := DatabaseImportPage.SurfaceWidth - TerminalNameEdit.Left;
-  TerminalNameEdit.Text := 'Counter 1';
+  TerminalNameEdit.Text := 'Counter 2';
   TerminalNameEdit.Enabled := False;
+
+  PairingTokenLabel := TNewStaticText.Create(DatabaseImportPage);
+  PairingTokenLabel.Parent := DatabaseImportPage.Surface;
+  PairingTokenLabel.Left := ScaleX(18);
+  PairingTokenLabel.Top := ServerUrlEdit.Top + ScaleY(26);
+  PairingTokenLabel.Caption := 'Optional Server Pairing Token (from Server -> Settings -> Server & Terminals):';
+
+  PairingTokenEdit := TNewEdit.Create(DatabaseImportPage);
+  PairingTokenEdit.Parent := DatabaseImportPage.Surface;
+  PairingTokenEdit.Left := ScaleX(18);
+  PairingTokenEdit.Top := PairingTokenLabel.Top + ScaleY(16);
+  PairingTokenEdit.Width := DatabaseImportPage.SurfaceWidth - ScaleX(18);
+  PairingTokenEdit.Text := '';
+  PairingTokenEdit.Enabled := False;
 end;
 
 procedure CreateLicenseBindingPage();
@@ -840,7 +863,8 @@ begin
     begin
       NetCfgJson :=
         '{"mode":"terminal","serverUrl":"' + EscapeJsonString(Trim(ServerUrlEdit.Text)) +
-        '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) + '"}';
+        '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) +
+        '","pairingToken":"' + EscapeJsonString(Trim(PairingTokenEdit.Text)) + '"}';
       ForceDirectories(ExpandConstant('{app}\storage\app'));
       SaveStringToFile(ExpandConstant('{app}\storage\app\network-mode.json'), NetCfgJson, False);
       ForceDirectories(ExpandConstant('{userappdata}\Karobar-App-Native'));

@@ -438,7 +438,8 @@ public sealed class NetworkConfigManager
         string? rawServerUrl,
         string? customTerminalName = null,
         string appVersion = "2.0.1",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? pairingTokenOverride = null)
     {
         var normalized = NormalizeServerUrl(rawServerUrl);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -463,6 +464,9 @@ public sealed class NetworkConfigManager
         var effectiveTerminalName = !string.IsNullOrWhiteSpace(customTerminalName)
             ? customTerminalName.Trim()
             : cfg.TerminalName;
+        var effectivePairingToken = pairingTokenOverride != null
+            ? pairingTokenOverride.Trim()
+            : cfg.PairingToken;
         var hostname = GetSanitizedHostname();
         var osPlatform = $"win32-{Environment.OSVersion.Version}";
 
@@ -500,10 +504,10 @@ public sealed class NetworkConfigManager
         request.Headers.TryAddWithoutValidation("X-Terminal-Hostname", hostname);
         request.Headers.TryAddWithoutValidation("X-Terminal-OS", osPlatform);
         request.Headers.TryAddWithoutValidation("X-Terminal-Version", appVersion);
-        if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
+        if (!string.IsNullOrWhiteSpace(effectivePairingToken))
         {
-            request.Headers.TryAddWithoutValidation("X-Network-Token", cfg.PairingToken);
-            request.Headers.TryAddWithoutValidation("X-Terminal-Token", cfg.PairingToken);
+            request.Headers.TryAddWithoutValidation("X-Network-Token", effectivePairingToken);
+            request.Headers.TryAddWithoutValidation("X-Terminal-Token", effectivePairingToken);
         }
 
         try

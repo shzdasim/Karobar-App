@@ -52,13 +52,14 @@ export default function NetworkTerminalSettings() {
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
-  // Desktop Electron mode switcher state (for Windows Standalone / Terminal PCs)
+  // Desktop mode switcher state (for Windows Standalone / Terminal PCs)
   const isElectronDesktop = Boolean(typeof window !== "undefined" && window.karobarDesktop?.isDesktop);
   const [desktopNetCfg, setDesktopNetCfg] = useState({
     mode: "standalone",
     serverUrl: "http://192.168.1.10:18960",
     terminalId: "",
     terminalName: "Counter 1",
+    pairingToken: "",
   });
   const [testingConn, setTestingConn] = useState(false);
   const [connTestResult, setConnTestResult] = useState(null);
@@ -127,6 +128,7 @@ export default function NetworkTerminalSettings() {
               serverUrl: cfg.serverUrl || "http://192.168.1.10:18960",
               terminalId: cfg.terminalId || "",
               terminalName: cfg.terminalName || "Counter 1",
+              pairingToken: cfg.pairingToken || "",
             });
           }
         })
@@ -289,10 +291,11 @@ export default function NetworkTerminalSettings() {
       const res = await window.karobarDesktop.testServerConnection({
         serverUrl: desktopNetCfg.serverUrl,
         terminalName: desktopNetCfg.terminalName,
+        pairingToken: desktopNetCfg.pairingToken,
       });
       setConnTestResult(res);
       if (res?.ok) {
-        toast.success(`Connected to ${res.storeName || "Linux Server"} (${res.latencyMs}ms)!`);
+        toast.success(`Connected to ${res.storeName || "Store Server"} (${res.latencyMs}ms)!`);
       } else {
         toast.error(res?.error || "Could not reach server.");
       }
@@ -305,14 +308,24 @@ export default function NetworkTerminalSettings() {
 
   const handleSaveDesktopMode = async () => {
     if (!window.karobarDesktop?.saveNetworkConfig) return;
+    if (desktopNetCfg.mode === "terminal" && !desktopNetCfg.serverUrl.trim()) {
+      toast.error("Please enter the Store Server LAN URL (e.g. http://192.168.1.10:18960).");
+      return;
+    }
     setSavingDesktopCfg(true);
     try {
       localStorage.setItem("karobar_terminal_name", desktopNetCfg.terminalName);
       localStorage.setItem("karobar_terminal_mode", desktopNetCfg.mode);
+      if (desktopNetCfg.pairingToken?.trim()) {
+        localStorage.setItem("karobar_pairing_token", desktopNetCfg.pairingToken.trim());
+      } else {
+        localStorage.removeItem("karobar_pairing_token");
+      }
       await window.karobarDesktop.saveNetworkConfig({
         mode: desktopNetCfg.mode,
         serverUrl: desktopNetCfg.serverUrl,
         terminalName: desktopNetCfg.terminalName,
+        pairingToken: desktopNetCfg.pairingToken || "",
         relaunch: true,
       });
       toast.success("Terminal network mode saved! Reconnecting...");
@@ -1234,7 +1247,9 @@ export default function NetworkTerminalSettings() {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-100">
                   <CommandLineIcon className="w-4 h-4 text-emerald-400" />
-                  Live Server Error Log (storage/logs/laravel.log • {diagnostics?.log_size_kb ?? 0} KB)
+                  {serverInfo?.php_version === ".NET 9.0"
+                    ? `Live Native Server Log (storage/logs/native-startup.log • ${diagnostics?.log_size_kb ?? 0} KB)`
+                    : `Live Server Error Log (storage/logs/laravel.log • ${diagnostics?.log_size_kb ?? 0} KB)`}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1249,25 +1264,38 @@ export default function NetworkTerminalSettings() {
               <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto max-h-56 overflow-y-auto p-2.5 rounded-lg bg-slate-950/90 text-slate-300">
                 {Array.isArray(diagnostics?.recent_logs) && diagnostics.recent_logs.length > 0
                   ? diagnostics.recent_logs.join("\n")
-                  : "✓ No recent errors in storage/logs/laravel.log — server is running cleanly."}
+                  : "✓ No recent errors — server is running cleanly."}
               </pre>
             </div>
 
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/70 space-y-2.5">
               <div className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-slate-200">
-                Linux Server CLI (`karobar-ctl`)
+                {serverInfo?.php_version === ".NET 9.0"
+                  ? "Native Windows Server CLI"
+                  : "Linux Server CLI (`karobar-ctl`)"}
               </div>
               <p className="text-[11px] text-gray-500 dark:text-slate-400">
-                You can also run these commands in the Linux terminal at any time:
+                {serverInfo?.php_version === ".NET 9.0"
+                  ? "Run these commands from PowerShell in the Karobar-App-Native folder:"
+                  : "You can also run these commands in the Linux terminal at any time:"}
               </p>
               <div className="space-y-1.5 text-[11px] font-mono">
-                {[
-                  "sudo karobar-ctl status",
-                  "sudo karobar-ctl terminals",
-                  "sudo karobar-ctl restart",
-                  "sudo karobar-ctl backup",
-                  "sudo karobar-ctl logs",
-                ].map((cmd) => (
+                {(serverInfo?.php_version === ".NET 9.0"
+                  ? [
+                      "Karobar-Native.exe --server-only",
+                      "Karobar-Native.exe --cli install --upgrade-only",
+                      "Karobar-Native.exe --cli karobar:export-sqlite",
+                      "Karobar-Native.exe --cli karobar:backup",
+                      "netsh advfirewall firewall show rule name=\"Karobar-App Native LAN Server (TCP 18960)\"",
+                    ]
+                  : [
+                      "sudo karobar-ctl status",
+                      "sudo karobar-ctl terminals",
+                      "sudo karobar-ctl restart",
+                      "sudo karobar-ctl backup",
+                      "sudo karobar-ctl logs",
+                    ]
+                ).map((cmd) => (
                   <div
                     key={cmd}
                     className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700"
@@ -1288,22 +1316,22 @@ export default function NetworkTerminalSettings() {
         </div>
       )}
 
-      {/* 5. Windows Desktop Mode Switcher (Only shown inside Electron .exe on Windows/Desktop) */}
+      {/* 5. Windows Desktop Mode Switcher (Only shown inside Desktop .exe on Windows) */}
       {isElectronDesktop && (
         <div className="rounded-2xl border border-blue-200/80 dark:border-blue-500/30 bg-blue-50/40 dark:bg-slate-800/90 p-5 shadow-sm">
           <div className="flex items-center gap-2.5 pb-3 border-b border-blue-100 dark:border-slate-700">
             <ComputerDesktopIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <div>
               <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">
-                This Windows PC — Operating Mode (Standalone 1-PC vs. Multi-PC Terminal)
+                This Windows PC — Operating Mode (Standalone / Store Server vs. Multi-PC Terminal)
               </h3>
               <p className="text-xs text-gray-500 dark:text-slate-400">
-                Switch this Windows PC between running its own local SQLite database or connecting as a POS Terminal to your Linux Store Server.
+                Switch this Windows PC between running its own local database (also acts as the LAN Store Server) or connecting as a Counter Terminal to another Store Server PC.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 PC Operating Mode
@@ -1313,7 +1341,7 @@ export default function NetworkTerminalSettings() {
                 onChange={(e) => setDesktopNetCfg((p) => ({ ...p, mode: e.target.value }))}
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold"
               >
-                <option value="standalone">Standalone 1-PC (Local SQLite Database)</option>
+                <option value="standalone">Standalone / Store Server (Local SQLite WAL)</option>
                 <option value="terminal">Multi-PC POS Terminal (Connect to Store Server)</option>
               </select>
             </div>
@@ -1340,8 +1368,22 @@ export default function NetworkTerminalSettings() {
                 type="text"
                 value={desktopNetCfg.terminalName}
                 onChange={(e) => setDesktopNetCfg((p) => ({ ...p, terminalName: e.target.value }))}
-                placeholder="Counter 1 — Main Pharmacy"
+                placeholder="Counter 2 — Pharmacy"
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                Server Pairing Token (Optional)
+              </label>
+              <input
+                type="text"
+                value={desktopNetCfg.pairingToken || ""}
+                onChange={(e) => setDesktopNetCfg((p) => ({ ...p, pairingToken: e.target.value }))}
+                placeholder="KRB-NET-XXXXXXXXXXXX"
+                disabled={desktopNetCfg.mode !== "terminal"}
+                className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono disabled:opacity-50"
               />
             </div>
           </div>

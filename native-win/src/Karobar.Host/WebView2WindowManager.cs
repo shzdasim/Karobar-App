@@ -471,6 +471,13 @@ public sealed class WebView2WindowManager : IDisposable
     public void LoadTerminalOfflineFallback(AppWindowInstance? targetWindow = null)
     {
         var win = targetWindow ?? GetActiveWindow() ?? CreateMainWindow();
+        // Prefer local HTTP endpoint (started by Program.cs forceStart: true) so preload IPC & HTTP fallback work cleanly
+        if (_networkConfig.ActivePort > 0)
+        {
+            win.LoadUrl($"http://127.0.0.1:{_networkConfig.ActivePort}/__desktop/terminal-offline.html");
+            return;
+        }
+
         var offlinePath = ResolveTerminalOfflineHtmlPath();
         if (File.Exists(offlinePath))
         {
@@ -479,7 +486,7 @@ public sealed class WebView2WindowManager : IDisposable
         }
         else
         {
-            win.LoadUrl($"http://127.0.0.1:{_networkConfig.ActivePort}/__desktop/terminal-offline.html");
+            win.LoadUrl($"http://127.0.0.1:{NetworkConfigManager.DefaultPort}/__desktop/terminal-offline.html");
         }
     }
 

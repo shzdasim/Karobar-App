@@ -100,11 +100,37 @@ public sealed class NativeWebView2Form : Form
         _winInstance.WebMessageSender = BroadcastMessageToActiveTab;
         _winInstance.UrlNavigator = targetUrl =>
         {
+            var originChanged = false;
             if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) &&
                 (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
             {
-                _baseOrigin = $"{uri.Scheme}://{uri.Authority}";
+                var nextOrigin = $"{uri.Scheme}://{uri.Authority}";
+                if (!string.Equals(nextOrigin, _baseOrigin, StringComparison.OrdinalIgnoreCase))
+                {
+                    _baseOrigin = nextOrigin;
+                    originChanged = true;
+                    if (_guideSession != null)
+                    {
+                        _guideSession.BaseOrigin = _baseOrigin;
+                        _guideSession.AuthBearerToken = null;
+                    }
+                }
             }
+
+            if (originChanged && _workspace.ActiveTabId != null)
+            {
+                // Close stale tabs pointing to the previous server origin (Standalone <-> Terminal mode switch)
+                void ResetTabsForNewOrigin()
+                {
+                    if (IsDisposed || _workspace.ActiveTabId == null) return;
+                    var removed = _workspace.CloseOtherTabs(_workspace.ActiveTabId);
+                    DisposeTabControls(removed);
+                    SyncActiveTabVisuals();
+                }
+                if (InvokeRequired) BeginInvoke((Action)ResetTabsForNewOrigin);
+                else ResetTabsForNewOrigin();
+            }
+
             OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
         };
 

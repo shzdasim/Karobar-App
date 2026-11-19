@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -6,10 +7,19 @@ namespace Karobar.Data;
 
 public sealed class SqliteConnectionInterceptor : DbConnectionInterceptor
 {
+    private static readonly ConcurrentDictionary<string, bool> WalInitializedPaths = new(StringComparer.OrdinalIgnoreCase);
+
     public const string HighConcurrencyPragmaSql =
         "PRAGMA journal_mode=WAL; " +
         "PRAGMA synchronous=NORMAL; " +
-        "PRAGMA busy_timeout=10000; " +
+        "PRAGMA busy_timeout=15000; " +
+        "PRAGMA temp_store=MEMORY; " +
+        "PRAGMA cache_size=-64000; " +
+        "PRAGMA foreign_keys=ON;";
+
+    private const string FastSessionPragmaSql =
+        "PRAGMA busy_timeout=15000; " +
+        "PRAGMA synchronous=NORMAL; " +
         "PRAGMA temp_store=MEMORY; " +
         "PRAGMA cache_size=-64000; " +
         "PRAGMA foreign_keys=ON;";
@@ -31,25 +41,41 @@ public sealed class SqliteConnectionInterceptor : DbConnectionInterceptor
 
     public static void ApplyPragmas(DbConnection connection)
     {
-        if (connection is not SqliteConnection)
+        if (connection is not SqliteConnection sqliteConn)
         {
             return;
         }
 
-        using var command = connection.CreateCommand();
-        command.CommandText = HighConcurrencyPragmaSql;
+        var dbKey = sqliteConn.DataSource ?? string.Empty;
+        var needsWal = string.IsNullOrEmpty(dbKey) || !WalInitializedPaths.ContainsKey(dbKey);
+
+        using var command = sqliteConn.CreateCommand();
+        command.CommandText = needsWal ? HighConcurrencyPragmaSql : FastSessionPragmaSql;
         command.ExecuteNonQuery();
+
+        if (needsWal && !string.IsNullOrEmpty(dbKey))
+        {
+            WalInitializedPaths[dbKey] = true;
+        }
     }
 
     public static async Task ApplyPragmasAsync(DbConnection connection, CancellationToken cancellationToken = default)
     {
-        if (connection is not SqliteConnection)
+        if (connection is not SqliteConnection sqliteConn)
         {
             return;
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = HighConcurrencyPragmaSql;
+        var dbKey = sqliteConn.DataSource ?? string.Empty;
+        var needsWal = string.IsNullOrEmpty(dbKey) || !WalInitializedPaths.ContainsKey(dbKey);
+
+        await using var command = sqliteConn.CreateCommand();
+        command.CommandText = needsWal ? HighConcurrencyPragmaSql : FastSessionPragmaSql;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (needsWal && !string.IsNullOrEmpty(dbKey))
+        {
+            WalInitializedPaths[dbKey] = true;
+        }
     }
 }

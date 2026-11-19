@@ -76,5 +76,5 @@ public class Terminal
     public virtual ICollection<SaleInvoice> SaleInvoices { get; set; } = new List<SaleInvoice>();
 
     public bool IsOnline() =>
-        LastSeenAt.HasValue && LastSeenAt.Value >= DateTime.UtcNow.AddSeconds(-25);
+        LastSeenAt.HasValue && LastSeenAt.Value >= DateTime.UtcNow.AddSeconds(-45);
 }

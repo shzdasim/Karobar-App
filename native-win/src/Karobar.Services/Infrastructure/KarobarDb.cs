@@ -19,6 +19,7 @@ public class KarobarDb
 
     private static readonly ConcurrentDictionary<string, bool> TableCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, HashSet<string>> ColumnCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, bool> WalInitializedDbPaths = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> JsonColumns = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -202,17 +203,21 @@ public class KarobarDb
         {
             DataSource = _sqlitePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
+            Cache = SqliteCacheMode.Default,
             Pooling = true,
-            DefaultTimeout = 15
+            DefaultTimeout = 20
         }.ToString();
 
         var conn = new SqliteConnection(connStr);
         conn.Open();
 
+        var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=10000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
+        cmd.CommandText = needsWal
+            ? "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
+            : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
         cmd.ExecuteNonQuery();
+        if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
 
         return conn;
     }
@@ -229,19 +234,39 @@ public class KarobarDb
         {
             DataSource = _sqlitePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
+            Cache = SqliteCacheMode.Default,
             Pooling = true,
-            DefaultTimeout = 15
+            DefaultTimeout = 20
         }.ToString();
 
         var conn = new SqliteConnection(connStr);
         await conn.OpenAsync();
 
+        var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=10000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
+        cmd.CommandText = needsWal
+            ? "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
+            : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
         await cmd.ExecuteNonQueryAsync();
+        if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
 
         return conn;
+    }
+
+    private static async Task<T> ExecuteWithSqliteRetryAsync<T>(Func<Task<T>> operation)
+    {
+        int[] delaysMs = [35, 90, 200, 420];
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (SqliteException ex) when ((ex.SqliteErrorCode is 5 or 6) && attempt < delaysMs.Length)
+            {
+                await Task.Delay(delaysMs[attempt] + Random.Shared.Next(5, 30));
+            }
+        }
     }
 
     public static void FlushSchemaCache()
@@ -371,11 +396,14 @@ public class KarobarDb
     {
         if (existingConn != null)
         {
-            return await existingConn.ExecuteAsync(sql, param, tx);
+            return await ExecuteWithSqliteRetryAsync(() => existingConn.ExecuteAsync(sql, param, tx));
         }
 
-        await using var conn = await OpenConnectionAsync();
-        return await conn.ExecuteAsync(sql, param);
+        return await ExecuteWithSqliteRetryAsync(async () =>
+        {
+            await using var conn = await OpenConnectionAsync();
+            return await conn.ExecuteAsync(sql, param);
+        });
     }
 
     public async Task<long> InsertAsync(string tableName, IDictionary<string, object?> data, IDbConnection? existingConn = null, IDbTransaction? tx = null)
@@ -416,11 +444,14 @@ public class KarobarDb
 
         if (existingConn != null)
         {
-            return await existingConn.ExecuteScalarAsync<long>(sql, dynParams, tx);
+            return await ExecuteWithSqliteRetryAsync(() => existingConn.ExecuteScalarAsync<long>(sql, dynParams, tx));
         }
 
-        await using var conn = await OpenConnectionAsync();
-        return await conn.ExecuteScalarAsync<long>(sql, dynParams);
+        return await ExecuteWithSqliteRetryAsync(async () =>
+        {
+            await using var conn = await OpenConnectionAsync();
+            return await conn.ExecuteScalarAsync<long>(sql, dynParams);
+        });
     }
 
     public async Task<int> UpdateAsync(string tableName, object id, IDictionary<string, object?> data, string idColumn = "id", IDbConnection? existingConn = null, IDbTransaction? tx = null)
@@ -461,11 +492,14 @@ public class KarobarDb
 
         if (existingConn != null)
         {
-            return await existingConn.ExecuteAsync(sql, dynParams, tx);
+            return await ExecuteWithSqliteRetryAsync(() => existingConn.ExecuteAsync(sql, dynParams, tx));
         }
 
-        await using var conn = await OpenConnectionAsync();
-        return await conn.ExecuteAsync(sql, dynParams);
+        return await ExecuteWithSqliteRetryAsync(async () =>
+        {
+            await using var conn = await OpenConnectionAsync();
+            return await conn.ExecuteAsync(sql, dynParams);
+        });
     }
 
     public async Task<Dictionary<string, object?>> PaginateAsync(

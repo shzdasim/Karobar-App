@@ -54,7 +54,7 @@ public class Wave9And10LiveHttpIntegrationTests
         var kDb = new KarobarDb(explicitSqlitePath: tempDbPath);
         await EnsureSeedAsync(kDb);
 
-        var port = KestrelHostServer.FindFreePort(19850);
+        var port = KestrelHostServer.FindFreePort(19850 + Random.Shared.Next(0, 400));
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
@@ -94,6 +94,7 @@ public class Wave9And10LiveHttpIntegrationTests
         app.UseMiddleware<SignedUrlMiddleware>();
         app.UseAuthentication();
         app.UseMiddleware<CheckTokenExpiryMiddleware>();
+        app.UseMiddleware<TrackTerminalMiddleware>();
         app.UseAuthorization();
         app.MapControllers();
 
