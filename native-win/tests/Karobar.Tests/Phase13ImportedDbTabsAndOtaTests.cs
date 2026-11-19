@@ -328,6 +328,14 @@ public class Phase13ImportedDbTabsAndOtaTests
         {
             try { Directory.Delete(tmpAppRoot, recursive: true); } catch { }
         }
+
+        // 4. Verify KarobarPreloadScript wires Waseela tab-switching keyboard shortcuts inside WebView2
+        var preload = KarobarPreloadScript.GetPreloadScript(false);
+        preload.Should().Contain("\"tab-shortcut\"");
+        preload.Should().Contain("\"cycle-next\"");
+        preload.Should().Contain("\"cycle-prev\"");
+        preload.Should().Contain("\"focus-index\"");
+        preload.Should().Contain("\"close-active\"");
         KarobarDesktopBridge.IsProtectedPatchPath("public/build/assets/app.js").Should().BeFalse();
     }
 

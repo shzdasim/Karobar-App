@@ -25,6 +25,8 @@ public sealed class NativeWebView2Form : Form
     private readonly SemaphoreSlim _envInitLock = new(1, 1);
     private CoreWebView2Environment? _sharedEnv;
     private readonly string _baseOrigin;
+    private long _lastTabShortcutMs;
+    private string _lastTabShortcutAction = "";
 
     public NativeWebView2Form(
         AppWindowInstance winInstance,
@@ -180,26 +182,19 @@ public sealed class NativeWebView2Form : Form
 
         // Dedicated "Tabs" menu for discoverable Waseela keyboard multitasking
         var tabsMenu = new ToolStripMenuItem("Tabs") { ForeColor = Color.FromArgb(248, 250, 252) };
-        tabsMenu.DropDownItems.Add("New Tab (Ctrl+T)", null, (_, _) => _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true));
-        tabsMenu.DropDownItems.Add("New Retail Sale Tab (Ctrl+Shift+R)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/create/retail", "Retail Sale", allowDuplicate: true));
-        tabsMenu.DropDownItems.Add("New Wholesale Sale Tab (Ctrl+Shift+W)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/create/wholesale", "Wholesale Sale", allowDuplicate: true));
-        tabsMenu.DropDownItems.Add("New Purchase Invoice Tab (Ctrl+Shift+G)", null, (_, _) => _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true));
-        tabsMenu.DropDownItems.Add("Open Barcode POS Tab (Ctrl+Shift+P)", null, (_, _) => _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false));
+        tabsMenu.DropDownItems.Add("Next Tab (Ctrl+Tab / Ctrl+PageDown)", null, (_, _) => ExecuteTabShortcutAction("cycle-next"));
+        tabsMenu.DropDownItems.Add("Previous Tab (Ctrl+Shift+Tab / Ctrl+PageUp)", null, (_, _) => ExecuteTabShortcutAction("cycle-prev"));
+        tabsMenu.DropDownItems.Add("Jump to Tab 1–9 (Alt+1..9 / Ctrl+Shift+1..9)", null, (_, _) => ExecuteTabShortcutAction("cycle-next"));
         tabsMenu.DropDownItems.Add(new ToolStripSeparator());
-        tabsMenu.DropDownItems.Add("Duplicate Active Tab (Ctrl+Shift+D)", null, (_, _) => DuplicateActiveTab());
-        tabsMenu.DropDownItems.Add("Close Active Tab (Ctrl+W)", null, (_, _) =>
-        {
-            if (_workspace.ActiveTabId != null) CloseTabById(_workspace.ActiveTabId);
-        });
-        tabsMenu.DropDownItems.Add("Reopen Closed Tab (Ctrl+Shift+T)", null, (_, _) =>
-        {
-            var restored = _workspace.ReopenLastClosedTab();
-            if (restored != null)
-            {
-                _ = EnsureTabWebViewInitializedAsync(restored);
-                SyncActiveTabVisuals();
-            }
-        });
+        tabsMenu.DropDownItems.Add("New Tab (Ctrl+T / Ctrl+Shift+N)", null, (_, _) => ExecuteTabShortcutAction("new-tab"));
+        tabsMenu.DropDownItems.Add("New Purchase Invoice Tab (Ctrl+Shift+G)", null, (_, _) => ExecuteTabShortcutAction("new-purchase"));
+        tabsMenu.DropDownItems.Add("Open Barcode POS Tab (Ctrl+Shift+P)", null, (_, _) => ExecuteTabShortcutAction("open-pos"));
+        tabsMenu.DropDownItems.Add("Open Customer Ledger Tab (Ctrl+Shift+L)", null, (_, _) => ExecuteTabShortcutAction("open-ledger"));
+        tabsMenu.DropDownItems.Add(new ToolStripSeparator());
+        tabsMenu.DropDownItems.Add("Duplicate Active Tab (Ctrl+Shift+D)", null, (_, _) => ExecuteTabShortcutAction("duplicate"));
+        tabsMenu.DropDownItems.Add("Close Active Tab (Ctrl+F4 / Ctrl+Shift+Q)", null, (_, _) => ExecuteTabShortcutAction("close-active"));
+        tabsMenu.DropDownItems.Add("Close Other Tabs (Ctrl+Shift+X)", null, (_, _) => ExecuteTabShortcutAction("close-others"));
+        tabsMenu.DropDownItems.Add("Reopen Closed Tab (Ctrl+Shift+T)", null, (_, _) => ExecuteTabShortcutAction("reopen-closed"));
         menuStrip.Items.Add(tabsMenu);
 
         MainMenuStrip = menuStrip;
@@ -428,6 +423,16 @@ public sealed class NativeWebView2Form : Form
                     DefaultBackgroundColor = Color.FromArgb(15, 23, 42),
                     Visible = tab.TabId == _workspace.ActiveTabId
                 };
+                // Intercept Waseela tab-switching accelerators directly from WebView2 (CoreWebView2Controller.AcceleratorKeyPressed)
+                // so Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageUp/Down, Ctrl+F6, Alt+1..9, Ctrl+Shift+1..9, Ctrl+F4 work even while typing in React forms!
+                wv.KeyDown += (_, keyArgs) =>
+                {
+                    if (HandleTabKeyData(keyArgs.KeyData))
+                    {
+                        keyArgs.Handled = true;
+                        keyArgs.SuppressKeyPress = true;
+                    }
+                };
                 _tabWebViews[tab.TabId] = wv;
                 _tabContentPanel.Controls.Add(wv);
             }
@@ -504,6 +509,23 @@ public sealed class NativeWebView2Form : Form
 
                     using var doc = JsonDocument.Parse(raw);
                     var root = doc.RootElement;
+                    if (root.TryGetProperty("type", out var msgTypeProp) &&
+                        msgTypeProp.GetString() == "tab-shortcut" &&
+                        root.TryGetProperty("action", out var actProp))
+                    {
+                        var action = actProp.GetString() ?? "";
+                        var index = root.TryGetProperty("index", out var idxProp) && idxProp.TryGetInt32(out var idxVal) ? idxVal : -1;
+                        if (InvokeRequired)
+                        {
+                            BeginInvoke((Action)(() => { ExecuteTabShortcutAction(action, index); }));
+                        }
+                        else
+                        {
+                            ExecuteTabShortcutAction(action, index);
+                        }
+                        return;
+                    }
+
                     if (root.TryGetProperty("type", out var typeProp) &&
                         typeProp.GetString() == "ipc-invoke" &&
                         root.TryGetProperty("id", out var idProp) &&
@@ -586,86 +608,154 @@ public sealed class NativeWebView2Form : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        // Waseela & Chrome-style Tab Multitasking Shortcuts
-        if (keyData == (Keys.Control | Keys.T))
+        if (HandleTabKeyData(keyData))
         {
-            _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
             return true;
         }
-        if (keyData == (Keys.Control | Keys.W) || keyData == (Keys.Control | Keys.F4))
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private bool HandleTabKeyData(Keys keyData)
+    {
+        // Waseela & Karobar conflict-free Tab Multitasking Shortcuts
+        // (Preserves Ctrl+1/2/3, Ctrl+W, Ctrl+D, Ctrl+R, Ctrl+S, F4/F6/F7/F8/F9 for React invoicing screens!)
+        if (keyData == (Keys.Control | Keys.Tab) ||
+            keyData == (Keys.Control | Keys.PageDown) ||
+            keyData == (Keys.Control | Keys.OemCloseBrackets) ||
+            keyData == (Keys.Control | Keys.F6))
         {
-            if (_workspace.ActiveTabId != null) CloseTabById(_workspace.ActiveTabId);
-            return true;
+            return ExecuteTabShortcutAction("cycle-next");
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.Tab) ||
+            keyData == (Keys.Control | Keys.PageUp) ||
+            keyData == (Keys.Control | Keys.OemOpenBrackets) ||
+            keyData == (Keys.Control | Keys.Shift | Keys.F6))
+        {
+            return ExecuteTabShortcutAction("cycle-prev");
+        }
+        if (keyData == (Keys.Control | Keys.F4) || keyData == (Keys.Control | Keys.Shift | Keys.Q))
+        {
+            return ExecuteTabShortcutAction("close-active");
+        }
+        if (keyData == (Keys.Control | Keys.T) || keyData == (Keys.Control | Keys.Shift | Keys.N))
+        {
+            return ExecuteTabShortcutAction("new-tab");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.T))
         {
-            var restored = _workspace.ReopenLastClosedTab();
-            if (restored != null)
-            {
-                _ = EnsureTabWebViewInitializedAsync(restored);
-                SyncActiveTabVisuals();
-            }
-            return true;
+            return ExecuteTabShortcutAction("reopen-closed");
         }
-        if (keyData == (Keys.Control | Keys.Tab) || keyData == (Keys.Control | Keys.PageDown))
+        if (keyData == (Keys.Control | Keys.Shift | Keys.X))
         {
-            if (_workspace.CycleTab(1) != null) SyncActiveTabVisuals();
-            return true;
-        }
-        if (keyData == (Keys.Control | Keys.Shift | Keys.Tab) || keyData == (Keys.Control | Keys.PageUp))
-        {
-            if (_workspace.CycleTab(-1) != null) SyncActiveTabVisuals();
-            return true;
+            return ExecuteTabShortcutAction("close-others");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.D))
         {
-            DuplicateActiveTab();
-            return true;
+            return ExecuteTabShortcutAction("duplicate");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.P))
         {
-            _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
-            return true;
-        }
-        if (keyData == (Keys.Control | Keys.Shift | Keys.R))
-        {
-            _ = OpenTabAsync("/sale-invoices/create/retail", "Retail Sale", allowDuplicate: true);
-            return true;
-        }
-        if (keyData == (Keys.Control | Keys.Shift | Keys.W))
-        {
-            _ = OpenTabAsync("/sale-invoices/create/wholesale", "Wholesale Sale", allowDuplicate: true);
-            return true;
+            return ExecuteTabShortcutAction("open-pos");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.G))
         {
-            _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true);
-            return true;
+            return ExecuteTabShortcutAction("new-purchase");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.L))
         {
-            _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false);
-            return true;
+            return ExecuteTabShortcutAction("open-ledger");
         }
 
-        // Ctrl+1 .. Ctrl+8 jump to tab index; Ctrl+9 jumps to last tab
-        if ((keyData & Keys.Control) == Keys.Control && (keyData & (Keys.Shift | Keys.Alt)) == 0)
+        // Alt+1..8 / Ctrl+Shift+1..8 jump directly to tab index; Alt+9 / Ctrl+Shift+9 jump to last tab
+        var isAltOnly = (keyData & Keys.Alt) == Keys.Alt && (keyData & (Keys.Control | Keys.Shift)) == 0;
+        var isCtrlShiftOnly = (keyData & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift) && (keyData & Keys.Alt) == 0;
+        if (isAltOnly || isCtrlShiftOnly)
         {
             var keyCode = keyData & Keys.KeyCode;
             if (keyCode is >= Keys.D1 and <= Keys.D8)
             {
-                var idx = (int)(keyCode - Keys.D1);
-                if (_workspace.FocusByIndex(idx) != null) SyncActiveTabVisuals();
-                return true;
+                return ExecuteTabShortcutAction("focus-index", (int)(keyCode - Keys.D1));
             }
-            if (keyCode == Keys.D9)
+            if (keyCode is >= Keys.NumPad1 and <= Keys.NumPad8)
             {
-                if (_workspace.FocusLastTab() != null) SyncActiveTabVisuals();
-                return true;
+                return ExecuteTabShortcutAction("focus-index", (int)(keyCode - Keys.NumPad1));
+            }
+            if (keyCode == Keys.D9 || keyCode == Keys.NumPad9)
+            {
+                return ExecuteTabShortcutAction("focus-last");
             }
         }
 
-        return base.ProcessCmdKey(ref msg, keyData);
+        return false;
+    }
+
+    private bool ExecuteTabShortcutAction(string action, int index = -1)
+    {
+        if (IsDisposed || string.IsNullOrWhiteSpace(action)) return false;
+
+        // Dedupe if both WebView2 KeyDown (AcceleratorKeyPressed) and DOM keydown fire within 80ms
+        var nowMs = Environment.TickCount64;
+        var dedupeKey = $"{action}:{index}";
+        if (dedupeKey == _lastTabShortcutAction && nowMs - _lastTabShortcutMs < 80)
+        {
+            return true;
+        }
+        _lastTabShortcutAction = dedupeKey;
+        _lastTabShortcutMs = nowMs;
+
+        switch (action)
+        {
+            case "cycle-next":
+                if (_workspace.CycleTab(1) != null) SyncActiveTabVisuals();
+                return true;
+            case "cycle-prev":
+                if (_workspace.CycleTab(-1) != null) SyncActiveTabVisuals();
+                return true;
+            case "focus-index":
+                if (index >= 0 && _workspace.FocusByIndex(index) != null) SyncActiveTabVisuals();
+                return true;
+            case "focus-last":
+                if (_workspace.FocusLastTab() != null) SyncActiveTabVisuals();
+                return true;
+            case "new-tab":
+                _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
+                return true;
+            case "close-active":
+                if (_workspace.ActiveTabId != null) CloseTabById(_workspace.ActiveTabId);
+                return true;
+            case "close-others":
+                if (_workspace.ActiveTabId != null)
+                {
+                    foreach (var closedId in _workspace.CloseOtherTabs(_workspace.ActiveTabId))
+                    {
+                        DisposeTabWebView(closedId);
+                    }
+                    SyncActiveTabVisuals();
+                }
+                return true;
+            case "reopen-closed":
+                var restored = _workspace.ReopenLastClosedTab();
+                if (restored != null)
+                {
+                    _ = EnsureTabWebViewInitializedAsync(restored);
+                    SyncActiveTabVisuals();
+                }
+                return true;
+            case "duplicate":
+                DuplicateActiveTab();
+                return true;
+            case "open-pos":
+                _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
+                return true;
+            case "new-purchase":
+                _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true);
+                return true;
+            case "open-ledger":
+                _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false);
+                return true;
+            default:
+                return false;
+        }
     }
 
     private string BuildAbsoluteUrl(string routePath)

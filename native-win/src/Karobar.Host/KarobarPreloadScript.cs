@@ -330,6 +330,85 @@ public static class KarobarPreloadScript
               }, true);
             }
           } catch (_) {}
+
+          // Waseela-style Tab-Switching Keyboard Shortcuts (forwarded straight to native tab host)
+          try {
+            if (!isOffscreenPrintWorker && !window.__karobarTabShortcutsHooked) {
+              window.__karobarTabShortcutsHooked = true;
+              var sendTabShortcut = function (e, action, index) {
+                if (!window.chrome || !window.chrome.webview || typeof window.chrome.webview.postMessage !== "function") {
+                  return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                window.chrome.webview.postMessage(JSON.stringify({
+                  type: "tab-shortcut",
+                  action: action,
+                  index: typeof index === "number" ? index : -1
+                }));
+              };
+              window.addEventListener("keydown", function (e) {
+                var code = e.code || "";
+                var key = (e.key || "").toLowerCase();
+                var ctrl = Boolean(e.ctrlKey && !e.altKey && !e.metaKey);
+                var alt = Boolean(e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey);
+
+                if (ctrl && !e.shiftKey && (code === "Tab" || code === "PageDown" || code === "BracketRight" || code === "F6")) {
+                  sendTabShortcut(e, "cycle-next");
+                  return;
+                }
+                if (ctrl && e.shiftKey && (code === "Tab" || code === "PageUp" || code === "BracketLeft" || code === "F6")) {
+                  sendTabShortcut(e, "cycle-prev");
+                  return;
+                }
+                if (ctrl && !e.shiftKey && (code === "PageUp" || code === "BracketLeft")) {
+                  sendTabShortcut(e, "cycle-prev");
+                  return;
+                }
+                if (ctrl && !e.shiftKey && code === "F4") {
+                  sendTabShortcut(e, "close-active");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "q") {
+                  sendTabShortcut(e, "close-active");
+                  return;
+                }
+                if ((ctrl && !e.shiftKey && key === "t") || (ctrl && e.shiftKey && key === "n")) {
+                  sendTabShortcut(e, "new-tab");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "x") {
+                  sendTabShortcut(e, "close-others");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "p") {
+                  sendTabShortcut(e, "open-pos");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "g") {
+                  sendTabShortcut(e, "new-purchase");
+                  return;
+                }
+                if (ctrl && e.shiftKey && key === "l") {
+                  sendTabShortcut(e, "open-ledger");
+                  return;
+                }
+
+                // Alt+1..9 or Ctrl+Shift+1..9 jump directly to tab 1..8 or last tab (9)
+                if (alt || (ctrl && e.shiftKey)) {
+                  var digitMatch = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+                  if (digitMatch) {
+                    var n = parseInt(digitMatch[1], 10);
+                    if (n === 9) {
+                      sendTabShortcut(e, "focus-last");
+                    } else {
+                      sendTabShortcut(e, "focus-index", n - 1);
+                    }
+                  }
+                }
+              }, true);
+            }
+          } catch (_) {}
         })();
         """;
     }

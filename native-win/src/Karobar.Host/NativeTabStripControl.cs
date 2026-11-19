@@ -65,8 +65,8 @@ public sealed class NativeTabStripControl : Control
         menu.Items.Add("Duplicate Tab (Ctrl+Shift+D)", null, (_, _) => { if (_contextMenuTabId != null) TabDuplicateRequested?.Invoke(_contextMenuTabId); });
         menu.Items.Add("Pin / Unpin Tab", null, (_, _) => { if (_contextMenuTabId != null) TabPinToggled?.Invoke(_contextMenuTabId); });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Close Tab (Ctrl+W)", null, (_, _) => { if (_contextMenuTabId != null) TabCloseRequested?.Invoke(_contextMenuTabId); });
-        menu.Items.Add("Close Other Tabs", null, (_, _) => { if (_contextMenuTabId != null) CloseOthersRequested?.Invoke(_contextMenuTabId); });
+        menu.Items.Add("Close Tab (Ctrl+F4)", null, (_, _) => { if (_contextMenuTabId != null) TabCloseRequested?.Invoke(_contextMenuTabId); });
+        menu.Items.Add("Close Other Tabs (Ctrl+Shift+X)", null, (_, _) => { if (_contextMenuTabId != null) CloseOthersRequested?.Invoke(_contextMenuTabId); });
         menu.Items.Add("Close Tabs to Right", null, (_, _) => { if (_contextMenuTabId != null) CloseToRightRequested?.Invoke(_contextMenuTabId); });
         menu.Items.Add("Reopen Closed Tab (Ctrl+Shift+T)", null, (_, _) => ReopenClosedRequested?.Invoke());
         menu.Items.Add(new ToolStripSeparator());
