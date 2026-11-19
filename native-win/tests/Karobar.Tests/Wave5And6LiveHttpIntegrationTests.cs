@@ -31,8 +31,9 @@ public class Wave5And6LiveHttpIntegrationTests
         Directory.CreateDirectory(Path.Combine(tempRoot, "public"));
 
         var tempDbPath = Path.Combine(tempRoot, "database", "database.sqlite");
+        var forceEmptyDb = string.Equals(Environment.GetEnvironmentVariable("KAROBAR_TEST_EMPTY_DB"), "1", StringComparison.OrdinalIgnoreCase);
         var sourceFactory = new DbConnectionFactory();
-        if (File.Exists(sourceFactory.SqlitePath) && new FileInfo(sourceFactory.SqlitePath).Length > 0)
+        if (!forceEmptyDb && File.Exists(sourceFactory.SqlitePath) && new FileInfo(sourceFactory.SqlitePath).Length > 0)
         {
             File.Copy(sourceFactory.SqlitePath, tempDbPath, overwrite: true);
         }
@@ -179,6 +180,27 @@ public class Wave5And6LiveHttpIntegrationTests
                 ["is_active"] = 1
             });
         }
+
+        if (await db.HasTableAsync("barcode_templates") && await db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM barcode_templates") == 0)
+        {
+            await db.InsertAsync("barcode_templates", new Dictionary<string, object?>
+            {
+                ["name"] = "Default 50x25 Roll",
+                ["paper_type"] = "roll",
+                ["orientation"] = "landscape",
+                ["width_mm"] = 50d,
+                ["height_mm"] = 25d,
+                ["columns"] = 1,
+                ["rows"] = 1,
+                ["gap_x_mm"] = 0d,
+                ["gap_y_mm"] = 0d,
+                ["margin_top_mm"] = 0d,
+                ["margin_left_mm"] = 0d,
+                ["margin_right_mm"] = 0d,
+                ["margin_bottom_mm"] = 0d,
+                ["is_default"] = 1
+            });
+        }
     }
 
     private static async Task<string> LoginAsync(HttpClient client, string email, string password)
@@ -191,6 +213,11 @@ public class Wave5And6LiveHttpIntegrationTests
 
     private static StringContent JsonBody(object payload) =>
         new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+    private static decimal GetFlexibleDecimal(JsonElement el) =>
+        el.ValueKind == JsonValueKind.Number
+            ? el.GetDecimal()
+            : decimal.Parse(el.GetString()!, System.Globalization.CultureInfo.InvariantCulture);
 
     private static async Task CleanupAsync(WebApplication app, HttpClient client, string tempRoot, string? prevRoot)
     {
@@ -541,7 +568,7 @@ public class Wave5And6LiveHttpIntegrationTests
             {
                 var adjTxn = doc.RootElement.GetProperty("transactions").GetProperty("data").EnumerateArray()
                     .First(t => t.GetProperty("type").GetString() == "adjustment");
-                adjTxn.GetProperty("amount").GetDecimal().Should().Be(-500m);
+                GetFlexibleDecimal(adjTxn.GetProperty("amount")).Should().Be(-500m);
             }
 
             // 4. Payments: Supplier WHT net_cash_disbursed persisted & reversed accurately (not over-credited!)
