@@ -206,11 +206,13 @@ begin
   Result := Assigned(TerminalModeRadio) and TerminalModeRadio.Checked;
 end;
 
-{ Compute deterministic hardware Machine ID using native Karobar-App.exe --cli license:machine-id }
+{ Compute deterministic hardware Machine ID using native Karobar-Native.exe --cli license:machine-id }
 function ComputeInstallerMachineId(): String;
 var
   ResultCode: Integer;
   OutId: AnsiString;
+  CleanId: String;
+  TmpExe, MidFile: String;
 begin
   Result := 'KRB-DETECTING';
   if IsCliUpgradeMode() then
@@ -219,18 +221,27 @@ begin
     Exit;
   end;
   try
-    ExtractTemporaryFile('{#MyAppExeName}');
+    TmpExe := ExpandConstant('{tmp}\{#MyAppExeName}');
+    MidFile := ExpandConstant('{tmp}\machine-id.txt');
+    if not FileExists(TmpExe) then
+      ExtractTemporaryFile('{#MyAppExeName}');
     if Exec(
-      ExpandConstant('{tmp}\{#MyAppExeName}'),
-      '--cli license:machine-id --out="' + ExpandConstant('{tmp}\machine-id.txt') + '"',
+      TmpExe,
+      '--cli license:machine-id --out="' + MidFile + '"',
       ExpandConstant('{tmp}'),
       SW_HIDE,
       ewWaitUntilTerminated,
       ResultCode
     ) then
     begin
-      if LoadStringFromFile(ExpandConstant('{tmp}\machine-id.txt'), OutId) then
-        Result := Trim(String(OutId));
+      if (ResultCode = 0) and LoadStringFromFile(MidFile, OutId) then
+      begin
+        CleanId := Trim(String(OutId));
+        if Pos('KRB-', CleanId) > 1 then
+          Delete(CleanId, 1, Pos('KRB-', CleanId) - 1);
+        if CleanId <> '' then
+          Result := CleanId;
+      end;
     end;
   except
     Result := 'KRB-UNKNOWN-HOST';
@@ -451,7 +462,7 @@ begin
   KeyLabel.Parent := LicenseKeyPage.Surface;
   KeyLabel.Left := 0;
   KeyLabel.Top := MachineIdEdit.Top + ScaleY(36);
-  KeyLabel.Caption := 'Paste your Machine-Bound License Key (KRBL....):';
+  KeyLabel.Caption := 'Paste your License Key (KRBL.... — machine-bound for this PC or vendor-signed unbound):';
 
   LicenseKeyMemo := TNewMemo.Create(LicenseKeyPage);
   LicenseKeyMemo.Parent := LicenseKeyPage.Surface;
@@ -668,6 +679,16 @@ begin
     end;
     OnDbModeChange(nil);
   end;
+
+  if CurPageID = LicenseKeyPage.ID then
+  begin
+    if (DetectedMachineId = '') or (DetectedMachineId = 'KRB-DETECTING') or (DetectedMachineId = 'KRB-UNKNOWN-HOST') then
+    begin
+      DetectedMachineId := ComputeInstallerMachineId();
+      if Assigned(MachineIdEdit) then
+        MachineIdEdit.Text := DetectedMachineId;
+    end;
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -727,6 +748,8 @@ begin
     end;
 
     SaveStringToFile(ExpandConstant('{tmp}\input-key.txt'), KeyText, False);
+    if not FileExists(ExpandConstant('{tmp}\{#MyAppExeName}')) then
+      ExtractTemporaryFile('{#MyAppExeName}');
 
     if not Exec(
       ExpandConstant('{tmp}\{#MyAppExeName}'),

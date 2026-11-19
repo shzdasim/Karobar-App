@@ -65,6 +65,8 @@ public sealed class KarobarCliCommandRunner
         "demands:notify"
     ];
 
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     public const string MasterPublicKeyB64u = HardwareMachineIdProvider.MasterPublicKeyB64u;
 
     public static readonly IReadOnlyDictionary<string, Dictionary<string, object>> LicenseTiers = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase)
@@ -1050,7 +1052,7 @@ public sealed class KarobarCliCommandRunner
         {
             var dir = Path.GetDirectoryName(outFile);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(outFile, machineId, Encoding.UTF8);
+            File.WriteAllText(outFile, machineId, Utf8NoBom);
         }
 
         var isJson = args.TryGetValue("json", out var j) && j is "1" or "true" or "yes";
@@ -1079,10 +1081,10 @@ public sealed class KarobarCliCommandRunner
         IDictionary<string, string?> args,
         byte[]? testPublicKeyOverride = null)
     {
-        var key = args.TryGetValue("key", out var k) ? (k ?? "").Trim() : "";
+        var key = args.TryGetValue("key", out var k) ? (k ?? "").Trim('\uFEFF', ' ', '\t', '\r', '\n') : "";
         if (string.IsNullOrEmpty(key) && args.TryGetValue("key-file", out var kf) && !string.IsNullOrWhiteSpace(kf) && File.Exists(kf))
         {
-            key = File.ReadAllText(kf, Encoding.UTF8).Trim();
+            key = File.ReadAllText(kf, Encoding.UTF8).Trim('\uFEFF', ' ', '\t', '\r', '\n');
         }
 
         var errorOut = args.TryGetValue("error-out", out var eo) ? (eo ?? "").Trim() : "";
@@ -1097,7 +1099,7 @@ public sealed class KarobarCliCommandRunner
                 {
                     var dir = Path.GetDirectoryName(errorOut);
                     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                    File.WriteAllText(errorOut, friendlyMessage, Encoding.UTF8);
+                    File.WriteAllText(errorOut, friendlyMessage, Utf8NoBom);
                 }
                 catch { }
             }
@@ -1230,7 +1232,7 @@ public sealed class KarobarCliCommandRunner
         {
             var dir = Path.GetDirectoryName(sealOut);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(sealOut, JsonSerializer.Serialize(sealData, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+            File.WriteAllText(sealOut, JsonSerializer.Serialize(sealData, new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
         }
 
         if (!string.IsNullOrWhiteSpace(errorOut) && File.Exists(errorOut))

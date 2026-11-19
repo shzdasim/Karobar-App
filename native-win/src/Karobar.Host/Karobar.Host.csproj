@@ -6,11 +6,15 @@
     <ApplicationIcon>..\..\..\desktop\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows')) or '$(VerifyWindowsDesktopCompile)' == 'true'">
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows'))">
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <DefineConstants>$(DefineConstants);WINDOWS_DESKTOP</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Karobar.Core\Karobar.Core.csproj" />

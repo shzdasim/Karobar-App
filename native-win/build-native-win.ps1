@@ -136,22 +136,46 @@ New-Item -ItemType Directory -Force -Path `
     (Join-Path $StageDir "storage\backups"), `
     (Join-Path $StageDir "storage\logs") | Out-Null
 
-Write-Host "==> [4/6] Verifying Native CLI Pre-Install Machine ID Engine..." -ForegroundColor Cyan
+Write-Host "==> [4/6] Verifying Native CLI Pre-Install Machine ID & License Engine (Isolated {tmp} Simulation)..." -ForegroundColor Cyan
 if ($IsWindows -or $env:OS -eq "Windows_NT") {
-    $TestMidOut = Join-Path $CacheDir "native-machine-id.txt"
-    if (Test-Path $TestMidOut) { Remove-Item -Force $TestMidOut }
-    & $TargetAppExe --cli license:machine-id --out="$TestMidOut"
+    $IsolatedTmp = Join-Path $CacheDir "isolated-tmp-verify"
+    if (Test-Path $IsolatedTmp) { Remove-Item -Recurse -Force $IsolatedTmp }
+    New-Item -ItemType Directory -Force -Path $IsolatedTmp | Out-Null
+
+    $IsolatedExe = Join-Path $IsolatedTmp "Karobar-Native.exe"
+    Copy-Item -Path $TargetAppExe -Destination $IsolatedExe -Force
+
+    $TestMidOut = Join-Path $IsolatedTmp "machine-id.txt"
+    & $IsolatedExe --cli license:machine-id --out="$TestMidOut"
     if ($LASTEXITCODE -ne 0) {
-        throw "Native CLI license:machine-id exited with code $LASTEXITCODE"
+        throw "Isolated Native CLI license:machine-id exited with code $LASTEXITCODE"
     }
     if (-not (Test-Path $TestMidOut)) {
-        throw "Native CLI license:machine-id did not write $TestMidOut"
+        throw "Isolated Native CLI license:machine-id did not write $TestMidOut"
     }
-    $DetectedTestMid = (Get-Content $TestMidOut -Raw).Trim()
+    $MidBytes = [IO.File]::ReadAllBytes($TestMidOut)
+    if ($MidBytes.Length -ge 3 -and $MidBytes[0] -eq 0xEF -and $MidBytes[1] -eq 0xBB -and $MidBytes[2] -eq 0xBF) {
+        throw "machine-id.txt contains a UTF-8 BOM which breaks Inno Setup LoadStringFromFile!"
+    }
+    $DetectedTestMid = [Text.Encoding]::ASCII.GetString($MidBytes).Trim()
     if (-not ($DetectedTestMid -match '^KRB-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$')) {
-        throw "Invalid Machine ID format returned by native CLI: '$DetectedTestMid'"
+        throw "Invalid Machine ID format returned by isolated native CLI: '$DetectedTestMid'"
     }
-    Write-Host "    Verified Native Machine ID: $DetectedTestMid" -ForegroundColor Green
+    Write-Host "    Verified Isolated {tmp} Machine ID (BOM-free): $DetectedTestMid" -ForegroundColor Green
+
+    $BogusKeyFile = Join-Path $IsolatedTmp "input-key.txt"
+    $ErrOutFile   = Join-Path $IsolatedTmp "license-error.txt"
+    $SealOutFile  = Join-Path $IsolatedTmp "install-license.seal"
+    [IO.File]::WriteAllText($BogusKeyFile, "KRBL.invalid.payload", (New-Object Text.UTF8Encoding($false)))
+    & $IsolatedExe --cli license:verify-installer --allow-unbound --key-file="$BogusKeyFile" --seal-out="$SealOutFile" --error-out="$ErrOutFile"
+    if ($LASTEXITCODE -eq 0) {
+        throw "Isolated Native CLI unexpectedly accepted an invalid license key!"
+    }
+    if (-not (Test-Path $ErrOutFile)) {
+        throw "Isolated Native CLI license:verify-installer did not write --error-out!"
+    }
+    Write-Host "    Verified Isolated {tmp} License Verifier error handling: $(Get-Content $ErrOutFile -Raw)" -ForegroundColor Green
+    Remove-Item -Recurse -Force $IsolatedTmp -ErrorAction SilentlyContinue
 }
 
 Write-Host "==> [5/6] Code Signing Executable with Authenticode Certificate (MalikAsimShahzad-CodeSign.pfx)..." -ForegroundColor Cyan

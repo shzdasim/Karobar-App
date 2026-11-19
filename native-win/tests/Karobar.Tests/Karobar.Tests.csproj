@@ -10,7 +10,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows')) or '$(VerifyWindowsDesktopCompile)' == 'true'">
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows'))">
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <DefineConstants>$(DefineConstants);WINDOWS_DESKTOP</DefineConstants>
