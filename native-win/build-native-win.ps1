@@ -146,9 +146,13 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     Copy-Item -Path $TargetAppExe -Destination $IsolatedExe -Force
 
     $TestMidOut = Join-Path $IsolatedTmp "machine-id.txt"
-    & $IsolatedExe --cli license:machine-id --out="$TestMidOut"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Isolated Native CLI license:machine-id exited with code $LASTEXITCODE"
+    $MidProc = Start-Process -FilePath $IsolatedExe `
+        -ArgumentList "--cli", "license:machine-id", "--out=`"$TestMidOut`"" `
+        -WorkingDirectory $IsolatedTmp `
+        -WindowStyle Hidden `
+        -Wait -PassThru
+    if ($MidProc.ExitCode -ne 0) {
+        throw "Isolated Native CLI license:machine-id exited with code $($MidProc.ExitCode)"
     }
     if (-not (Test-Path $TestMidOut)) {
         throw "Isolated Native CLI license:machine-id did not write $TestMidOut"
@@ -167,8 +171,12 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     $ErrOutFile   = Join-Path $IsolatedTmp "license-error.txt"
     $SealOutFile  = Join-Path $IsolatedTmp "install-license.seal"
     [IO.File]::WriteAllText($BogusKeyFile, "KRBL.invalid.payload", (New-Object Text.UTF8Encoding($false)))
-    & $IsolatedExe --cli license:verify-installer --allow-unbound --key-file="$BogusKeyFile" --seal-out="$SealOutFile" --error-out="$ErrOutFile"
-    if ($LASTEXITCODE -eq 0) {
+    $VerifyProc = Start-Process -FilePath $IsolatedExe `
+        -ArgumentList "--cli", "license:verify-installer", "--allow-unbound", "--key-file=`"$BogusKeyFile`"", "--seal-out=`"$SealOutFile`"", "--error-out=`"$ErrOutFile`"" `
+        -WorkingDirectory $IsolatedTmp `
+        -WindowStyle Hidden `
+        -Wait -PassThru
+    if ($VerifyProc.ExitCode -eq 0) {
         throw "Isolated Native CLI unexpectedly accepted an invalid license key!"
     }
     if (-not (Test-Path $ErrOutFile)) {
