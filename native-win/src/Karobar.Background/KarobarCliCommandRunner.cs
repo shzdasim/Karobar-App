@@ -11,10 +11,13 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Karobar.Core;
 using Karobar.Core.Entities;
 using Karobar.Data;
 using Microsoft.EntityFrameworkCore;
-using NSec.Cryptography;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
+using Org.BouncyCastle.Security;
 
 namespace Karobar.Background;
 
@@ -62,7 +65,7 @@ public sealed class KarobarCliCommandRunner
         "demands:notify"
     ];
 
-    public const string MasterPublicKeyB64u = "37988jJ_nO4pW_5Q3u5p7xH0v_2W8k1L9m3N6b4V2c8";
+    public const string MasterPublicKeyB64u = HardwareMachineIdProvider.MasterPublicKeyB64u;
 
     public static readonly IReadOnlyDictionary<string, Dictionary<string, object>> LicenseTiers = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase)
     {
@@ -122,6 +125,173 @@ public sealed class KarobarCliCommandRunner
             dir = Path.GetDirectoryName(dir) ?? "";
         }
         return Directory.GetCurrentDirectory();
+    }
+
+    /// <summary>
+    /// Entrypoint called directly by CommandLineRouter for headless `--cli &lt;command&gt; [args...]` execution.
+    /// Parses CLI options, handles DB-free pre-install commands in &lt;50ms, and bootstraps SQLite for DB commands.
+    /// </summary>
+    public async Task<int> RunAsync(string[] cliArgs, CancellationToken cancellationToken = default)
+    {
+        if (cliArgs == null || cliArgs.Length == 0 || string.IsNullOrWhiteSpace(cliArgs[0]))
+        {
+            Console.WriteLine("Karobar-App Native CLI Runner");
+            return 0;
+        }
+
+        var commandName = cliArgs[0].Trim().ToLowerInvariant();
+        var parsedArgs = ParseCliArguments(cliArgs.Skip(1).ToArray());
+
+        CliCommandResult result;
+        switch (commandName)
+        {
+            case "license:machine-id":
+                result = ExecuteLicenseMachineId(parsedArgs);
+                break;
+
+            case "license:verify-installer":
+                result = ExecuteLicenseVerifyInstaller(parsedArgs);
+                break;
+
+            case "license:issue":
+                result = ExecuteLicenseIssue(parsedArgs);
+                break;
+
+            case "apply-patch":
+            case "karobar:apply-patch":
+                result = await ExecuteApplyPatchAsync(parsedArgs, cancellationToken);
+                break;
+
+            case "export-sqlite":
+            case "karobar:export-sqlite":
+                result = await ExecuteExportSqliteAsync(parsedArgs, cancellationToken);
+                break;
+
+            default:
+            {
+                // For `install`, handle optional pre-migration SQLite database copy BEFORE EF opens the file
+                var importedExistingDb = false;
+                if (commandName is "install" or "karobar:install")
+                {
+                    importedExistingDb = PreparePreInstallSqliteImport(parsedArgs);
+                    if (importedExistingDb)
+                    {
+                        parsedArgs["_imported_existing_db"] = "1";
+                    }
+                }
+
+                var dbPath = Path.Combine(_appRoot, "database", "database.sqlite");
+                var factory = new DbConnectionFactory(explicitSqlitePath: dbPath);
+                var bootstrapper = new DatabaseBootstrapper(factory);
+                await bootstrapper.EnsureSchemaReadyAsync(cancellationToken);
+
+                await using var db = DatabaseBootstrapper.CreateDbContext(dbPath);
+                result = await RunCommandAsync(db, commandName, parsedArgs, cancellationToken);
+                break;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            if (result.ExitCode == 0)
+            {
+                Console.WriteLine(result.Output);
+            }
+            else
+            {
+                Console.Error.WriteLine(result.Output);
+            }
+        }
+
+        return result.ExitCode;
+    }
+
+    public static Dictionary<string, string?> ParseCliArguments(string[] rawArgs)
+    {
+        var dict = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < rawArgs.Length; i++)
+        {
+            var token = rawArgs[i]?.Trim() ?? "";
+            if (string.IsNullOrEmpty(token)) continue;
+
+            if (token.StartsWith("--", StringComparison.Ordinal))
+            {
+                var body = token[2..];
+                var eqIdx = body.IndexOf('=');
+                if (eqIdx > 0)
+                {
+                    var key = body[..eqIdx].Trim();
+                    var val = body[(eqIdx + 1)..].Trim().Trim('"');
+                    dict[key] = val;
+                }
+                else
+                {
+                    var key = body.Trim();
+                    if (i + 1 < rawArgs.Length && !rawArgs[i + 1].StartsWith("-", StringComparison.Ordinal))
+                    {
+                        dict[key] = rawArgs[++i].Trim().Trim('"');
+                    }
+                    else
+                    {
+                        dict[key] = "true";
+                    }
+                }
+            }
+        }
+        return dict;
+    }
+
+    private bool PreparePreInstallSqliteImport(IDictionary<string, string?> args)
+    {
+        var isUpgradeOnly = IsTruthyArg(args, "upgrade-only");
+        var importPath = args.TryGetValue("import-sqlite", out var imp) ? (imp ?? "").Trim() : "";
+
+        if (args.TryGetValue("admin-config", out var adminCfgPath) && !string.IsNullOrWhiteSpace(adminCfgPath) && File.Exists(adminCfgPath))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(adminCfgPath, Encoding.UTF8));
+                if (doc.RootElement.TryGetProperty("upgrade_only", out var uo) && uo.ValueKind == JsonValueKind.True)
+                {
+                    isUpgradeOnly = true;
+                }
+                if (!isUpgradeOnly && string.IsNullOrWhiteSpace(importPath) &&
+                    doc.RootElement.TryGetProperty("import_sqlite", out var impProp) &&
+                    impProp.ValueKind == JsonValueKind.String)
+                {
+                    importPath = (impProp.GetString() ?? "").Trim();
+                }
+            }
+            catch
+            {
+                // Ignore malformed admin-config here; handled later
+            }
+        }
+
+        if (isUpgradeOnly || string.IsNullOrWhiteSpace(importPath) || !File.Exists(importPath))
+        {
+            return false;
+        }
+
+        var destDb = Path.Combine(_appRoot, "database", "database.sqlite");
+        var destDir = Path.GetDirectoryName(destDb);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+
+        if (!string.Equals(Path.GetFullPath(importPath), Path.GetFullPath(destDb), StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(importPath, destDb, overwrite: true);
+            try { if (File.Exists(destDb + "-wal")) File.Delete(destDb + "-wal"); } catch { }
+            try { if (File.Exists(destDb + "-shm")) File.Delete(destDb + "-shm"); } catch { }
+        }
+
+        return true;
+    }
+
+    private static bool IsTruthyArg(IDictionary<string, string?> args, string key)
+    {
+        return args.TryGetValue(key, out var val) &&
+               !string.IsNullOrWhiteSpace(val) &&
+               val.Trim().ToLowerInvariant() is "1" or "true" or "yes";
     }
 
     public async Task<CliCommandResult> RunCommandAsync(
@@ -410,17 +580,95 @@ public sealed class KarobarCliCommandRunner
 
     /// <summary>
     /// 5. `karobar:install` (`KarobarInstallCommand.php`)
+    /// Full Inno Setup post-install / upgrade bootstrapper: reads --admin-config, --seal-file / --license-key,
+    /// creates Admin account + Admin role binding, activates &amp; seals hardware-bound/unbound license in `licenses`,
+    /// seeds default ThemeSetting &amp; Setting legal timestamps, and cleans up temporary files.
     /// </summary>
     public async Task<CliCommandResult> ExecuteInstallAsync(
         KarobarDbContext db,
         IDictionary<string, string?> args,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        byte[]? testPublicKeyOverride = null)
     {
-        var isUpgradeOnly = args.TryGetValue("upgrade-only", out var uo) && uo is "1" or "true" or "yes";
+        var isUpgradeOnly = IsTruthyArg(args, "upgrade-only");
+        var importedExistingDb = IsTruthyArg(args, "_imported_existing_db");
         var machineId = ComputeMachineId();
 
+        var adminEmail = args.TryGetValue("admin-email", out var ae) && !string.IsNullOrWhiteSpace(ae) ? ae.Trim() : "admin@karobar.local";
+        var adminName = args.TryGetValue("admin-name", out var an) && !string.IsNullOrWhiteSpace(an) ? an.Trim() : "Store Administrator";
+        var adminPassword = args.TryGetValue("admin-password", out var ap) && !string.IsNullOrWhiteSpace(ap) ? ap : "password";
+
+        // 1. Read --admin-config JSON written by Inno Setup wizard
+        if (args.TryGetValue("admin-config", out var adminCfgPath) && !string.IsNullOrWhiteSpace(adminCfgPath) && File.Exists(adminCfgPath))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(adminCfgPath, Encoding.UTF8));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("upgrade_only", out var uo) && uo.ValueKind == JsonValueKind.True)
+                {
+                    isUpgradeOnly = true;
+                }
+                if (root.TryGetProperty("name", out var nProp) && nProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(nProp.GetString()))
+                {
+                    adminName = nProp.GetString()!.Trim();
+                }
+                if (root.TryGetProperty("email", out var eProp) && eProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(eProp.GetString()))
+                {
+                    adminEmail = eProp.GetString()!.Trim();
+                }
+                if (root.TryGetProperty("password", out var pProp) && pProp.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(pProp.GetString()))
+                {
+                    adminPassword = pProp.GetString()!;
+                }
+            }
+            catch
+            {
+                // Keep defaults / explicit args
+            }
+        }
+
+        adminEmail = adminEmail.Trim().ToLowerInvariant();
+
+        // 2. If an existing Herd/Karobar SQLite DB was imported, clear ONLY users & licenses while preserving all store data
+        if (importedExistingDb && !isUpgradeOnly)
+        {
+            db.Licenses.RemoveRange(await db.Licenses.ToListAsync(cancellationToken));
+            db.PersonalAccessTokens.RemoveRange(await db.PersonalAccessTokens.ToListAsync(cancellationToken));
+            db.ModelHasRoles.RemoveRange(await db.ModelHasRoles.ToListAsync(cancellationToken));
+            db.Users.RemoveRange(await db.Users.ToListAsync(cancellationToken));
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // 3. Seed essential Admin role & default ThemeSetting
+        var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin", cancellationToken);
+        if (adminRole == null)
+        {
+            adminRole = new Role { Name = "Admin", GuardName = "sanctum", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            db.Roles.Add(adminRole);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        if (!await db.ThemeSettings.AnyAsync(cancellationToken))
+        {
+            db.ThemeSettings.Add(new ThemeSetting
+            {
+                Name = "Default Theme",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // 4. Zero-data-loss upgrade path: preserve existing users, license, and settings untouched
         if (isUpgradeOnly && await db.Users.AnyAsync(cancellationToken))
         {
+            if (IsTruthyArg(args, "cleanup-temp"))
+            {
+                CleanupInstallerTempFiles(args);
+            }
+
             var firstAdmin = await db.Users.OrderBy(u => u.Id).FirstOrDefaultAsync(cancellationToken);
             var existingSetting = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(cancellationToken);
             var upgData = new Dictionary<string, object?>
@@ -430,6 +678,7 @@ public sealed class KarobarCliCommandRunner
                 ["admin_email"] = firstAdmin?.Email,
                 ["admin_name"] = firstAdmin?.Name,
                 ["machine_id"] = machineId,
+                ["licensed"] = await db.Licenses.AnyAsync(cancellationToken),
                 ["store_name"] = existingSetting?.StoreName,
                 ["is_setup_completed"] = existingSetting?.IsSetupCompleted ?? true
             };
@@ -441,38 +690,142 @@ public sealed class KarobarCliCommandRunner
             };
         }
 
-        var adminEmail = (args.TryGetValue("admin-email", out var ae) && !string.IsNullOrWhiteSpace(ae) ? ae : "admin@example.com").Trim().ToLowerInvariant();
-        var adminName = (args.TryGetValue("admin-name", out var an) && !string.IsNullOrWhiteSpace(an) ? an : "Store Administrator").Trim();
-        var adminPassword = args.TryGetValue("admin-password", out var ap) && !string.IsNullOrWhiteSpace(ap) ? ap : "password";
-
-        var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin", cancellationToken);
-        if (adminRole == null)
+        // 5. Create or update initial Administrator user with Laravel-compatible $2y$ bcrypt hash
+        var bcryptHash = BCrypt.Net.BCrypt.HashPassword(adminPassword, 10);
+        if (bcryptHash.StartsWith("$2a$", StringComparison.Ordinal) || bcryptHash.StartsWith("$2b$", StringComparison.Ordinal))
         {
-            adminRole = new Role { Name = "Admin", GuardName = "sanctum" };
-            db.Roles.Add(adminRole);
-            await db.SaveChangesAsync(cancellationToken);
+            bcryptHash = "$2y$" + bcryptHash[4..];
         }
 
-        var adminUser = await db.Users.FirstOrDefaultAsync(u => u.Email == adminEmail, cancellationToken);
+        var adminUser = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail, cancellationToken);
         if (adminUser == null)
         {
             adminUser = new User
             {
                 Name = adminName,
                 Email = adminEmail,
-                Password = BCrypt.Net.BCrypt.HashPassword(adminPassword),
-                Status = "active"
+                Password = bcryptHash,
+                Status = "active",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             };
             db.Users.Add(adminUser);
         }
         else
         {
             adminUser.Name = adminName;
-            adminUser.Password = BCrypt.Net.BCrypt.HashPassword(adminPassword);
+            adminUser.Password = bcryptHash;
             adminUser.Status = "active";
+            adminUser.UpdatedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync(cancellationToken);
 
+        // Assign Admin role in Spatie `model_has_roles` table
+        const string userModelType = @"App\Models\User";
+        var hasAdminRole = await db.ModelHasRoles.AnyAsync(
+            m => m.RoleId == adminRole.Id && m.ModelId == adminUser.Id && m.ModelType == userModelType,
+            cancellationToken);
+        if (!hasAdminRole)
+        {
+            db.ModelHasRoles.Add(new ModelHasRole
+            {
+                RoleId = adminRole.Id,
+                ModelType = userModelType,
+                ModelId = adminUser.Id
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // 6. Activate & cryptographically seal the license key from --seal-file or --license-key
+        var licenseKey = args.TryGetValue("license-key", out var lk) ? (lk ?? "").Trim() : "";
+        if (string.IsNullOrWhiteSpace(licenseKey) &&
+            args.TryGetValue("seal-file", out var sealFilePath) &&
+            !string.IsNullOrWhiteSpace(sealFilePath) &&
+            File.Exists(sealFilePath))
+        {
+            try
+            {
+                using var sealDoc = JsonDocument.Parse(File.ReadAllText(sealFilePath, Encoding.UTF8));
+                if (sealDoc.RootElement.TryGetProperty("license_key", out var lkProp) && lkProp.ValueKind == JsonValueKind.String)
+                {
+                    licenseKey = (lkProp.GetString() ?? "").Trim();
+                }
+            }
+            catch
+            {
+                // Handled below
+            }
+        }
+
+        Dictionary<string, object?>? activatedPayload = null;
+        if (!string.IsNullOrWhiteSpace(licenseKey))
+        {
+            var verifyArgs = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["key"] = licenseKey,
+                ["allow-unbound"] = IsTruthyArg(args, "require-machine-binding") ? "false" : "true"
+            };
+            var verifyRes = ExecuteLicenseVerifyInstaller(verifyArgs, testPublicKeyOverride);
+            if (!verifyRes.Ok || verifyRes.Data.GetValueOrDefault("payload") is not Dictionary<string, object?> verifiedPayload)
+            {
+                return new CliCommandResult
+                {
+                    ExitCode = 1,
+                    Output = $"License activation failed during installation: {verifyRes.Output}",
+                    Data = new Dictionary<string, object?> { ["ok"] = false, ["error"] = verifyRes.Output }
+                };
+            }
+
+            var canonicalKey = HardwareMachineIdProvider.NormalizeLicenseKey(licenseKey, withPrefix: true);
+            var activatedTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var activatedDt = DateTimeOffset.FromUnixTimeSeconds(activatedTs).UtcDateTime;
+            var rowSeal = HardwareMachineIdProvider.ComputeRowSeal(canonicalKey, machineId, activatedTs);
+
+            var storedPayload = new Dictionary<string, object?>(verifiedPayload, StringComparer.OrdinalIgnoreCase)
+            {
+                ["_seal"] = rowSeal
+            };
+
+            DateTime? expiresAt = null;
+            if (TryGetLongFromDict(verifiedPayload, "exp", out var expTs) && expTs > 0)
+            {
+                expiresAt = DateTimeOffset.FromUnixTimeSeconds(expTs).UtcDateTime;
+            }
+
+            db.Licenses.RemoveRange(await db.Licenses.ToListAsync(cancellationToken));
+            db.Licenses.Add(new License
+            {
+                LicenseKey = canonicalKey,
+                Payload = JsonSerializer.Serialize(storedPayload),
+                Valid = true,
+                Reason = null,
+                MachineHash = machineId,
+                ActivatedAt = activatedDt,
+                ExpiresAt = expiresAt,
+                LastVerifiedAt = activatedDt,
+                CreatedAt = activatedDt,
+                UpdatedAt = activatedDt
+            });
+            await db.SaveChangesAsync(cancellationToken);
+
+            // Seal monotonic clock file in storage/app/.license-clock
+            try
+            {
+                var clockPath = Path.Combine(_appRoot, "storage", "app", ".license-clock");
+                var clockDir = Path.GetDirectoryName(clockPath);
+                if (!string.IsNullOrEmpty(clockDir)) Directory.CreateDirectory(clockDir);
+                var clockSig = HardwareMachineIdProvider.ComputeHmacHex(activatedTs.ToString(CultureInfo.InvariantCulture), "KAROBAR-CLOCK-SEAL-V2:" + HardwareMachineIdProvider.MasterPublicKeyB64u);
+                File.WriteAllText(clockPath, JsonSerializer.Serialize(new { ts = activatedTs, sig = clockSig }));
+            }
+            catch
+            {
+                // Ignore non-critical clock file write failure
+            }
+
+            activatedPayload = verifiedPayload;
+        }
+
+        // 7. Initialize Settings row & legal acceptance timestamps
         var setting = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(cancellationToken);
         if (setting == null)
         {
@@ -501,7 +854,35 @@ public sealed class KarobarCliCommandRunner
                 CubeGeminiDailyLimit = 250
             };
             db.Settings.Add(setting);
-            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var licensedStoreName = GetStringFromDict(activatedPayload, "name");
+        if (!string.IsNullOrWhiteSpace(licensedStoreName) &&
+            (string.IsNullOrWhiteSpace(setting.StoreName) || setting.StoreName.Equals("Karobar App", StringComparison.OrdinalIgnoreCase)))
+        {
+            setting.StoreName = licensedStoreName.Trim();
+        }
+
+        if (IsTruthyArg(args, "accept-legal"))
+        {
+            var nowUtc = DateTime.UtcNow;
+            setting.TermsAcceptedAt = nowUtc;
+            setting.PrivacyAcceptedAt = nowUtc;
+            setting.LegalAcceptedVersion = args.TryGetValue("legal-version", out var lv) && !string.IsNullOrWhiteSpace(lv) ? lv.Trim() : "2.0";
+        }
+
+        if (importedExistingDb && await db.Products.AnyAsync(cancellationToken))
+        {
+            setting.IsSetupCompleted = true;
+            setting.SetupCompletedAt ??= DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        // 8. Cleanup temporary installer files
+        if (IsTruthyArg(args, "cleanup-temp"))
+        {
+            CleanupInstallerTempFiles(args);
         }
 
         var resultData = new Dictionary<string, object?>
@@ -511,6 +892,7 @@ public sealed class KarobarCliCommandRunner
             ["admin_name"] = adminUser.Name,
             ["machine_id"] = machineId,
             ["licensed"] = await db.Licenses.AnyAsync(cancellationToken),
+            ["imported_sqlite"] = importedExistingDb,
             ["store_name"] = setting.StoreName,
             ["is_setup_completed"] = setting.IsSetupCompleted
         };
@@ -521,6 +903,17 @@ public sealed class KarobarCliCommandRunner
             Output = JsonSerializer.Serialize(resultData),
             Data = resultData
         };
+    }
+
+    private static void CleanupInstallerTempFiles(IDictionary<string, string?> args)
+    {
+        foreach (var k in new[] { "seal-file", "admin-config" })
+        {
+            if (args.TryGetValue(k, out var path) && !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
     }
 
     /// <summary>
@@ -534,13 +927,12 @@ public sealed class KarobarCliCommandRunner
             return new CliCommandResult { ExitCode = 0, Output = tiersJson };
         }
 
-        var algorithm = SignatureAlgorithm.Ed25519;
-
         if (args.TryGetValue("generate-keypair", out var gk) && gk is "1" or "true" or "yes")
         {
-            using var key = Key.Create(algorithm, new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
-            var pubRaw = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
-            var seedRaw = key.Export(KeyBlobFormat.RawPrivateKey);
+            var privKey = new Ed25519PrivateKeyParameters(new SecureRandom());
+            var pubKey = privKey.GeneratePublicKey();
+            var pubRaw = pubKey.GetEncoded();
+            var seedRaw = privKey.GetEncoded();
             var fullSecret = new byte[64];
             Buffer.BlockCopy(seedRaw, 0, fullSecret, 0, 32);
             Buffer.BlockCopy(pubRaw, 0, fullSecret, 32, 32);
@@ -560,7 +952,7 @@ public sealed class KarobarCliCommandRunner
         }
 
         var machine = (args.TryGetValue("machine", out var m) ? (m ?? "") : "").Trim().ToUpperInvariant();
-        var allowUnbound = args.TryGetValue("allow-unbound", out var au) && au is "1" or "true" or "yes";
+        var allowUnbound = IsTruthyArg(args, "allow-unbound");
         if (string.IsNullOrEmpty(machine) && !allowUnbound)
         {
             return new CliCommandResult
@@ -585,7 +977,7 @@ public sealed class KarobarCliCommandRunner
             seedBytes = SHA256.HashData(Encoding.UTF8.GetBytes("karobar-vendor-default-ed25519-seed"));
         }
 
-        using var signingKey = Key.Import(algorithm, seedBytes, KeyBlobFormat.RawPrivateKey);
+        var signingPrivKey = new Ed25519PrivateKeyParameters(seedBytes, 0);
         var rawTier = (args.TryGetValue("tier", out var t) && !string.IsNullOrWhiteSpace(t) ? t : "platinum").Trim().ToLowerInvariant();
         if (!LicenseTiers.ContainsKey(rawTier)) rawTier = "platinum";
         var tierMeta = LicenseTiers[rawTier];
@@ -622,7 +1014,10 @@ public sealed class KarobarCliCommandRunner
 
         var payloadBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payloadObj));
         var payloadB64u = Base64UrlEncode(payloadBytes);
-        var signatureBytes = algorithm.Sign(signingKey, payloadBytes);
+        var signer = new Ed25519Signer();
+        signer.Init(true, signingPrivKey);
+        signer.BlockUpdate(payloadBytes, 0, payloadBytes.Length);
+        var signatureBytes = signer.GenerateSignature();
         var sigB64u = Base64UrlEncode(signatureBytes);
         var licenseKey = $"KRBL.{sigB64u}.{payloadB64u}";
 
@@ -676,42 +1071,79 @@ public sealed class KarobarCliCommandRunner
 
     /// <summary>
     /// 8. `license:verify-installer` (`LicenseVerifyInstallerCommand.php`)
+    /// Verifies real Ed25519 signature against the pinned Vendor Master Public Key, checks claims/expiry,
+    /// enforces machine binding if the payload specifies a Machine ID, and supports unbound vendor-signed keys
+    /// when --allow-unbound is passed.
     /// </summary>
-    public CliCommandResult ExecuteLicenseVerifyInstaller(IDictionary<string, string?> args)
+    public CliCommandResult ExecuteLicenseVerifyInstaller(
+        IDictionary<string, string?> args,
+        byte[]? testPublicKeyOverride = null)
     {
         var key = args.TryGetValue("key", out var k) ? (k ?? "").Trim() : "";
         if (string.IsNullOrEmpty(key) && args.TryGetValue("key-file", out var kf) && !string.IsNullOrWhiteSpace(kf) && File.Exists(kf))
         {
-            key = File.ReadAllText(kf).Trim();
+            key = File.ReadAllText(kf, Encoding.UTF8).Trim();
         }
 
+        var errorOut = args.TryGetValue("error-out", out var eo) ? (eo ?? "").Trim() : "";
         var machineId = ComputeMachineId();
-        if (string.IsNullOrEmpty(key) || !key.StartsWith("KRBL.", StringComparison.OrdinalIgnoreCase))
+        var allowUnbound = IsTruthyArg(args, "allow-unbound");
+
+        CliCommandResult Fail(string friendlyMessage, string reasonCode)
         {
+            if (!string.IsNullOrWhiteSpace(errorOut))
+            {
+                try
+                {
+                    var dir = Path.GetDirectoryName(errorOut);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                    File.WriteAllText(errorOut, friendlyMessage, Encoding.UTF8);
+                }
+                catch { }
+            }
+
             return new CliCommandResult
             {
                 ExitCode = 1,
-                Output = "Invalid or corrupted license key. Please copy the entire KRBL. license string carefully.",
-                Data = new Dictionary<string, object?> { ["ok"] = false, ["machine_id"] = machineId, ["reason"] = "Malformed license" }
+                Output = friendlyMessage,
+                Data = new Dictionary<string, object?>
+                {
+                    ["ok"] = false,
+                    ["machine_id"] = machineId,
+                    ["reason"] = reasonCode,
+                    ["message"] = friendlyMessage
+                }
             };
         }
 
-        var parts = key.Split('.');
-        if (parts.Length != 3)
+        if (string.IsNullOrWhiteSpace(key))
         {
-            return new CliCommandResult
-            {
-                ExitCode = 1,
-                Output = "Invalid or corrupted license key.",
-                Data = new Dictionary<string, object?> { ["ok"] = false, ["machine_id"] = machineId }
-            };
+            return Fail("Please enter a valid Karobar license key.", "Empty key");
+        }
+
+        var normalized = HardwareMachineIdProvider.NormalizeLicenseKey(key, withPrefix: false);
+        if (string.IsNullOrEmpty(normalized) || !normalized.Contains('.'))
+        {
+            return Fail("Invalid or corrupted license key. Please copy the entire KRBL. license string carefully.", "Malformed license");
+        }
+
+        var parts = normalized.Split('.', 3);
+        if (parts.Length != 2)
+        {
+            return Fail("Invalid or corrupted license key format.", "Malformed license");
+        }
+
+        var sigBytes = HardwareMachineIdProvider.B64uDecode(parts[0]);
+        var payloadBytes = HardwareMachineIdProvider.B64uDecode(parts[1]);
+        if (sigBytes.Length != 64 || payloadBytes.Length == 0)
+        {
+            return Fail("Invalid cryptographic signature or payload encoding.", "Malformed license");
         }
 
         Dictionary<string, object?>? payload;
         try
         {
-            var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[2]));
-            payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(payloadJson);
+            payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(Encoding.UTF8.GetString(payloadBytes));
         }
         catch
         {
@@ -720,22 +1152,74 @@ public sealed class KarobarCliCommandRunner
 
         if (payload == null)
         {
-            return new CliCommandResult
-            {
-                ExitCode = 1,
-                Output = "Invalid JSON payload in license key.",
-                Data = new Dictionary<string, object?> { ["ok"] = false, ["machine_id"] = machineId }
-            };
+            return Fail("Invalid JSON payload in license key.", "Invalid JSON payload");
         }
 
-        var verifiedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var sealBytes = HMACSHA256.HashData(Encoding.UTF8.GetBytes("karobar-installer-seal"), Encoding.UTF8.GetBytes($"{key}|{machineId}|{verifiedAt}"));
-        var sealSig = Convert.ToHexStringLower(sealBytes);
+        // Verify real Ed25519 signature against the pinned Vendor Master Public Key
+        bool signatureValid;
+        try
+        {
+            var pubKeyBytes = testPublicKeyOverride ?? HardwareMachineIdProvider.GetMasterPublicKeyBytes();
+            var pubKeyParam = new Ed25519PublicKeyParameters(pubKeyBytes, 0);
+            var verifier = new Ed25519Signer();
+            verifier.Init(false, pubKeyParam);
+            verifier.BlockUpdate(payloadBytes, 0, payloadBytes.Length);
+            signatureValid = verifier.VerifySignature(sigBytes);
+        }
+        catch
+        {
+            signatureValid = false;
+        }
+
+        if (!signatureValid)
+        {
+            return Fail("License signature verification failed. This license key is invalid or has been altered.", "Bad signature");
+        }
+
+        var iss = GetStringFromDict(payload, "iss");
+        if (!string.IsNullOrEmpty(iss) && iss is not ("Karobar" or "KarobarApp" or "YourCompany"))
+        {
+            return Fail("Invalid license issuer.", "Invalid license issuer");
+        }
+
+        var sub = GetStringFromDict(payload, "sub");
+        if (!string.IsNullOrEmpty(sub) && sub is not ("KarobarApp" or "karobar-pos" or "YourApp"))
+        {
+            return Fail("Invalid license product.", "Invalid license product");
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (TryGetLongFromDict(payload, "nbf", out var nbf) && (now + HardwareMachineIdProvider.ClockSkewToleranceSeconds) < nbf)
+        {
+            return Fail("This license key is not yet valid (check your system date and time).", "Not yet valid");
+        }
+
+        if (TryGetLongFromDict(payload, "exp", out var exp) && exp > 0 && now > exp)
+        {
+            return Fail("This license key has expired. Please contact support for a renewal key.", "Expired");
+        }
+
+        var payloadMachine = GetStringFromDict(payload, "machine");
+        if (string.IsNullOrWhiteSpace(payloadMachine))
+        {
+            if (!allowUnbound)
+            {
+                return Fail($"This license key is not bound to a Machine ID. Please request a machine-bound license key for Machine ID: {machineId}", "Unbound key");
+            }
+        }
+        else if (!string.Equals(payloadMachine.Trim(), machineId.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return Fail($"This license key is bound to another computer ({payloadMachine}) and cannot be used on this machine (Your Machine ID: {machineId}).", "Wrong machine");
+        }
+
+        var canonicalKey = HardwareMachineIdProvider.NormalizeLicenseKey(key, withPrefix: true);
+        var verifiedAt = now;
+        var sealSig = HardwareMachineIdProvider.ComputeRowSeal(canonicalKey, machineId, verifiedAt);
 
         var sealData = new Dictionary<string, object?>
         {
             ["ok"] = true,
-            ["license_key"] = key,
+            ["license_key"] = canonicalKey,
             ["machine_id"] = machineId,
             ["verified_at"] = verifiedAt,
             ["seal"] = sealSig,
@@ -746,7 +1230,12 @@ public sealed class KarobarCliCommandRunner
         {
             var dir = Path.GetDirectoryName(sealOut);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(sealOut, JsonSerializer.Serialize(sealData, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(sealOut, JsonSerializer.Serialize(sealData, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorOut) && File.Exists(errorOut))
+        {
+            try { File.Delete(errorOut); } catch { }
         }
 
         return new CliCommandResult
@@ -755,6 +1244,31 @@ public sealed class KarobarCliCommandRunner
             Output = JsonSerializer.Serialize(sealData),
             Data = sealData
         };
+    }
+
+    private static string? GetStringFromDict(IDictionary<string, object?>? dict, string key)
+    {
+        if (dict == null || !dict.TryGetValue(key, out var val) || val == null) return null;
+        if (val is JsonElement je)
+        {
+            return je.ValueKind == JsonValueKind.String ? je.GetString() : (je.ValueKind == JsonValueKind.Null ? null : je.GetRawText());
+        }
+        return val.ToString();
+    }
+
+    private static bool TryGetLongFromDict(IDictionary<string, object?>? dict, string key, out long result)
+    {
+        result = 0;
+        if (dict == null || !dict.TryGetValue(key, out var val) || val == null) return false;
+        if (val is long l) { result = l; return true; }
+        if (val is int i) { result = i; return true; }
+        if (val is JsonElement je)
+        {
+            if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out result)) return true;
+            if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out result)) return true;
+            return false;
+        }
+        return long.TryParse(val.ToString(), out result);
     }
 
     /// <summary>
@@ -1000,25 +1514,16 @@ public sealed class KarobarCliCommandRunner
 
     public static string ComputeMachineId()
     {
-        var rawIdentity = $"{Environment.MachineName}|{Environment.OSVersion}|{Environment.ProcessorCount}|KarobarNativeV2";
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(rawIdentity));
-        var hex = Convert.ToHexString(hash);
-        return $"KRB-{hex[..4]}-{hex[4..8]}-{hex[8..12]}-{hex[12..16]}";
+        return HardwareMachineIdProvider.ComputeDeterministicMachineId();
     }
 
     public static string Base64UrlEncode(byte[] input)
     {
-        return Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return HardwareMachineIdProvider.B64uEncode(input);
     }
 
     public static byte[] Base64UrlDecode(string input)
     {
-        var padded = input.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
+        return HardwareMachineIdProvider.B64uDecode(input);
     }
 }

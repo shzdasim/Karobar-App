@@ -139,6 +139,13 @@ public sealed class NetworkConfigManager
             candidates.Add(envRoot);
         }
 
+        var procDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (!string.IsNullOrWhiteSpace(procDir))
+        {
+            candidates.Add(procDir);
+            candidates.Add(Path.GetFullPath(Path.Combine(procDir, "app")));
+        }
+
         var exeDir = AppContext.BaseDirectory;
         if (!string.IsNullOrWhiteSpace(exeDir))
         {

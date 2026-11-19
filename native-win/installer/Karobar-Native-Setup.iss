@@ -120,9 +120,9 @@ Filename: "{sys}\certutil.exe"; \
 ; - In fresh/import mode: initializes SQLite DB, creates Admin account, seals hardware-bound license.
 ; - Skipped in Multi-PC POS Terminal Mode (which connects directly to the Store Server over LAN).
 Filename: "{app}\{#MyAppExeName}"; \
-  Parameters: "--cli install --seal-file=""{tmp}\install-license.seal"" --admin-config=""{tmp}\admin-init.json"" --accept-legal --cleanup-temp"; \
+  Parameters: "--cli install --seal-file=""{tmp}\install-license.seal"" --admin-config=""{tmp}\admin-init.json"" --allow-unbound --accept-legal --cleanup-temp"; \
   WorkingDir: "{app}"; \
-  StatusMsg: "Updating Karobar-App native database schema and runtime configuration..."; \
+  StatusMsg: "Updating Karobar-App Native database schema and runtime configuration..."; \
   Flags: runhidden waituntilterminated; \
   Check: not IsTerminalModeSelected
 
@@ -730,7 +730,7 @@ begin
 
     if not Exec(
       ExpandConstant('{tmp}\{#MyAppExeName}'),
-      '--cli license:verify-installer --key-file="' + ExpandConstant('{tmp}\input-key.txt') + '" --seal-out="' + ExpandConstant('{tmp}\install-license.seal') + '" --error-out="' + ExpandConstant('{tmp}\license-error.txt') + '"',
+      '--cli license:verify-installer --allow-unbound --key-file="' + ExpandConstant('{tmp}\input-key.txt') + '" --seal-out="' + ExpandConstant('{tmp}\install-license.seal') + '" --error-out="' + ExpandConstant('{tmp}\license-error.txt') + '"',
       ExpandConstant('{tmp}'),
       SW_HIDE,
       ewWaitUntilTerminated,

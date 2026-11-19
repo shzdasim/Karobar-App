@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Karobar.Core;
 using Karobar.Services.Infrastructure;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -274,69 +275,7 @@ public class LicenseService
 
     protected string ProbeHardwareBasis()
     {
-        var osFamily = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows"
-            : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Darwin" : "Linux";
-        var hwToken = "";
-
-        try
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                var outStr = RunProcessCapture("ioreg", "-rd1 -c IOPlatformExpertDevice");
-                if (!string.IsNullOrEmpty(outStr))
-                {
-                    var m1 = Regex.Match(outStr, "\"IOPlatformUUID\"\\s*=\\s*\"([^\"]+)\"");
-                    var m2 = Regex.Match(outStr, "\"IOPlatformSerialNumber\"\\s*=\\s*\"([^\"]+)\"");
-                    var uuid = m1.Success ? m1.Groups[1].Value.Trim() : "";
-                    var serial = m2.Success ? m2.Groups[1].Value.Trim() : "";
-                    if (!string.IsNullOrEmpty(uuid) || !string.IsNullOrEmpty(serial))
-                    {
-                        hwToken = $"darwin:{uuid}:{serial}";
-                    }
-                }
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                var winParts = new List<string>();
-                var out1 = RunProcessCapture("reg", "query \"HKLM\\SOFTWARE\\Microsoft\\Cryptography\" /v MachineGuid /reg:64");
-                var m1 = Regex.Match(out1 ?? "", @"MachineGuid\s+REG_SZ\s+([^\r\n]+)", RegexOptions.IgnoreCase);
-                if (m1.Success) winParts.Add(m1.Groups[1].Value.Trim());
-
-                var out2 = RunProcessCapture("reg", "query \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\SystemInformation\" /v ComputerHardwareId /reg:64");
-                var m2 = Regex.Match(out2 ?? "", @"ComputerHardwareId\s+REG_SZ\s+([^\r\n]+)", RegexOptions.IgnoreCase);
-                if (m2.Success) winParts.Add(m2.Groups[1].Value.Trim());
-
-                if (winParts.Count > 0)
-                {
-                    hwToken = "win:" + string.Join(":", winParts);
-                }
-            }
-            else
-            {
-                foreach (var f in new[] { "/etc/host-machine-id", "/etc/machine-id", "/var/lib/dbus/machine-id" })
-                {
-                    if (File.Exists(f))
-                    {
-                        var val = File.ReadAllText(f).Trim();
-                        if (!string.IsNullOrEmpty(val))
-                        {
-                            hwToken += $"linux:{val}|";
-                            if (f == "/etc/host-machine-id") break;
-                        }
-                    }
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        if (string.IsNullOrEmpty(hwToken))
-        {
-            hwToken = $"fallback:{Environment.MachineName}";
-        }
-
-        return $"{osFamily}|{RuntimeInformation.ProcessArchitecture}|{hwToken}";
+        return HardwareMachineIdProvider.ProbeHardwareBasis();
     }
 
     private static string? RunProcessCapture(string fileName, string arguments)
@@ -989,10 +928,6 @@ public class LicenseService
 
     private static long ParseTimestampSeconds(object? val)
     {
-        if (val == null) return 0;
-        if (val is long l) return l;
-        if (val is DateTime dt) return new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)).ToUnixTimeSeconds();
-        if (DateTimeOffset.TryParse(val.ToString(), out var dto)) return dto.ToUnixTimeSeconds();
-        return 0;
+        return HardwareMachineIdProvider.ParseUtcTimestampSeconds(val);
     }
 }

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Karobar.Background;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -100,24 +101,11 @@ public static class CommandLineRouter
 
         var networkConfig = new NetworkConfigManager(appRoot);
         Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", networkConfig.AppRoot);
+        Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", networkConfig.AppRoot);
 
-        var services = new ServiceCollection();
-        var config = new ConfigurationBuilder().Build();
-        services.AddSingleton<IConfiguration>(config);
-        services.AddSingleton(networkConfig);
-
-        var assemblies = KestrelHostServer.LoadKarobarAssemblies();
-        KestrelHostServer.RegisterKarobarAssemblyServices(services, config, assemblies);
-
-        await using var provider = services.BuildServiceProvider();
-        var dispatched = await TryExecuteInProcessCliAsync(provider, cliArgs, cancellationToken);
-        if (dispatched.Handled)
-        {
-            return dispatched.ExitCode;
-        }
-
-        Console.Error.WriteLine($"Unknown CLI command: {cliArgs[0]}");
-        return 1;
+        // Directly invoke KarobarCliCommandRunner.RunAsync (works in single-file publish and pre-install {tmp})
+        var runner = new KarobarCliCommandRunner(networkConfig.AppRoot);
+        return await runner.RunAsync(cliArgs, cancellationToken);
     }
 
     public static async Task<(bool Handled, int ExitCode)> TryExecuteInProcessCliAsync(

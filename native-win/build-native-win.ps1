@@ -141,10 +141,17 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     $TestMidOut = Join-Path $CacheDir "native-machine-id.txt"
     if (Test-Path $TestMidOut) { Remove-Item -Force $TestMidOut }
     & $TargetAppExe --cli license:machine-id --out="$TestMidOut"
-    if (Test-Path $TestMidOut) {
-        $DetectedTestMid = (Get-Content $TestMidOut -Raw).Trim()
-        Write-Host "    Verified Native Machine ID: $DetectedTestMid" -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native CLI license:machine-id exited with code $LASTEXITCODE"
     }
+    if (-not (Test-Path $TestMidOut)) {
+        throw "Native CLI license:machine-id did not write $TestMidOut"
+    }
+    $DetectedTestMid = (Get-Content $TestMidOut -Raw).Trim()
+    if (-not ($DetectedTestMid -match '^KRB-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$')) {
+        throw "Invalid Machine ID format returned by native CLI: '$DetectedTestMid'"
+    }
+    Write-Host "    Verified Native Machine ID: $DetectedTestMid" -ForegroundColor Green
 }
 
 Write-Host "==> [5/6] Code Signing Executable with Authenticode Certificate (MalikAsimShahzad-CodeSign.pfx)..." -ForegroundColor Cyan

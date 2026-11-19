@@ -811,6 +811,18 @@ public sealed class KestrelHostServer : IAsyncDisposable
         }
 
         _app = BuildWebApplication(explicitPort);
+        try
+        {
+            var bootstrapper = _app.Services.GetService<Karobar.Data.DatabaseBootstrapper>();
+            if (bootstrapper != null)
+            {
+                await bootstrapper.EnsureSchemaReadyAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            // Non-fatal if DB already initialized or running in terminal mode
+        }
         await _app.StartAsync(cancellationToken);
         await WaitForServerReadyAsync($"http://127.0.0.1:{ActivePort}/up", 15000, cancellationToken);
     }
@@ -879,7 +891,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             "Karobar.Host"
         };
 
-        var loaded = new List<Assembly>();
+        var loaded = new List<Assembly> { typeof(KestrelHostServer).Assembly };
         foreach (var name in names)
         {
             try

@@ -240,28 +240,130 @@ public class Phase11And12PrintingAndBackgroundTests
         detection.WaseelaTableMappings["tblBatch"].Should().Be("batches");
         detection.WaseelaTableMappings["tblKhata"].Should().Be("customer_ledgers");
 
-        // 4. Verify CLI license:machine-id & license:issue & license:verify-installer roundtrip
+        // 4. Verify CLI license:machine-id, license:issue, license:verify-installer (bound + unbound + wrong machine) & full installer bootstrap
         var cliRunner = new KarobarCliCommandRunner();
         var machineRes = cliRunner.ExecuteLicenseMachineId(new Dictionary<string, string?>());
         machineRes.Ok.Should().BeTrue();
         var machineId = machineRes.Output.Trim();
-        machineId.Should().StartWith("KRB-");
+        machineId.Should().MatchRegex("^KRB-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$");
 
-        var issueRes = cliRunner.ExecuteLicenseIssue(new Dictionary<string, string?>
+        // Verify CommandLineRouter headless `--cli license:machine-id --out=...` works end-to-end (exact Inno Setup call)
+        var tempCliDir = Path.Combine(Path.GetTempPath(), $"karobar_qa_cli_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempCliDir);
+        try
         {
-            ["machine"] = machineId,
-            ["tier"] = "platinum",
-            ["days"] = "365"
-        });
-        issueRes.Ok.Should().BeTrue();
-        var issuedKey = issueRes.Data["license_key"]?.ToString();
-        issuedKey.Should().NotBeNullOrEmpty().And.StartWith("KRBL.");
+            var midOutPath = Path.Combine(tempCliDir, "machine-id.txt");
+            var exitCode = await Karobar.Host.CommandLineRouter.ExecuteHeadlessCliAsync(
+                ["license:machine-id", $"--out={midOutPath}"],
+                appRoot: tempCliDir);
+            exitCode.Should().Be(0);
+            File.Exists(midOutPath).Should().BeTrue();
+            File.ReadAllText(midOutPath).Trim().Should().Be(machineId);
 
-        var verifyRes = cliRunner.ExecuteLicenseVerifyInstaller(new Dictionary<string, string?>
+            // Generate a test Ed25519 keypair to verify real cryptographic Ed25519 signing & verification
+            var kpRes = cliRunner.ExecuteLicenseIssue(new Dictionary<string, string?> { ["generate-keypair"] = "true" });
+            kpRes.Ok.Should().BeTrue();
+            var testPubBytes = Karobar.Core.HardwareMachineIdProvider.B64uDecode(kpRes.Data["public_key"]!.ToString()!);
+            var testSecretB64 = kpRes.Data["secret_key"]!.ToString()!;
+
+            // 4a. Machine-bound key for THIS machine -> MUST PASS
+            var boundIssueRes = cliRunner.ExecuteLicenseIssue(new Dictionary<string, string?>
+            {
+                ["machine"] = machineId,
+                ["tier"] = "platinum",
+                ["days"] = "365",
+                ["secret-key"] = testSecretB64,
+                ["name"] = "QA Pharmacy"
+            });
+            boundIssueRes.Ok.Should().BeTrue();
+            var boundKey = boundIssueRes.Data["license_key"]!.ToString()!;
+            boundKey.Should().StartWith("KRBL.");
+
+            var sealOutPath = Path.Combine(tempCliDir, "install-license.seal");
+            var verifyBoundRes = cliRunner.ExecuteLicenseVerifyInstaller(new Dictionary<string, string?>
+            {
+                ["key"] = boundKey,
+                ["seal-out"] = sealOutPath
+            }, testPubBytes);
+            verifyBoundRes.Ok.Should().BeTrue();
+            File.Exists(sealOutPath).Should().BeTrue();
+
+            // 4b. Unbound vendor-signed key with --allow-unbound -> MUST PASS
+            var unboundIssueRes = cliRunner.ExecuteLicenseIssue(new Dictionary<string, string?>
+            {
+                ["allow-unbound"] = "true",
+                ["tier"] = "gold",
+                ["days"] = "365",
+                ["secret-key"] = testSecretB64
+            });
+            unboundIssueRes.Ok.Should().BeTrue();
+            var unboundKey = unboundIssueRes.Data["license_key"]!.ToString()!;
+            var verifyUnboundRes = cliRunner.ExecuteLicenseVerifyInstaller(new Dictionary<string, string?>
+            {
+                ["key"] = unboundKey,
+                ["allow-unbound"] = "true"
+            }, testPubBytes);
+            verifyUnboundRes.Ok.Should().BeTrue();
+
+            // 4c. Key bound to ANOTHER machine -> MUST FAIL even with --allow-unbound
+            var wrongMachineIssueRes = cliRunner.ExecuteLicenseIssue(new Dictionary<string, string?>
+            {
+                ["machine"] = "KRB-DEAD-BEEF-CAFE-BABE",
+                ["tier"] = "platinum",
+                ["days"] = "365",
+                ["secret-key"] = testSecretB64
+            });
+            var verifyWrongRes = cliRunner.ExecuteLicenseVerifyInstaller(new Dictionary<string, string?>
+            {
+                ["key"] = wrongMachineIssueRes.Data["license_key"]!.ToString()!,
+                ["allow-unbound"] = "true"
+            }, testPubBytes);
+            verifyWrongRes.Ok.Should().BeFalse();
+
+            // 4d. Full post-install bootstrap (`install --seal-file=... --admin-config=...`)
+            var adminCfgPath = Path.Combine(tempCliDir, "admin-init.json");
+            File.WriteAllText(adminCfgPath, """{"name":"Test Owner","email":"owner@karobar.local","password":"password123","upgrade_only":false}""");
+            var installDbPath = Path.Combine(tempCliDir, "database", "database.sqlite");
+            var initFactory = new DbConnectionFactory(explicitSqlitePath: installDbPath);
+            await new DatabaseBootstrapper(initFactory).EnsureSchemaReadyAsync();
+            await using var installDb = DatabaseBootstrapper.CreateDbContext(installDbPath);
+            var scopedRunner = new KarobarCliCommandRunner(tempCliDir);
+            var installRes = await scopedRunner.ExecuteInstallAsync(
+                installDb,
+                new Dictionary<string, string?>
+                {
+                    ["seal-file"] = sealOutPath,
+                    ["admin-config"] = adminCfgPath,
+                    ["allow-unbound"] = "true",
+                    ["accept-legal"] = "true",
+                    ["cleanup-temp"] = "true"
+                },
+                testPublicKeyOverride: testPubBytes);
+            installRes.Ok.Should().BeTrue();
+            installRes.Data["licensed"].Should().Be(true);
+            installRes.Data["admin_email"].Should().Be("owner@karobar.local");
+            File.Exists(sealOutPath).Should().BeFalse("cleanup-temp should remove seal file");
+            File.Exists(adminCfgPath).Should().BeFalse("cleanup-temp should remove admin config file");
+
+            // Confirm LicenseService.CurrentStatusAsync() verifies the installed sealed row with UTC timestamp parsing
+            Karobar.Services.LicenseService.SetTestOverrides(publicKey: kpRes.Data["public_key"]!.ToString()!, machineId: machineId);
+            try
+            {
+                var kDb = new Karobar.Services.Infrastructure.KarobarDb(explicitSqlitePath: installDbPath);
+                var licSvc = new Karobar.Services.LicenseService(kDb);
+                var status = await licSvc.CurrentStatusAsync(force: true);
+                status["valid"].Should().Be(true);
+                status["tier"].Should().Be("platinum");
+            }
+            finally
+            {
+                Karobar.Services.LicenseService.SetTestOverrides(null, null, null);
+            }
+        }
+        finally
         {
-            ["key"] = issuedKey
-        });
-        verifyRes.Ok.Should().BeTrue();
+            try { Directory.Delete(tempCliDir, recursive: true); } catch { }
+        }
 
         // 5. Verify FBR Sandbox Sync & LocalWhatsAppSidecarManager status
         var fbrEngine = new FbrFiscalizationEngine();
