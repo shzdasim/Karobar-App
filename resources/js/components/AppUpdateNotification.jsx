@@ -317,8 +317,13 @@ export default function AppUpdateNotification() {
           setShowReadyPopup(true);
           return;
         }
+        if (res && typeof res === "object") {
+          setIsDownloading(false);
+          toast.error(res.message || "Unable to download update right now. Please try again.");
+          return;
+        }
       } catch {
-        // Fall through to in-app backend downloader
+        // Fall through to in-app backend downloader only if IPC transport itself failed
       }
     }
 
@@ -410,8 +415,13 @@ export default function AppUpdateNotification() {
         if (res?.ok) {
           return;
         }
+        if (res && typeof res === "object") {
+          setIsApplying(false);
+          toast.error(res.message || "Unable to launch installer right now. Please try again.");
+          return;
+        }
       } catch {
-        // Fall through to in-app backend installer
+        // Fall through to in-app backend installer only if IPC transport itself failed
       }
     }
 

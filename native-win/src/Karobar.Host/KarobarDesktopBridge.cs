@@ -110,6 +110,8 @@ public sealed class KarobarDesktopBridge
 
     private List<PrinterInfoDto>? _cachedPrinters;
     private long _cachedPrintersAt;
+    private readonly SemaphoreSlim _updateGate = new(1, 1);
+    private readonly object _progressFileLock = new();
 
     public KarobarDesktopBridge(
         NetworkConfigManager networkConfig,
@@ -1570,6 +1572,9 @@ public sealed class KarobarDesktopBridge
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"Karobar-Native-Update-{versionLabel}.{fileExt}");
         var minValidSize = isPatch ? 100 * 1024 : 5 * 1024 * 1024;
 
+        // Serialize concurrent update/download invocations (e.g. multiple open tabs or fallback retries)
+        // so two callers never open or overwrite the same temp archive simultaneously.
+        await _updateGate.WaitAsync(cancellationToken);
         try
         {
             var alreadyDownloaded = File.Exists(tempFilePath) && new FileInfo(tempFilePath).Length >= minValidSize;
@@ -1590,13 +1595,23 @@ public sealed class KarobarDesktopBridge
                     message = isPatch ? "Starting fast differential patch download…" : "Starting background update download…"
                 });
 
-                await DownloadFileWithProgressAsync(downloadUrl, tempFilePath, isPatch, cancellationToken);
-
-                if (!string.IsNullOrWhiteSpace(expectedSha256) &&
-                    !VerifyFileSha256(tempFilePath, expectedSha256))
+                var partPath = $"{tempFilePath}.{Guid.NewGuid():N}.part";
+                try
                 {
-                    try { File.Delete(tempFilePath); } catch { }
-                    throw new InvalidOperationException("Downloaded update failed SHA-256 integrity verification. Please retry.");
+                    await DownloadFileWithProgressAsync(downloadUrl, partPath, isPatch, cancellationToken);
+
+                    if (!string.IsNullOrWhiteSpace(expectedSha256) &&
+                        !VerifyFileSha256(partPath, expectedSha256))
+                    {
+                        throw new InvalidOperationException("Downloaded update failed SHA-256 integrity verification. Please retry.");
+                    }
+
+                    File.Move(partPath, tempFilePath, overwrite: true);
+                }
+                catch
+                {
+                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+                    throw;
                 }
             }
 
@@ -1677,6 +1692,10 @@ public sealed class KarobarDesktopBridge
                 ok = false,
                 message = ex.Message
             };
+        }
+        finally
+        {
+            _updateGate.Release();
         }
     }
 
@@ -1919,7 +1938,13 @@ public sealed class KarobarDesktopBridge
         {
             var progressPath = Path.Combine(_networkConfig.AppRoot, "storage", "app", "update-progress.json");
             Directory.CreateDirectory(Path.GetDirectoryName(progressPath)!);
-            File.WriteAllText(progressPath, JsonSerializer.Serialize(progressPayload), new UTF8Encoding(false));
+            var json = JsonSerializer.Serialize(progressPayload);
+            lock (_progressFileLock)
+            {
+                var tmpPath = progressPath + ".tmp";
+                File.WriteAllText(tmpPath, json, new UTF8Encoding(false));
+                File.Move(tmpPath, progressPath, overwrite: true);
+            }
         }
         catch { }
     }
