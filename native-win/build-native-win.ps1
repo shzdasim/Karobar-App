@@ -184,6 +184,40 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     }
     Write-Host "    Verified Isolated {tmp} License Verifier error handling: $(Get-Content $ErrOutFile -Raw)" -ForegroundColor Green
     Remove-Item -Recurse -Force $IsolatedTmp -ErrorAction SilentlyContinue
+
+    # Live Desktop + Kestrel Boot Smoke Test (catches any controller binding, DI, or WinForms splash deadlock!)
+    $BootTestDbDir = Join-Path $CacheDir "boot-smoke-root"
+    if (Test-Path $BootTestDbDir) { Remove-Item -Recurse -Force $BootTestDbDir }
+    New-Item -ItemType Directory -Force -Path (Join-Path $BootTestDbDir "database"), (Join-Path $BootTestDbDir "storage\logs"), (Join-Path $BootTestDbDir "public") | Out-Null
+    Copy-Item -Path (Join-Path $StageDir "public\*") -Destination (Join-Path $BootTestDbDir "public") -Recurse -Force -ErrorAction SilentlyContinue
+
+    $PrevExitAfterBoot = $env:KAROBAR_EXIT_AFTER_BOOT
+    $PrevAppRootEnv    = $env:KAROBAR_APP_ROOT
+    $PrevRootPathEnv   = $env:KAROBAR_ROOT_PATH
+    try {
+        $env:KAROBAR_EXIT_AFTER_BOOT = "1"
+        $env:KAROBAR_APP_ROOT        = $BootTestDbDir
+        $env:KAROBAR_ROOT_PATH       = $BootTestDbDir
+        $BootProc = Start-Process -FilePath $TargetAppExe `
+            -WorkingDirectory $BootTestDbDir `
+            -WindowStyle Hidden `
+            -PassThru
+        if (-not $BootProc.WaitForExit(30000)) {
+            try { $BootProc.Kill() } catch {}
+            throw "Karobar-Native.exe deadlocked / hung during desktop + Kestrel startup (exceeded 30s timeout)!"
+        }
+        if ($BootProc.ExitCode -ne 0) {
+            $LogFile = Join-Path $BootTestDbDir "storage\logs\native-startup.log"
+            $LogText = if (Test-Path $LogFile) { Get-Content $LogFile -Raw } else { "(no startup log)" }
+            throw "Karobar-Native.exe failed live desktop + Kestrel boot with exit code $($BootProc.ExitCode):`n$LogText"
+        }
+        Write-Host "    Verified Live Desktop + Kestrel + 59-Controller Boot (ExitCode=0)!" -ForegroundColor Green
+    } finally {
+        $env:KAROBAR_EXIT_AFTER_BOOT = $PrevExitAfterBoot
+        $env:KAROBAR_APP_ROOT        = $PrevAppRootEnv
+        $env:KAROBAR_ROOT_PATH       = $PrevRootPathEnv
+        Remove-Item -Recurse -Force $BootTestDbDir -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host "==> [5/6] Code Signing Executable with Authenticode Certificate (MalikAsimShahzad-CodeSign.pfx)..." -ForegroundColor Cyan

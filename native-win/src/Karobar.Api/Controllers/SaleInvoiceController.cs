@@ -199,6 +199,7 @@ public class SaleInvoiceController : ApiControllerBase
         return await ExecuteStoreSaleInvoiceAsync(rawData, rawItems, splitPayments, rawPin);
     }
 
+    [NonAction]
     public async Task<IActionResult> ExecuteStoreSaleInvoiceAsync(
         Dictionary<string, object?> rawData,
         List<Dictionary<string, object?>> rawItems,

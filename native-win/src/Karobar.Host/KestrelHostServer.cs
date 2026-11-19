@@ -880,29 +880,16 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
     internal static IReadOnlyList<Assembly> LoadKarobarAssemblies()
     {
-        var names = new[]
+        var loaded = new List<Assembly>
         {
-            "Karobar.Core",
-            "Karobar.Data",
-            "Karobar.Services",
-            "Karobar.Printing",
-            "Karobar.Background",
-            "Karobar.Api",
-            "Karobar.Host"
+            typeof(Karobar.Core.HardwareMachineIdProvider).Assembly,
+            typeof(Karobar.Data.KarobarDbContext).Assembly,
+            typeof(Karobar.Services.LicenseService).Assembly,
+            typeof(Karobar.Printing.PrintTemplateRenderer).Assembly,
+            typeof(Karobar.Background.KarobarCliCommandRunner).Assembly,
+            typeof(Karobar.Api.KarobarApiServiceExtensions).Assembly,
+            typeof(KestrelHostServer).Assembly
         };
-
-        var loaded = new List<Assembly> { typeof(KestrelHostServer).Assembly };
-        foreach (var name in names)
-        {
-            try
-            {
-                loaded.Add(Assembly.Load(new AssemblyName(name)));
-            }
-            catch
-            {
-                // Assembly not loaded yet
-            }
-        }
 
         return loaded.Distinct().ToList();
     }

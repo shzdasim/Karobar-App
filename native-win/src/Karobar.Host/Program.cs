@@ -72,22 +72,36 @@ public static class Program
             System.Windows.Forms.Application.DoEvents();
 #endif
 
+            // Run Kestrel + DB bootstrap on a thread-pool task so we NEVER deadlock
+            // WindowsFormsSynchronizationContext while pumping the splash UI message loop.
             var isOfflineTerminal = false;
-            if (networkConfig.IsTerminalMode())
+            var bootTask = Task.Run(async () =>
             {
-                var cfg = networkConfig.LoadNetworkConfig();
-                var ping = networkConfig.TestServerConnectionAsync(cfg.ServerUrl, cfg.TerminalName, cancellationToken: shutdownCts.Token)
-                    .GetAwaiter().GetResult();
-                if (!ping.Ok)
+                if (networkConfig.IsTerminalMode())
                 {
-                    isOfflineTerminal = true;
-                    hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).GetAwaiter().GetResult();
+                    var cfg = networkConfig.LoadNetworkConfig();
+                    var ping = await networkConfig.TestServerConnectionAsync(cfg.ServerUrl, cfg.TerminalName, cancellationToken: shutdownCts.Token)
+                        .ConfigureAwait(false);
+                    if (!ping.Ok)
+                    {
+                        isOfflineTerminal = true;
+                        await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).ConfigureAwait(false);
+                    }
                 }
-            }
-            else
+                else
+                {
+                    await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).ConfigureAwait(false);
+                }
+            }, shutdownCts.Token);
+
+#if WINDOWS_DESKTOP
+            while (!bootTask.IsCompleted)
             {
-                hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).GetAwaiter().GetResult();
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(20);
             }
+#endif
+            bootTask.GetAwaiter().GetResult();
 
             windowManager.CreateSystemTray();
             windowManager.PrewarmPrintWindow();
@@ -150,9 +164,45 @@ public static class Program
 
             return 0;
         }
+        catch (Exception ex)
+        {
+            var logMessage = $"[{DateTime.UtcNow:O}] Karobar-App Native startup failed:{Environment.NewLine}{ex}{Environment.NewLine}";
+            try
+            {
+                var appDataLogDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Karobar-App-Native");
+                Directory.CreateDirectory(appDataLogDir);
+                File.AppendAllText(Path.Combine(appDataLogDir, "startup-error.log"), logMessage);
+            }
+            catch { }
+
+            try
+            {
+                var localLogDir = Path.Combine(networkConfig.AppRoot, "storage", "logs");
+                Directory.CreateDirectory(localLogDir);
+                File.AppendAllText(Path.Combine(localLogDir, "native-startup.log"), logMessage);
+            }
+            catch { }
+
+            Console.Error.WriteLine(logMessage);
+
+#if WINDOWS_DESKTOP
+            try
+            {
+                System.Windows.Forms.MessageBox.Show(
+                    $"Karobar-App Native could not start:\n\n{ex.Message}\n\nDetails were saved to %APPDATA%\\Karobar-App-Native\\startup-error.log",
+                    ApplicationDisplayName,
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+            }
+            catch { }
+#endif
+            return 1;
+        }
         finally
         {
-            hostServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            Task.Run(() => hostServer.DisposeAsync().AsTask()).GetAwaiter().GetResult();
         }
     }
 

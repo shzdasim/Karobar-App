@@ -216,6 +216,7 @@ public class PurchaseInvoiceController : ApiControllerBase
         return await ExecuteStorePurchaseInvoiceAsync(rawData, rawItems, rawPin);
     }
 
+    [NonAction]
     public async Task<IActionResult> ExecuteStorePurchaseInvoiceAsync(
         Dictionary<string, object?> rawData,
         List<Dictionary<string, object?>> rawItems,

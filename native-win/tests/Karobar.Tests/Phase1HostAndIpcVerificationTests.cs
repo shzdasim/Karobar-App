@@ -209,5 +209,9 @@ public class Phase1HostAndIpcVerificationTests
         var spaHtml = server.BuildSpaShellHtml();
         spaHtml.Should().Contain("/__karobar_ipc/preload.js");
         spaHtml.Should().Contain("<div id=\"app\">");
+
+        // Verify the real ASP.NET Core WebApplication + all 59 controllers + DI container build cleanly without route/binding exceptions
+        await using var webApp = server.BuildWebApplication(explicitPort: 0);
+        webApp.Should().NotBeNull();
     }
 }
