@@ -2301,6 +2301,29 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     }
   };
 
+  // Listen for Native Windows GuideBot Spotlight Tour commands on the active WebView2 tab
+  useEffect(() => {
+    const onNativeTourCmd = (e) => {
+      const detail = e?.detail || {};
+      if (detail.action === "start") {
+        if (detail.lang === "ur" || detail.lang === "en") {
+          handleSetLang(detail.lang);
+        }
+        const wfId = detail.workflowId || displayedGuide?.workflowId || "dynamic_screen_tour";
+        setActiveDemo({
+          workflowId: wfId,
+          stepIndex: 0,
+          spotlightActive: true,
+          pausedForDetour: false,
+        });
+      } else if (detail.action === "stop") {
+        setActiveDemo(null);
+      }
+    };
+    window.addEventListener("karobar:guide-tour", onNativeTourCmd);
+    return () => window.removeEventListener("karobar:guide-tour", onNativeTourCmd);
+  }, [displayedGuide?.workflowId]);
+
   /**
    * Renders the full-viewport Interactive Spotlight Tour Overlay when a walkthrough is active
    * and the modal drawer is closed so the user can interact directly with the spotlighted controls.
@@ -2354,30 +2377,48 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           const stepTitle = isUr
             ? stepObj?.title?.ur || stepObj?.title?.en
             : stepObj?.title?.en;
+          const promptText = isUr
+            ? `${displayedGuide.title.ur} میں "${stepTitle}" کا تفصیلی طریقہ اور مقصد بتائیں`
+            : `Explain the "${stepTitle}" step on ${displayedGuide.title.en} in detail`;
+
+          if (window.karobarDesktop?.isNative && window.chrome?.webview?.postMessage) {
+            setActiveDemo((prev) =>
+              prev ? { ...prev, pausedForDetour: true } : null
+            );
+            try {
+              window.chrome.webview.postMessage(
+                JSON.stringify({
+                  type: "guide-tour-event",
+                  event: "ask-ai-about-step",
+                  prompt: promptText,
+                })
+              );
+            } catch {}
+            return;
+          }
+
           setActiveDemo((prev) =>
             prev ? { ...prev, pausedForDetour: true } : null
           );
           setActiveMainTab("chat");
           setSharedIsOpen(true);
           window.setTimeout(() => {
-            handleAskSubmit(
-              null,
-              isUr
-                ? `${displayedGuide.title.ur} میں "${stepTitle}" کا تفصیلی طریقہ اور مقصد بتائیں`
-                : `Explain the "${stepTitle}" step on ${displayedGuide.title.en} in detail`,
-              true
-            );
+            handleAskSubmit(null, promptText, true);
           }, 120);
         }}
       />
     );
   };
 
+  const isNativeDesktopHost = Boolean(
+    typeof window !== "undefined" && window.karobarDesktop?.isNative
+  );
+
   if (!isOpen && !isRendered) {
     return (
       <>
         {renderSpotlightTourOverlay()}
-        {bottomMascotEnabled ? (
+        {!isNativeDesktopHost && bottomMascotEnabled ? (
           <RoamingCubeCompanion
             onOpen={() => setSharedIsOpen(true)}
             screenTitle={sensedScreenGuide?.title?.en}

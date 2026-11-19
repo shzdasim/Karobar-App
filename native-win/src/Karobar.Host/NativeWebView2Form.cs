@@ -2,6 +2,8 @@
 using System.Drawing;
 using System.Text.Json;
 using System.Windows.Forms;
+using Karobar.Host.GuideBot;
+using Karobar.Host.Mascot;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -27,6 +29,9 @@ public sealed class NativeWebView2Form : Form
     private string _baseOrigin;
     private NotifyIcon? _trayIcon;
     private ContextMenuStrip? _trayMenu;
+    private GuideBotSessionController? _guideSession;
+    private NativeGuideBotDrawer? _guideDrawer;
+    private NativeMascotOverlayForm? _mascotOverlay;
     private long _lastTabShortcutMs;
     private string _lastTabShortcutAction = "";
 
@@ -65,7 +70,7 @@ public sealed class NativeWebView2Form : Form
             WindowState = FormWindowState.Maximized;
         }
 
-        // WinForms Z-order: Fill panel first, TabStrip second, MenuStrip last (sits at top y=0)
+        // WinForms Z-order: Fill panel first, DockRight GuideBot Drawer second, TabStrip third, MenuStrip last (sits at top y=0)
         _tabContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
@@ -73,12 +78,18 @@ public sealed class NativeWebView2Form : Form
         };
         Controls.Add(_tabContentPanel);
 
+        var isPrimaryWindow = winInstance.Id == _windowManager.MainWindow?.Id || (!winInstance.IsOffscreenPrintWorker && _windowManager.MainWindow == null);
+        if (isPrimaryWindow)
+        {
+            InitializeNativeGuideBotAndMascot();
+        }
+
         _tabStrip = new NativeTabStripControl(_workspace);
         WireTabStripEvents();
         Controls.Add(_tabStrip);
 
         BuildNativeMenuBar();
-        if (winInstance.Id == _windowManager.MainWindow?.Id || (!winInstance.IsOffscreenPrintWorker && _windowManager.MainWindow == null))
+        if (isPrimaryWindow)
         {
             BuildSystemTrayIcon(iconPath);
         }
@@ -100,6 +111,16 @@ public sealed class NativeWebView2Form : Form
         Deactivate += (_, _) => _winInstance.IsFocused = false;
         FormClosed += (_, _) =>
         {
+            if (_mascotOverlay != null)
+            {
+                try { _mascotOverlay.Close(); _mascotOverlay.Dispose(); } catch { }
+                _mascotOverlay = null;
+            }
+            if (_guideDrawer != null)
+            {
+                try { _guideDrawer.Dispose(); } catch { }
+                _guideDrawer = null;
+            }
             if (_trayIcon != null)
             {
                 try { _trayIcon.Visible = false; _trayIcon.Dispose(); } catch { }
@@ -141,6 +162,12 @@ public sealed class NativeWebView2Form : Form
                 Show();
                 Activate();
                 _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
+            });
+            _trayMenu.Items.Add("Cube AI GuideBot (Ctrl+G)", null, (_, _) =>
+            {
+                Show();
+                Activate();
+                ToggleGuideBot();
             });
             _trayMenu.Items.Add("Check for Updates…", null, (_, _) =>
             {
@@ -223,6 +250,104 @@ public sealed class NativeWebView2Form : Form
             }
         };
         _tabStrip.DetachTabRequested += tabId => DetachTabToSeparateWindow(tabId);
+        _tabStrip.GuideBotToggleRequested += ToggleGuideBot;
+    }
+
+    private void InitializeNativeGuideBotAndMascot()
+    {
+        _guideSession = new GuideBotSessionController(
+            _windowManager.NetworkConfig,
+            _desktopBridge.ServiceProviderAccessor)
+        {
+            BaseOrigin = _baseOrigin
+        };
+        _guideSession.ProductsMutated += BroadcastProductsUpdatedToAllTabs;
+
+        _guideDrawer = new NativeGuideBotDrawer(_guideSession, _desktopBridge.MascotPreferencesStore);
+        _guideDrawer.NavigateRequested += (route, title) => _ = OpenTabAsync(route, title, allowDuplicate: false);
+        _guideDrawer.StartSpotlightTourRequested += workflowId =>
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                type = "ipc-event",
+                channel = "karobar:guide-tour",
+                payload = new { action = "start", workflowId, lang = _guideSession.Language }
+            });
+            BroadcastMessageToActiveTab(payload);
+        };
+        _guideDrawer.DrawerVisibilityChanged += () =>
+        {
+            _mascotOverlay?.SetDrawerState(_guideDrawer.Visible, _guideDrawer.Width);
+        };
+        Controls.Add(_guideDrawer);
+
+        _mascotOverlay = new NativeMascotOverlayForm(this, _desktopBridge.MascotPreferencesStore);
+        _mascotOverlay.MascotClicked += () =>
+        {
+            if (InvokeRequired) BeginInvoke((Action)(() => _guideDrawer?.ShowDrawer("chat")));
+            else _guideDrawer?.ShowDrawer("chat");
+        };
+
+        var bgMgr = _guideSession.BackgroundTaskManager;
+        if (bgMgr != null)
+        {
+            bgMgr.StateChanged += snap =>
+            {
+                var pill = snap.Status == "running" ? $"Auto-filling {snap.ScannedCount}/{Math.Max(1, snap.TotalEstimate)}" : null;
+                _mascotOverlay?.SetBackgroundTaskProgress(pill);
+            };
+            bgMgr.ProductsMutated += BroadcastProductsUpdatedToAllTabs;
+        }
+
+        _desktopBridge.OnToggleGuideBot = ToggleGuideBot;
+        _desktopBridge.OnOpenGuideBot = tab =>
+        {
+            if (IsDisposed) return;
+            if (InvokeRequired) BeginInvoke((Action)(() => _guideDrawer?.ShowDrawer(tab)));
+            else _guideDrawer?.ShowDrawer(tab);
+        };
+    }
+
+    private void ToggleGuideBot()
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired)
+        {
+            BeginInvoke((Action)(() => _guideDrawer?.ToggleDrawer()));
+        }
+        else
+        {
+            _guideDrawer?.ToggleDrawer();
+        }
+    }
+
+    private void BroadcastProductsUpdatedToAllTabs()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "ipc-event",
+            channel = "karobar:products-updated",
+            payload = new { source = "cube_ai", at = DateTime.UtcNow.ToString("O") }
+        });
+        BroadcastMessageToAllTabs(json);
+    }
+
+    private void BroadcastMessageToAllTabs(string json)
+    {
+        if (IsDisposed) return;
+        void SendAll()
+        {
+            if (IsDisposed) return;
+            foreach (var wv in _tabWebViews.Values)
+            {
+                if (wv.CoreWebView2 != null)
+                {
+                    try { wv.CoreWebView2.PostWebMessageAsString(json); } catch { }
+                }
+            }
+        }
+        if (InvokeRequired) BeginInvoke((Action)SendAll);
+        else SendAll();
     }
 
     private void ReloadTab(string tabId)
@@ -314,6 +439,37 @@ public sealed class NativeWebView2Form : Form
         AddTabMenuItem("Reopen Closed Tab (Ctrl+Shift+T)", () => ExecuteTabShortcutAction("reopen-closed"));
         menuStrip.Items.Add(tabsMenu);
 
+        // Native Cube AI & Bottom Mascot menu
+        var cubeMenu = new ToolStripMenuItem("Cube AI")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(15, 23, 42)
+        };
+        cubeMenu.DropDown.BackColor = Color.FromArgb(30, 41, 59);
+        cubeMenu.DropDown.ForeColor = Color.FromArgb(248, 250, 252);
+        cubeMenu.DropDown.Renderer = darkRenderer;
+
+        void AddCubeMenuItem(string text, Action onClick)
+        {
+            var mi = new ToolStripMenuItem(text)
+            {
+                ForeColor = Color.FromArgb(248, 250, 252),
+                BackColor = Color.FromArgb(30, 41, 59)
+            };
+            mi.Click += (_, _) => onClick();
+            cubeMenu.DropDownItems.Add(mi);
+        }
+
+        AddCubeMenuItem("Open / Hide GuideBot (Ctrl+G)", ToggleGuideBot);
+        AddCubeMenuItem("Background Formulations Task Center", () => _guideDrawer?.ShowDrawer("tasks"));
+        cubeMenu.DropDownItems.Add(new ToolStripSeparator());
+        AddCubeMenuItem("Show / Hide Bottom Mascot", () => _desktopBridge.MascotPreferencesStore.Update(p => p.Enabled = !p.Enabled));
+        AddCubeMenuItem("Switch Mascot Skin (Cube / Pixel / Bot)", () => _desktopBridge.MascotPreferencesStore.Update(p => p.Skin = MascotPreferences.NextSkin(p.Skin)));
+        AddCubeMenuItem("Pause / Resume Mascot Roaming", () => _desktopBridge.MascotPreferencesStore.Update(p => p.RoamingEnabled = !p.RoamingEnabled));
+        cubeMenu.DropDownItems.Add(new ToolStripSeparator());
+        AddCubeMenuItem("Cube AI & Mascot Settings…", () => _ = OpenTabAsync("/settings#cube", "Cube AI Settings", allowDuplicate: false));
+        menuStrip.Items.Add(cubeMenu);
+
         MainMenuStrip = menuStrip;
         Controls.Add(menuStrip);
     }
@@ -325,6 +481,7 @@ public sealed class NativeWebView2Form : Form
         var (tab, _) = _workspace.OpenTab(initialRoute, NativeTabWorkspace.ResolveTitleForRoute(initialRoute), allowDuplicate: true, focus: true, pinned: initialRoute == "/dashboard");
         await EnsureTabWebViewInitializedAsync(tab, explicitUrl: _winInstance.Url);
         SyncActiveTabVisuals();
+        _mascotOverlay?.StartOverlay();
     }
 
     /// <summary>
@@ -501,6 +658,7 @@ public sealed class NativeWebView2Form : Form
             Text = $"{activeTab.Title} — {Program.ApplicationDisplayName}";
             _winInstance.Title = Text;
             _winInstance.RoutePath = activeTab.RoutePath;
+            _guideSession?.UpdateActiveContext(activeTab.RoutePath);
         }
 
         _tabStrip.RefreshTabs();
@@ -619,21 +777,60 @@ public sealed class NativeWebView2Form : Form
 
                     using var doc = JsonDocument.Parse(raw);
                     var root = doc.RootElement;
-                    if (root.TryGetProperty("type", out var msgTypeProp) &&
-                        msgTypeProp.GetString() == "tab-shortcut" &&
-                        root.TryGetProperty("action", out var actProp))
+                    if (root.TryGetProperty("type", out var msgTypeProp))
                     {
-                        var action = actProp.GetString() ?? "";
-                        var index = root.TryGetProperty("index", out var idxProp) && idxProp.TryGetInt32(out var idxVal) ? idxVal : -1;
-                        if (InvokeRequired)
+                        var msgType = msgTypeProp.GetString() ?? "";
+                        if (msgType == "tab-shortcut" && root.TryGetProperty("action", out var actProp))
                         {
-                            BeginInvoke((Action)(() => { ExecuteTabShortcutAction(action, index); }));
+                            var action = actProp.GetString() ?? "";
+                            var index = root.TryGetProperty("index", out var idxProp) && idxProp.TryGetInt32(out var idxVal) ? idxVal : -1;
+                            if (InvokeRequired) BeginInvoke((Action)(() => { ExecuteTabShortcutAction(action, index); }));
+                            else ExecuteTabShortcutAction(action, index);
+                            return;
                         }
-                        else
+                        if (msgType == "guide-context")
                         {
-                            ExecuteTabShortcutAction(action, index);
+                            var route = root.TryGetProperty("route", out var rp) ? rp.GetString() : null;
+                            var tok = root.TryGetProperty("token", out var tp) ? tp.GetString() : null;
+                            var modal = root.TryGetProperty("modal", out var mp) ? mp.GetString() : null;
+                            if (tab.TabId == _workspace.ActiveTabId)
+                            {
+                                _guideSession?.UpdateActiveContext(route, modal, tok);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(tok) && _guideSession != null)
+                            {
+                                _guideSession.AuthBearerToken = tok;
+                            }
+                            return;
                         }
-                        return;
+                        if (msgType == "guide-activity")
+                        {
+                            _mascotOverlay?.NotifyUserActivity();
+                            return;
+                        }
+                        if (msgType == "guide-focus-rect" && tab.TabId == _workspace.ActiveTabId)
+                        {
+                            var l = root.TryGetProperty("left", out var lp) && lp.TryGetInt32(out var lv) ? lv : 0;
+                            var t = root.TryGetProperty("top", out var tp) && tp.TryGetInt32(out var tv) ? tv : 0;
+                            var r = root.TryGetProperty("right", out var rrp) && rrp.TryGetInt32(out var rv) ? rv : 0;
+                            var b = root.TryGetProperty("bottom", out var bp) && bp.TryGetInt32(out var bv) ? bv : 0;
+                            _mascotOverlay?.AvoidFocusedInput(l, t, r, b);
+                            return;
+                        }
+                        if (msgType == "guide-tour-event")
+                        {
+                            var ev = root.TryGetProperty("event", out var ep) ? ep.GetString() ?? "" : "";
+                            if (ev == "ask-ai-about-step" && root.TryGetProperty("prompt", out var prp))
+                            {
+                                var prompt = prp.GetString() ?? "";
+                                if (!string.IsNullOrWhiteSpace(prompt))
+                                {
+                                    if (InvokeRequired) BeginInvoke((Action)(() => _guideDrawer?.AskFromSpotlightStep(prompt)));
+                                    else _guideDrawer?.AskFromSpotlightStep(prompt);
+                                }
+                            }
+                            return;
+                        }
                     }
 
                     if (root.TryGetProperty("type", out var typeProp) &&
@@ -751,8 +948,20 @@ public sealed class NativeWebView2Form : Form
         {
             return ExecuteTabShortcutAction("close-active");
         }
+        if (keyData == (Keys.Control | Keys.G))
+        {
+            return ExecuteTabShortcutAction("toggle-guide-bot");
+        }
         if (keyData == (Keys.Control | Keys.T) || keyData == (Keys.Control | Keys.Shift | Keys.N))
         {
+            // Preserve Ctrl+T (Debit/Credit toggle) on Sale Invoice screens
+            var activeRoute = _workspace.ActiveTab?.RoutePath ?? "";
+            if (keyData == (Keys.Control | Keys.T) &&
+                (activeRoute.StartsWith("/sale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+                 (activeRoute.StartsWith("/sale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase))))
+            {
+                return false;
+            }
             return ExecuteTabShortcutAction("new-tab");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.T))
@@ -866,6 +1075,9 @@ public sealed class NativeWebView2Form : Form
                 return true;
             case "open-ledger":
                 _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false);
+                return true;
+            case "toggle-guide-bot":
+                ToggleGuideBot();
                 return true;
             default:
                 return false;

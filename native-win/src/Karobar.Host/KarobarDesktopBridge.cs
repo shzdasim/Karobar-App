@@ -107,11 +107,17 @@ public sealed class KarobarDesktopBridge
     private readonly NetworkConfigManager _networkConfig;
     private readonly WebView2WindowManager _windowManager;
     private readonly Func<IServiceProvider?>? _serviceProviderAccessor;
+    private readonly Karobar.Host.Mascot.MascotPreferencesStore _mascotPrefs = new();
 
     private List<PrinterInfoDto>? _cachedPrinters;
     private long _cachedPrintersAt;
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly object _progressFileLock = new();
+
+    public Karobar.Host.Mascot.MascotPreferencesStore MascotPreferencesStore => _mascotPrefs;
+    public Func<IServiceProvider?>? ServiceProviderAccessor => _serviceProviderAccessor;
+    public Action? OnToggleGuideBot { get; set; }
+    public Action<string?>? OnOpenGuideBot { get; set; }
 
     public KarobarDesktopBridge(
         NetworkConfigManager networkConfig,
@@ -180,8 +186,48 @@ public sealed class KarobarDesktopBridge
             "karobar:open-window" or "openWindow" => await OpenWindowAsync(body),
             "karobar:get-open-windows" or "getOpenWindows" => await GetOpenWindowsAsync(),
             "karobar:focus-window" or "focusWindow" => await FocusWindowAsync(body),
+            "karobar:toggle-guide-bot" or "toggleGuideBot" => ToggleGuideBotIpc(),
+            "karobar:open-guide-bot" or "openGuideBot" => OpenGuideBotIpc(body),
+            "karobar:get-mascot-prefs" or "getMascotPrefs" => _mascotPrefs.Current,
+            "karobar:set-mascot-prefs" or "setMascotPrefs" => SetMascotPrefsIpc(body),
             _ => new { ok = false, error = $"Unknown IPC channel: {normalizedChannel}" }
         };
+    }
+
+    private object ToggleGuideBotIpc()
+    {
+        OnToggleGuideBot?.Invoke();
+        return new { ok = true };
+    }
+
+    private object OpenGuideBotIpc(JsonElement body)
+    {
+        string? tab = null;
+        if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty("tab", out var tp) && tp.ValueKind == JsonValueKind.String)
+        {
+            tab = tp.GetString();
+        }
+        OnOpenGuideBot?.Invoke(tab);
+        return new { ok = true };
+    }
+
+    private object SetMascotPrefsIpc(JsonElement body)
+    {
+        var updated = _mascotPrefs.Update(p =>
+        {
+            if (body.ValueKind != JsonValueKind.Object) return;
+            if (body.TryGetProperty("enabled", out var eProp) && (eProp.ValueKind == JsonValueKind.True || eProp.ValueKind == JsonValueKind.False))
+                p.Enabled = eProp.GetBoolean();
+            if (body.TryGetProperty("skin", out var sProp) && sProp.ValueKind == JsonValueKind.String)
+                p.Skin = sProp.GetString() ?? "cube";
+            if (body.TryGetProperty("roaming_enabled", out var rProp) && (rProp.ValueKind == JsonValueKind.True || rProp.ValueKind == JsonValueKind.False))
+                p.RoamingEnabled = rProp.GetBoolean();
+            if (body.TryGetProperty("roamingEnabled", out var r2Prop) && (r2Prop.ValueKind == JsonValueKind.True || r2Prop.ValueKind == JsonValueKind.False))
+                p.RoamingEnabled = r2Prop.GetBoolean();
+            if (body.TryGetProperty("language", out var lProp) && lProp.ValueKind == JsonValueKind.String)
+                p.Language = lProp.GetString() ?? "en";
+        });
+        return new { ok = true, prefs = updated };
     }
 
     public async Task<string> HandleWebView2MessageAsync(string rawMessageJson, CancellationToken cancellationToken = default)

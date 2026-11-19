@@ -1369,7 +1369,13 @@ export default function BarcodePos() {
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Screen-Aware Bilingual Guide Bot (English & اردو) */}
           <GuideBotTopbarButton
-            onClick={() => setGuideBotOpen(true)}
+            onClick={() => {
+              if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
+                window.karobarDesktop.toggleGuideBot();
+              } else {
+                setGuideBotOpen(true);
+              }
+            }}
             isOpen={guideBotOpen}
             pageTitle="POS Terminal"
           />
@@ -2888,12 +2894,10 @@ export default function BarcodePos() {
           />
         )}
 
-        {guideBotOpen && (
-          <FeatureGuideBot
-            isOpen={guideBotOpen}
-            onClose={() => setGuideBotOpen(false)}
-          />
-        )}
+        <FeatureGuideBot
+          isOpen={window.karobarDesktop?.isNative ? false : guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
       </Suspense>
 
       <OperatorPinModal

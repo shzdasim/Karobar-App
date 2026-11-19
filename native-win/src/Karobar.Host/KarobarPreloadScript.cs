@@ -208,6 +208,7 @@ public static class KarobarPreloadScript
 
           const desktopApi = {
             isDesktop: true,
+            isNative: true,
             isOffscreenPrintWorker: Boolean(isOffscreenPrintWorker),
             platform: "win32",
             getAppInfo: () => ipcInvoke("karobar:app-info"),
@@ -233,11 +234,16 @@ public static class KarobarPreloadScript
               ipcInvoke("karobar:open-window", { path, title, ...options }),
             getOpenWindows: () => ipcInvoke("karobar:get-open-windows"),
             focusWindow: (winId) => ipcInvoke("karobar:focus-window", { winId }),
+            toggleGuideBot: () => ipcInvoke("karobar:toggle-guide-bot"),
+            openGuideBot: (options = {}) => ipcInvoke("karobar:open-guide-bot", options),
+            getMascotPrefs: () => ipcInvoke("karobar:get-mascot-prefs"),
+            setMascotPrefs: (payload = {}) => ipcInvoke("karobar:set-mascot-prefs", payload),
             onNavigate: (callback) => subscribeChannel("karobar:navigate", callback),
             onOpenSubWindow: (callback) => subscribeChannel("karobar:open-subwindow", callback),
             onWindowCommand: (callback) => subscribeChannel("karobar:window-command", callback),
             onUpdateProgress: (callback) => subscribeChannel("karobar:update-progress", callback),
-            onTriggerUpdateCheck: (callback) => subscribeChannel("karobar:trigger-update-check", callback)
+            onTriggerUpdateCheck: (callback) => subscribeChannel("karobar:trigger-update-check", callback),
+            onGuideTourCommand: (callback) => subscribeChannel("karobar:guide-tour", callback)
           };
 
           try {
@@ -357,7 +363,16 @@ public static class KarobarPreloadScript
                   sendTabShortcut(e, "reload-active");
                   return;
                 }
+                if (ctrl && !e.shiftKey && key === "g") {
+                  sendTabShortcut(e, "toggle-guide-bot");
+                  return;
+                }
                 if ((ctrl && !e.shiftKey && key === "t") || (ctrl && e.shiftKey && key === "n")) {
+                  // Preserve Sale Invoice Ctrl+T Debit/Credit toggle shortcut on invoice screens
+                  var curPath = (window.location && window.location.pathname) || "";
+                  if (key === "t" && !e.shiftKey && /^\/sale-invoices\/(create|\d+\/edit)/.test(curPath)) {
+                    return;
+                  }
                   sendTabShortcut(e, "new-tab");
                   return;
                 }
@@ -399,6 +414,80 @@ public static class KarobarPreloadScript
                   }
                 }
               }, true);
+            }
+          } catch (_) {}
+
+          // Native GuideBot & Bottom Mascot Bridge (syncs route, auth token, focused-input rect, user activity, and cross-tab events)
+          try {
+            if (!isOffscreenPrintWorker && !window.__karobarGuideBridgeHooked) {
+              window.__karobarGuideBridgeHooked = true;
+              var postGuideMsg = function (obj) {
+                try {
+                  if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+                    window.chrome.webview.postMessage(JSON.stringify(obj));
+                  }
+                } catch (_) {}
+              };
+              var lastSentRoute = "";
+              var pushRouteContext = function () {
+                try {
+                  var p = (window.location && window.location.pathname) || "/dashboard";
+                  var tok = "";
+                  try { tok = String(window.localStorage.getItem("token") || ""); } catch (_) {}
+                  if (p !== lastSentRoute || tok) {
+                    lastSentRoute = p;
+                    postGuideMsg({ type: "guide-context", route: p, token: tok });
+                  }
+                } catch (_) {}
+              };
+              var origPush = history.pushState;
+              if (typeof origPush === "function") {
+                history.pushState = function () {
+                  var res = origPush.apply(this, arguments);
+                  setTimeout(pushRouteContext, 20);
+                  return res;
+                };
+              }
+              window.addEventListener("popstate", pushRouteContext);
+              setInterval(pushRouteContext, 2500);
+              setTimeout(pushRouteContext, 300);
+
+              var lastActivityPing = 0;
+              var pingActivity = function () {
+                var now = Date.now();
+                if (now - lastActivityPing > 1500) {
+                  lastActivityPing = now;
+                  postGuideMsg({ type: "guide-activity" });
+                }
+              };
+              window.addEventListener("keydown", pingActivity, true);
+              window.addEventListener("pointerdown", pingActivity, true);
+              window.addEventListener("focusin", function (e) {
+                pingActivity();
+                try {
+                  var el = e.target;
+                  if (el && typeof el.getBoundingClientRect === "function") {
+                    var r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {
+                      postGuideMsg({
+                        type: "guide-focus-rect",
+                        left: Math.round(r.left),
+                        top: Math.round(r.top),
+                        right: Math.round(r.right),
+                        bottom: Math.round(r.bottom)
+                      });
+                    }
+                  }
+                } catch (_) {}
+              }, true);
+
+              // Relay native host GuideTour & Cross-Tab refresh commands into DOM CustomEvents
+              subscribeChannel("karobar:guide-tour", function (payload) {
+                try { window.dispatchEvent(new CustomEvent("karobar:guide-tour", { detail: payload })); } catch (_) {}
+              });
+              subscribeChannel("karobar:products-updated", function (payload) {
+                try { window.dispatchEvent(new CustomEvent("karobar:products-updated", { detail: payload || {} })); } catch (_) {}
+              });
             }
           } catch (_) {}
         })();

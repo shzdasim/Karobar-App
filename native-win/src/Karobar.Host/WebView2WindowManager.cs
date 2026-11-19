@@ -228,6 +228,7 @@ public sealed class WebView2WindowManager : IDisposable
         SharedWebView2UserDataFolder = ResolveSharedWebView2UserDataFolder();
     }
 
+    public NetworkConfigManager NetworkConfig => _networkConfig;
     public string SharedWebView2UserDataFolder { get; }
     public bool IsQuitting => _isQuitting;
     public AppWindowInstance? MainWindow => _mainWindow;

@@ -14,6 +14,7 @@ public static class BackgroundServiceCollectionExtensions
         services.TryAddSingleton<GroqProvider>();
         services.TryAddSingleton<GeminiProvider>();
         services.TryAddSingleton<CubeTaskExecutorService>();
+        services.TryAddSingleton<CubeBackgroundTaskManager>();
         services.TryAddSingleton<CubeAssistantService>();
         services.TryAddSingleton(_ => new LocalWhatsAppSidecarManager(appRoot));
         services.TryAddSingleton(_ => new WaseelaAndSqliteImportEngine(appRoot));

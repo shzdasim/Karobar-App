@@ -118,7 +118,7 @@ if ((Test-Path $PublishedHostExe) -and (-not (Test-Path $TargetAppExe))) {
     Remove-Item -Path $PublishedHostExe -Force
 }
 
-foreach ($dir in @("public", "resources\views", "scripts")) {
+foreach ($dir in @("public", "resources\views", "resources\assistant", "scripts")) {
     $src = Join-Path $RepoRoot $dir
     if (Test-Path $src) {
         $dest = Join-Path $StageDir $dir
@@ -127,10 +127,10 @@ foreach ($dir in @("public", "resources\views", "scripts")) {
     }
 }
 
-$CubeKnowledgeSrc = Join-Path $RepoRoot "storage\app\cube-knowledge.json"
+$CubeKnowledgeSrc = Join-Path $RepoRoot "resources\assistant\cube-knowledge.json"
 if (Test-Path $CubeKnowledgeSrc) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "storage\app") | Out-Null
-    Copy-Item -Path $CubeKnowledgeSrc -Destination (Join-Path $StageDir "storage\app\cube-knowledge.json") -Force
+    New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "resources\assistant") | Out-Null
+    Copy-Item -Path $CubeKnowledgeSrc -Destination (Join-Path $StageDir "resources\assistant\cube-knowledge.json") -Force
 }
 
 $DesktopStage = Join-Path $StageDir "desktop"
@@ -379,19 +379,14 @@ Get-ChildItem -Path $StageDir -File | Where-Object {
     Copy-Item -Path $_.FullName -Destination (Join-Path $PatchStageDir $_.Name) -Force
 }
 
-# 2. Copy React SPA, print templates, scripts, desktop assets, and Cube AI knowledge (never database or user storage!)
-foreach ($relDir in @("public", "resources\views", "scripts", "desktop")) {
+# 2. Copy React SPA, print templates, Cube AI knowledge, scripts, and desktop assets (never database or user storage!)
+foreach ($relDir in @("public", "resources\views", "resources\assistant", "scripts", "desktop")) {
     $srcSub = Join-Path $StageDir $relDir
     if (Test-Path $srcSub) {
         $dstSub = Join-Path $PatchStageDir $relDir
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dstSub) | Out-Null
         Copy-Item -Path $srcSub -Destination $dstSub -Recurse -Force
     }
-}
-$StagedCubeKb = Join-Path $StageDir "storage\app\cube-knowledge.json"
-if (Test-Path $StagedCubeKb) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $PatchStageDir "storage\app") | Out-Null
-    Copy-Item -Path $StagedCubeKb -Destination (Join-Path $PatchStageDir "storage\app\cube-knowledge.json") -Force
 }
 
 $PatchZipPath = Join-Path $InstallerOutDir "Karobar-Native-Patch.zip"

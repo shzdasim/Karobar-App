@@ -24,6 +24,13 @@ export function setBottomMascotEnabled(enabled) {
   } catch {
     /* ignore */
   }
+  try {
+    if (window.karobarDesktop?.setMascotPrefs) {
+      window.karobarDesktop.setMascotPrefs({ enabled: resolved }).catch(() => {});
+    }
+  } catch {
+    /* ignore */
+  }
   window.dispatchEvent(
     new CustomEvent("guide-bot-bottom-mascot-changed", { detail: resolved })
   );

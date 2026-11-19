@@ -770,7 +770,11 @@ export default function Topbar({
       // Ctrl+G opens the Screen-Aware Bilingual Guide Bot anywhere
       if (e.code === "KeyG" || (e.key || "").toLowerCase() === "g") {
         e.preventDefault();
-        setGuideBotOpen((v) => !v);
+        if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
+          window.karobarDesktop.toggleGuideBot();
+        } else {
+          setGuideBotOpen((v) => !v);
+        }
         return;
       }
 
@@ -813,7 +817,13 @@ export default function Topbar({
     const onOpenSearch = () => setProductSearchModalOpen(true);
     const onOpenPageSearch = () => setPageSearchModalOpen(true);
     const onOpenShortcuts = () => setShortcutsModalOpen(true);
-    const onOpenGuideBot = () => setGuideBotOpen(true);
+    const onOpenGuideBot = () => {
+      if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.openGuideBot === "function") {
+        window.karobarDesktop.openGuideBot();
+      } else {
+        setGuideBotOpen(true);
+      }
+    };
     const onOpenAccountsRegister = () => setAccountsModalOpen(true);
     const onOpenCashDrawer = () => {
       if (canOpenDrawerPopup) setDrawerModalOpen(true);
@@ -933,7 +943,13 @@ export default function Topbar({
 
             {/* Screen-Aware Bilingual Guide Bot (Ctrl+G) */}
             <GuideBotTopbarButton
-              onClick={() => setGuideBotOpen((v) => !v)}
+              onClick={() => {
+                if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
+                  window.karobarDesktop.toggleGuideBot();
+                } else {
+                  setGuideBotOpen((v) => !v);
+                }
+              }}
               isOpen={guideBotOpen}
               pageTitle={pageTitle}
             />
@@ -1248,14 +1264,12 @@ export default function Topbar({
         )}
       </Suspense>
 
-      {guideBotOpen && (
-        <Suspense fallback={null}>
-          <FeatureGuideBot
-            isOpen={guideBotOpen}
-            onClose={() => setGuideBotOpen(false)}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <FeatureGuideBot
+          isOpen={window.karobarDesktop?.isNative ? false : guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
+      </Suspense>
     </div>
   );
 }

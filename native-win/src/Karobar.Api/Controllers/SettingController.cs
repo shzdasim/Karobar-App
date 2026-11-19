@@ -167,7 +167,9 @@ public class SettingController : ApiControllerBase
             ["print_margin_bottom_mm"] = 4,
             ["print_margin_left_mm"] = 0,
             ["print_margin_right_mm"] = 0,
-            ["print_font_scale"] = 100
+            ["print_font_scale"] = 100,
+            ["cube_groq_daily_limit"] = 250,
+            ["cube_gemini_daily_limit"] = 250
         };
 
         foreach (var kv in body)
@@ -175,7 +177,9 @@ public class SettingController : ApiControllerBase
             if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("clear_fbr_bearer_token", StringComparison.OrdinalIgnoreCase))
+                kv.Key.Equals("clear_fbr_bearer_token", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("clear_cube_groq_api_key", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("clear_cube_gemini_api_key", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -194,6 +198,14 @@ public class SettingController : ApiControllerBase
         if (GetBool(body, "clear_fbr_bearer_token", false))
         {
             updates["fbr_bearer_token"] = null;
+        }
+        if (GetBool(body, "clear_cube_groq_api_key", false))
+        {
+            updates["cube_groq_api_key"] = null;
+        }
+        if (GetBool(body, "clear_cube_gemini_api_key", false))
+        {
+            updates["cube_gemini_api_key"] = null;
         }
 
         if (Request.HasFormContentType)
@@ -683,12 +695,20 @@ public class SettingController : ApiControllerBase
         if (!await CanAsync("settings.update")) return Forbidden();
         var body = await ReadJsonBodyAsync();
         var provider = (GetString(body, "provider") ?? "groq").Trim().ToLowerInvariant();
-        var model = (GetString(body, "model") ?? (provider == "gemini" ? "gemini-2.5-flash" : "llama-3.3-70b-versatile")).Trim();
-        var apiKey = (GetString(body, "api_key") ?? "").Trim();
+        if (provider is not ("groq" or "gemini"))
+        {
+            return Unprocessable("Provider must be 'groq' or 'gemini'.");
+        }
 
+        var existing = await GetOrCreateSettingAsync();
+        var existingId = Convert.ToInt64(existing["id"]);
+        var defaultModel = provider == "gemini" ? "gemini-2.5-flash" : "llama-3.3-70b-versatile";
+        var model = (GetString(body, "model") ?? existing.GetValueOrDefault(provider == "gemini" ? "cube_gemini_model" : "cube_groq_model")?.ToString() ?? defaultModel).Trim();
+        if (string.IsNullOrWhiteSpace(model)) model = defaultModel;
+
+        var apiKey = (GetString(body, "api_key") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            var existing = await GetOrCreateSettingAsync();
             apiKey = provider == "groq"
                 ? (existing.GetValueOrDefault("cube_groq_api_key")?.ToString() ?? Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? "")
                 : (existing.GetValueOrDefault("cube_gemini_api_key")?.ToString() ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "");
@@ -699,7 +719,15 @@ public class SettingController : ApiControllerBase
             return Unprocessable($"Please enter your {provider} API key.");
         }
 
-        const string sysPrompt = "You are a connectivity test assistant. Reply with valid JSON: {\"title_en\":\"OK\",\"title_ur\":\"OK\",\"answer_en\":\"Connected\",\"answer_ur\":\"Connected\",\"evidence_classification\":\"documented_info\",\"source_ids\":[]}";
+        var isEligible = provider == "gemini"
+            ? _geminiProvider.IsFreeTierGeminiModelId(model)
+            : _groqProvider.IsChatCapableModelId(model);
+        if (!isEligible)
+        {
+            return Unprocessable($"Model '{model}' is not eligible for the {provider} free chat tier. Please choose a free-tier chat model.");
+        }
+
+        const string sysPrompt = "You are a connectivity test assistant. Reply with valid JSON: {\"title_en\":\"OK\",\"title_ur\":\"OK\",\"answer_en\":\"Connected\",\"answer_ur\":\"Connected\",\"source_ids\":[]}";
         var callResult = provider == "gemini"
             ? await _geminiProvider.GenerateAsync(apiKey, model, sysPrompt, "Ping", HttpContext.RequestAborted)
             : await _groqProvider.GenerateAsync(apiKey, model, sysPrompt, "Ping", HttpContext.RequestAborted);
@@ -709,13 +737,50 @@ public class SettingController : ApiControllerBase
             return Unprocessable($"{char.ToUpperInvariant(provider[0]) + provider[1..]} connection failed: {callResult.ErrorMessage ?? "Invalid API key or unreachable endpoint."}");
         }
 
+        var resolvedModel = string.IsNullOrWhiteSpace(callResult.Model) ? model : callResult.Model.Trim();
+        var availableModels = callResult.AvailableModels.Count > 0
+            ? callResult.AvailableModels
+            : (provider == "gemini"
+                ? await _geminiProvider.DiscoverChatModelsAsync(apiKey, HttpContext.RequestAborted)
+                : await _groqProvider.DiscoverChatModelsAsync(apiKey, HttpContext.RequestAborted));
+        if (availableModels.Count == 0)
+        {
+            availableModels = new List<string> { resolvedModel };
+        }
+        else if (!availableModels.Contains(resolvedModel, StringComparer.OrdinalIgnoreCase))
+        {
+            availableModels.Insert(0, resolvedModel);
+        }
+
+        // Persist verified Cube AI configuration and reset daily quota status to ready (1-to-1 with Laravel SettingController)
+        var dailyLimitCol = provider == "gemini" ? "cube_gemini_daily_limit" : "cube_groq_daily_limit";
+        var currentLimit = SafeInt(existing.GetValueOrDefault(dailyLimitCol), 250);
+        var saveUpdates = new Dictionary<string, object?>
+        {
+            ["cube_ai_enabled"] = 1,
+            [provider == "gemini" ? "cube_gemini_enabled" : "cube_groq_enabled"] = 1,
+            [provider == "gemini" ? "cube_gemini_api_key" : "cube_groq_api_key"] = apiKey,
+            [provider == "gemini" ? "cube_gemini_model" : "cube_groq_model"] = resolvedModel,
+            [dailyLimitCol] = currentLimit <= 0 ? 250 : Math.Min(1000, currentLimit)
+        };
+        await Db.UpdateAsync("settings", existingId, saveUpdates);
+
+        if (await Db.HasTableAsync("cube_provider_usages"))
+        {
+            var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+            await Db.ExecuteAsync(
+                "UPDATE cube_provider_usages SET status = 'ready', cooldown_until = NULL, disabled_reason = NULL, last_error_code = NULL, last_http_status = 200, updated_at = @now WHERE provider = @provider AND substr(usage_date, 1, 10) = @todayStr",
+                new { provider, todayStr, now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") });
+        }
+
         return Ok(new
         {
             status = "connected",
             provider,
-            model = callResult.Model ?? model,
-            available_models = new[] { callResult.Model ?? model },
-            message = $"{char.ToUpperInvariant(provider[0]) + provider[1..]} ({callResult.Model ?? model}) connected and verified!"
+            model = resolvedModel,
+            available_models = availableModels,
+            saved = true,
+            message = $"{char.ToUpperInvariant(provider[0]) + provider[1..]} ({resolvedModel}) connected, verified, and saved!"
         });
     }
 
@@ -779,28 +844,35 @@ public class SettingController : ApiControllerBase
         copy.Remove("cube_groq_api_key");
         copy.Remove("cube_gemini_api_key");
 
-        var groqReq = 0; var groqOk = 0; var groqFail = 0;
-        var gemReq = 0; var gemOk = 0; var gemFail = 0;
+        var groqReq = 0; var groqOk = 0; var groqFail = 0; var groqStatus = "ready"; string? groqDisabledReason = null; string? groqCooldown = null;
+        var gemReq = 0; var gemOk = 0; var gemFail = 0; var gemStatus = "ready"; string? gemDisabledReason = null; string? gemCooldown = null;
         if (await Db.HasTableAsync("cube_provider_usages"))
         {
             var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
             var uRows = await Db.QueryListAsync(
-                "SELECT provider, request_count, success_count, failure_count FROM cube_provider_usages WHERE substr(usage_date, 1, 10) = @todayStr",
+                "SELECT provider, request_count, success_count, failure_count, status, disabled_reason, cooldown_until FROM cube_provider_usages WHERE substr(usage_date, 1, 10) = @todayStr ORDER BY id DESC",
                 new { todayStr });
             foreach (var ur in uRows)
             {
                 var prov = (ur.GetValueOrDefault("provider")?.ToString() ?? "").Trim().ToLowerInvariant();
+                var st = (ur.GetValueOrDefault("status")?.ToString() ?? "ready").Trim();
                 if (prov == "groq")
                 {
                     groqReq += SafeInt(ur.GetValueOrDefault("request_count"), 0);
                     groqOk += SafeInt(ur.GetValueOrDefault("success_count"), 0);
                     groqFail += SafeInt(ur.GetValueOrDefault("failure_count"), 0);
+                    if (!string.IsNullOrWhiteSpace(st)) groqStatus = st;
+                    groqDisabledReason ??= ur.GetValueOrDefault("disabled_reason")?.ToString();
+                    groqCooldown ??= ur.GetValueOrDefault("cooldown_until")?.ToString();
                 }
                 else if (prov == "gemini")
                 {
                     gemReq += SafeInt(ur.GetValueOrDefault("request_count"), 0);
                     gemOk += SafeInt(ur.GetValueOrDefault("success_count"), 0);
                     gemFail += SafeInt(ur.GetValueOrDefault("failure_count"), 0);
+                    if (!string.IsNullOrWhiteSpace(st)) gemStatus = st;
+                    gemDisabledReason ??= ur.GetValueOrDefault("disabled_reason")?.ToString();
+                    gemCooldown ??= ur.GetValueOrDefault("cooldown_until")?.ToString();
                 }
             }
         }
@@ -812,7 +884,9 @@ public class SettingController : ApiControllerBase
                 request_count = groqReq,
                 success_count = groqOk,
                 failure_count = groqFail,
-                status = "ready",
+                status = groqStatus,
+                disabled_reason = groqDisabledReason,
+                cooldown_until = groqCooldown,
                 has_env_key = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GROQ_API_KEY"))
             },
             ["gemini"] = new
@@ -820,7 +894,9 @@ public class SettingController : ApiControllerBase
                 request_count = gemReq,
                 success_count = gemOk,
                 failure_count = gemFail,
-                status = "ready",
+                status = gemStatus,
+                disabled_reason = gemDisabledReason,
+                cooldown_until = gemCooldown,
                 has_env_key = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GEMINI_API_KEY"))
             }
         };

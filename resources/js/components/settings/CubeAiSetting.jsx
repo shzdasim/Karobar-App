@@ -1,5 +1,5 @@
 // resources/js/components/settings/CubeAiSetting.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -713,6 +713,144 @@ export default function CubeAiSetting({
           </div>
         </div>
       </div>
+
+      {/* Native Windows Bottom Mascot & Companion Settings */}
+      <NativeMascotSettingsCard isDark={isDark} />
     </>
+  );
+}
+
+function NativeMascotSettingsCard({ isDark }) {
+  const [enabled, setEnabled] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("karobar_bottom_mascot_enabled");
+      return saved === null ? true : saved !== "false" && saved !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [skin, setSkin] = useState(() => {
+    try {
+      return window.localStorage.getItem("karobar_guide_bot_mascot_style") || "cube";
+    } catch {
+      return "cube";
+    }
+  });
+  const [roamingEnabled, setRoamingEnabled] = useState(true);
+
+  useEffect(() => {
+    if (window.karobarDesktop?.getMascotPrefs) {
+      window.karobarDesktop
+        .getMascotPrefs()
+        .then((prefs) => {
+          if (!prefs) return;
+          if (typeof prefs.enabled === "boolean") setEnabled(prefs.enabled);
+          if (prefs.skin) setSkin(prefs.skin);
+          if (typeof prefs.roaming_enabled === "boolean") setRoamingEnabled(prefs.roaming_enabled);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  const syncPrefs = (next) => {
+    try {
+      if (typeof next.enabled === "boolean") {
+        window.localStorage.setItem("karobar_bottom_mascot_enabled", String(next.enabled));
+        window.dispatchEvent(new Event("guide-bot-bottom-mascot-changed"));
+      }
+      if (next.skin) {
+        window.localStorage.setItem("karobar_guide_bot_mascot_style", next.skin);
+        window.dispatchEvent(new Event("guide-bot-mascot-changed"));
+      }
+    } catch {}
+    if (window.karobarDesktop?.setMascotPrefs) {
+      window.karobarDesktop.setMascotPrefs(next).catch(() => {});
+    }
+  };
+
+  return (
+    <div className="settings-section-card mt-5">
+      <div className="settings-section-header">
+        <div>
+          <h3 className="settings-section-title">Bottom Cube Mascot &amp; Native Desktop Companion</h3>
+          <p className="settings-section-subtitle">
+            Customize the roaming Cube mascot that lives at the bottom of your workspace across all tabs.
+          </p>
+        </div>
+        {window.karobarDesktop?.isNative && (
+          <button
+            type="button"
+            onClick={() => window.karobarDesktop.toggleGuideBot?.()}
+            className="products-action theme-btn-secondary"
+          >
+            <SparklesIcon className="w-4 h-4" />
+            <span>Open Native GuideBot (Ctrl+G)</span>
+          </button>
+        )}
+      </div>
+
+      <div className="settings-grid-3 mt-3">
+        <label className="flex items-center gap-2.5 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => {
+              const val = e.target.checked;
+              setEnabled(val);
+              syncPrefs({ enabled: val, skin, roaming_enabled: roamingEnabled });
+            }}
+            className="h-4 w-4 rounded"
+          />
+          <span className={isDark ? "text-slate-200" : "text-slate-800"}>
+            Show Bottom Roaming Mascot
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2.5 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            checked={roamingEnabled}
+            onChange={(e) => {
+              const val = e.target.checked;
+              setRoamingEnabled(val);
+              syncPrefs({ enabled, skin, roaming_enabled: val });
+            }}
+            className="h-4 w-4 rounded"
+          />
+          <span className={isDark ? "text-slate-200" : "text-slate-800"}>
+            Autonomous Walking &amp; Hoverboard
+          </span>
+        </label>
+
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+            Skin:
+          </span>
+          {[
+            { id: "cube", label: "Cube" },
+            { id: "pixel", label: "Pixel" },
+            { id: "bot", label: "Bot" },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setSkin(opt.id);
+                syncPrefs({ enabled, skin: opt.id, roaming_enabled: roamingEnabled });
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                skin === opt.id
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : isDark
+                    ? "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

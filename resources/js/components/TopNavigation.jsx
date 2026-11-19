@@ -444,7 +444,13 @@ export default function TopNavigation() {
           {/* Right: Screen-Aware Bilingual Guide Bot */}
           <div className="flex items-center gap-1.5 px-2 sm:px-3 border-l border-gray-200/60 dark:border-slate-700/60 shrink-0">
             <GuideBotTopbarButton
-              onClick={() => setGuideBotOpen((v) => !v)}
+              onClick={() => {
+                if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
+                  window.karobarDesktop.toggleGuideBot();
+                } else {
+                  setGuideBotOpen((v) => !v);
+                }
+              }}
               isOpen={guideBotOpen}
               compact
             />
@@ -452,14 +458,12 @@ export default function TopNavigation() {
         </div>
       </div>
 
-      {guideBotOpen && (
-        <Suspense fallback={null}>
-          <FeatureGuideBot
-            isOpen={guideBotOpen}
-            onClose={() => setGuideBotOpen(false)}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <FeatureGuideBot
+          isOpen={window.karobarDesktop?.isNative ? false : guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
+      </Suspense>
 
       {/* Fixed Position Dropdown Overlay - Enhanced with dynamic theme colors */}
       {openDropdown && (() => {

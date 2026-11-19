@@ -44,6 +44,7 @@ public sealed class NativeTabStripControl : Control
     public event Action<string>? CloseToRightRequested;
     public event Action? ReopenClosedRequested;
     public event Action<string>? DetachTabRequested;
+    public event Action? GuideBotToggleRequested;
 
     public NativeTabStripControl(NativeTabWorkspace workspace)
     {
@@ -112,7 +113,8 @@ public sealed class NativeTabStripControl : Control
             ("+ POS", "/sale-invoices/pos", Color.FromArgb(16, 185, 129)),
             ("+ Sale", "/sale-invoices/create/retail", Color.FromArgb(14, 165, 233)),
             ("+ Purchase", "/purchase-invoices/create", Color.FromArgb(99, 102, 241)),
-            ("+ Products", "/products", Color.FromArgb(245, 158, 11))
+            ("+ Products", "/products", Color.FromArgb(245, 158, 11)),
+            ("Cube AI", "__guide_bot__", Color.FromArgb(37, 99, 235))
         };
 
         var rightX = Width - 8;
@@ -320,7 +322,14 @@ public sealed class NativeTabStripControl : Control
             {
                 if (q.Bounds.Contains(e.Location))
                 {
-                    QuickOpenRequested?.Invoke(q.Route, q.Title, false);
+                    if (q.Route == "__guide_bot__")
+                    {
+                        GuideBotToggleRequested?.Invoke();
+                    }
+                    else
+                    {
+                        QuickOpenRequested?.Invoke(q.Route, q.Title, false);
+                    }
                     return;
                 }
             }

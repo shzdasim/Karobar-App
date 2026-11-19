@@ -25,7 +25,7 @@ namespace Karobar.Tests;
 
 public class Wave9And10LiveHttpIntegrationTests
 {
-    private static async Task<(WebApplication App, HttpClient Client, KarobarDb Db, string TempRoot, string? PrevRoot)> StartLiveTestServerAsync()
+    internal static async Task<(WebApplication App, HttpClient Client, KarobarDb Db, string TempRoot, string? PrevRoot)> StartLiveTestServerAsync()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), $"karobar_wave910_{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(tempRoot, "database"));
@@ -152,7 +152,7 @@ public class Wave9And10LiveHttpIntegrationTests
         }
     }
 
-    private static async Task<string> LoginAsync(HttpClient client, string email, string password)
+    internal static async Task<string> LoginAsync(HttpClient client, string email, string password)
     {
         var resp = await client.PostAsync("/api/login", JsonBody(new { email, password }));
         resp.StatusCode.Should().Be(HttpStatusCode.OK, await resp.Content.ReadAsStringAsync());
@@ -160,10 +160,10 @@ public class Wave9And10LiveHttpIntegrationTests
         return doc.RootElement.GetProperty("token").GetString()!;
     }
 
-    private static StringContent JsonBody(object payload) =>
+    internal static StringContent JsonBody(object payload) =>
         new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-    private static async Task CleanupAsync(WebApplication app, HttpClient client, string tempRoot, string? prevRoot)
+    internal static async Task CleanupAsync(WebApplication app, HttpClient client, string tempRoot, string? prevRoot)
     {
         try { await app.StopAsync(); await app.DisposeAsync(); } catch { }
         try { client.Dispose(); } catch { }
