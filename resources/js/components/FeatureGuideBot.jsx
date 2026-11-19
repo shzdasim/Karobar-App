@@ -2316,6 +2316,10 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           spotlightActive: true,
           pausedForDetour: false,
         });
+      } else if (detail.action === "resume") {
+        setActiveDemo((prev) =>
+          prev && prev.pausedForDetour ? { ...prev, pausedForDetour: false } : prev
+        );
       } else if (detail.action === "stop") {
         setActiveDemo(null);
       }

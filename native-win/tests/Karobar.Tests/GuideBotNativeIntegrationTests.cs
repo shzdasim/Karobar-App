@@ -220,6 +220,8 @@ public class GuideBotNativeIntegrationTests
             preloadJs.Should().Contain("setMascotPrefs");
             preloadJs.Should().Contain("toggle-guide-bot");
             preloadJs.Should().Contain("guide-focus-rect");
+            preloadJs.Should().Contain("guide-outside-click");
+            NativeTabWorkspace.StripQuery("/settings#cube").Should().Be("/settings");
 
             var ps1Content = await File.ReadAllTextAsync(Path.Combine(repoRoot, "native-win", "build-native-win.ps1"));
             ps1Content.Should().Contain(@"resources\assistant", "Installer and OTA patch must package resources/assistant/cube-knowledge.json");

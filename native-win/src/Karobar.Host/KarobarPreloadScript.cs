@@ -429,13 +429,15 @@ public static class KarobarPreloadScript
                 } catch (_) {}
               };
               var lastSentRoute = "";
+              var lastSentToken = "";
               var pushRouteContext = function () {
                 try {
                   var p = (window.location && window.location.pathname) || "/dashboard";
                   var tok = "";
                   try { tok = String(window.localStorage.getItem("token") || ""); } catch (_) {}
-                  if (p !== lastSentRoute || tok) {
+                  if (p !== lastSentRoute || tok !== lastSentToken) {
                     lastSentRoute = p;
+                    lastSentToken = tok;
                     postGuideMsg({ type: "guide-context", route: p, token: tok });
                   }
                 } catch (_) {}
@@ -461,7 +463,16 @@ public static class KarobarPreloadScript
                 }
               };
               window.addEventListener("keydown", pingActivity, true);
-              window.addEventListener("pointerdown", pingActivity, true);
+              window.addEventListener("pointerdown", function (e) {
+                pingActivity();
+                try {
+                  var target = e && e.target;
+                  var isTrigger = Boolean(target && target.closest && target.closest('[data-guide-bot-trigger="true"]'));
+                  if (!isTrigger) {
+                    postGuideMsg({ type: "guide-outside-click" });
+                  }
+                } catch (_) {}
+              }, true);
               window.addEventListener("focusin", function (e) {
                 pingActivity();
                 try {

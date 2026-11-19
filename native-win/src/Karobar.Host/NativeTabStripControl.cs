@@ -85,6 +85,20 @@ public sealed class NativeTabStripControl : Control
         Invalidate();
     }
 
+    public bool IsPointOnGuideBotPill(Point screenPoint)
+    {
+        if (IsDisposed || !IsHandleCreated) return false;
+        var pt = PointToClient(screenPoint);
+        foreach (var q in _quickRects)
+        {
+            if (q.Route == "__guide_bot__" && q.Bounds.Contains(pt))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

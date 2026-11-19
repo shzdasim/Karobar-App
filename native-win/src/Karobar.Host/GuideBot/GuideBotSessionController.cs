@@ -286,6 +286,89 @@ public sealed class GuideBotSessionController
         return null;
     }
 
+    public async Task<CubeBackgroundTaskSnapshot?> StartBackgroundAutofillAsync(string filterQuery, int batchSize = 20, CancellationToken ct = default)
+    {
+        var mgr = BackgroundTaskManager;
+        if (mgr != null)
+        {
+            return mgr.StartBulkAutofill(new CubeUserContext { UserId = 1, IsAdmin = true }, (filterQuery ?? "").Trim(), batchSize);
+        }
+
+        // Multi-PC LAN Terminal Mode fallback via Store Server HTTP API
+        if (!string.IsNullOrWhiteSpace(AuthBearerToken))
+        {
+            await PostCubeApiAsync("/api/cube/bg-task/start", new Dictionary<string, object?>
+            {
+                ["filter_query"] = (filterQuery ?? "").Trim(),
+                ["batch_size"] = batchSize
+            }, ct);
+            return await PollBackgroundTaskStatusAsync(ct);
+        }
+        return null;
+    }
+
+    public async Task<CubeBackgroundTaskSnapshot?> StopBackgroundAutofillAsync(CancellationToken ct = default)
+    {
+        var mgr = BackgroundTaskManager;
+        if (mgr != null)
+        {
+            return mgr.Stop();
+        }
+
+        if (!string.IsNullOrWhiteSpace(AuthBearerToken))
+        {
+            await PostCubeApiAsync("/api/cube/bg-task/stop", new Dictionary<string, object?>(), ct);
+            return await PollBackgroundTaskStatusAsync(ct);
+        }
+        return null;
+    }
+
+    public async Task<CubeBackgroundTaskSnapshot?> PollBackgroundTaskStatusAsync(CancellationToken ct = default)
+    {
+        var mgr = BackgroundTaskManager;
+        if (mgr != null) return mgr.GetSnapshot();
+
+        if (string.IsNullOrWhiteSpace(AuthBearerToken)) return null;
+        try
+        {
+            var url = $"{BaseOrigin.TrimEnd('/')}/api/cube/bg-task/status";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AuthBearerToken);
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var res = await _http.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return null;
+            var raw = await res.Content.ReadAsStringAsync(ct);
+            var d = ParseJsonToDict(raw);
+            if (d == null) return null;
+
+            var snap = new CubeBackgroundTaskSnapshot
+            {
+                Status = d.GetValueOrDefault("status")?.ToString() ?? "idle",
+                TaskType = d.GetValueOrDefault("task_type")?.ToString() ?? "bulk_autofill_missing_formulations",
+                FilterQuery = d.GetValueOrDefault("filter_query")?.ToString() ?? "",
+                ScannedCount = Convert.ToInt32(d.GetValueOrDefault("scanned_count") ?? 0),
+                UpdatedCount = Convert.ToInt32(d.GetValueOrDefault("updated_count") ?? 0),
+                SkippedCount = Convert.ToInt32(d.GetValueOrDefault("skipped_count") ?? 0),
+                RemainingCount = Convert.ToInt32(d.GetValueOrDefault("remaining_count") ?? 0),
+                TotalEstimate = Convert.ToInt32(d.GetValueOrDefault("total_estimate") ?? 0),
+                Message = d.GetValueOrDefault("message")?.ToString() ?? ""
+            };
+            if (d.GetValueOrDefault("updated_products") is System.Collections.IEnumerable upds)
+            {
+                snap.UpdatedProducts = upds.Cast<object?>().OfType<Dictionary<string, object?>>().ToList();
+            }
+            if (d.GetValueOrDefault("skipped_products") is System.Collections.IEnumerable skps)
+            {
+                snap.SkippedProducts = skps.Cast<object?>().OfType<Dictionary<string, object?>>().ToList();
+            }
+            return snap;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task<Dictionary<string, object?>?> PostCubeApiAsync(string path, Dictionary<string, object?> payload, CancellationToken ct)
     {
         try

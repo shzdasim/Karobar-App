@@ -1,5 +1,6 @@
 #if WINDOWS_DESKTOP
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -22,8 +23,8 @@ namespace Karobar.Host.GuideBot;
 /// </summary>
 public sealed class NativeGuideBotDrawer : Panel
 {
-    private const int CompactWidth = 412;
-    private const int WideWidth = 530;
+    private const int CompactWidth = 420;
+    private const int WideWidth = 540;
 
     private static readonly Color BgRoot = Color.FromArgb(15, 23, 42);        // #0f172a
     private static readonly Color BgSurface = Color.FromArgb(30, 41, 59);     // #1e293b
@@ -39,10 +40,12 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private readonly GuideBotSessionController _session;
     private readonly MascotPreferencesStore _prefsStore;
+    private readonly ToolTip _toolTip;
     private readonly Panel _headerAvatarCanvas;
     private readonly Label _screenSubtitleLabel;
     private readonly Button _langBtn;
     private readonly Button _widthBtn;
+    private readonly Button _clearChatBtn;
     private readonly Button _tabChatBtn;
     private readonly Button _tabGuideBtn;
     private readonly Button _tabTasksBtn;
@@ -50,6 +53,7 @@ public sealed class NativeGuideBotDrawer : Panel
     private readonly Panel _chatTabPanel;
     private readonly FlowLayoutPanel _chatFeedPanel;
     private readonly TextBox _composerBox;
+    private readonly Button _slashBtn;
     private readonly Button _sendBtn;
     private readonly ContextMenuStrip _slashMenu;
 
@@ -76,20 +80,33 @@ public sealed class NativeGuideBotDrawer : Panel
     private readonly ListView _taskReportList;
 
     private readonly System.Windows.Forms.Timer _avatarAnimTimer;
+    private readonly System.Windows.Forms.Timer _terminalTaskPollTimer;
+    private CubeBackgroundTaskSnapshot? _lastTaskSnapshot;
     private double _avatarAnimSec;
     private int _avatarTrickIndex;
     private int _headerClickCount;
     private string _activeMainTab = "chat"; // chat | guide | tasks
     private bool _isSending;
+    private bool _suppressSlashAutoPopup;
+    private bool _isRenderingChat;
+    private int _lastRenderedChatWidth;
 
     public event Action<string, string>? NavigateRequested;
-    public event Action<string>? StartSpotlightTourRequested;
+    public event Action<string, string?>? StartSpotlightTourRequested;
     public event Action? DrawerVisibilityChanged;
+
+    /// <summary>
+    /// True while an internal dropdown (slash menu or module filter) is open so click-outside auto-close ignores clicks on it.
+    /// </summary>
+    public bool IsPopupOpen =>
+        (_slashMenu != null && _slashMenu.Visible) ||
+        (_categoryFilterBox != null && _categoryFilterBox.DroppedDown);
 
     public NativeGuideBotDrawer(GuideBotSessionController session, MascotPreferencesStore prefsStore)
     {
         _session = session;
         _prefsStore = prefsStore;
+        _toolTip = new ToolTip { InitialDelay = 250, ReshowDelay = 120, AutoPopDelay = 5000 };
 
         Dock = DockStyle.Right;
         Width = _prefsStore.Current.DrawerWide ? WideWidth : CompactWidth;
@@ -100,7 +117,7 @@ public sealed class NativeGuideBotDrawer : Panel
 
         _session.Language = _prefsStore.Current.Language;
 
-        // ── Header Tier 1 + Tier 2 ───────────────────────────────────────────
+        // ── Header Tier 1 (Brand + Guaranteed-Visible Action Buttons) + Tier 2 (Tabs) ──
         var headerPanel = new Panel
         {
             Dock = DockStyle.Top,
@@ -111,6 +128,65 @@ public sealed class NativeGuideBotDrawer : Panel
         {
             using var pen = new Pen(BorderColor, 1f);
             e.Graphics.DrawLine(pen, 0, headerPanel.Height - 1, headerPanel.Width, headerPanel.Height - 1);
+        };
+
+        var headerTopRow = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 60,
+            BackColor = BgSurface
+        };
+
+        // Right-docked action button bar — NEVER drifts off-screen regardless of drawer width or DPI!
+        var headerActionsFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = BgSurface,
+            Padding = new Padding(4, 15, 8, 0),
+            Margin = Padding.Empty
+        };
+
+        _langBtn = CreateHeaderBtn(_session.Language == "ur" ? "اردو" : "EN", 42, (_, _) => ToggleLanguage());
+        _toolTip.SetToolTip(_langBtn, "Switch Language (English / اردو)");
+
+        _clearChatBtn = CreateHeaderBtn("⌫", 30, (_, _) =>
+        {
+            _session.ClearHistory();
+            _composerBox.Focus();
+        });
+        _toolTip.SetToolTip(_clearChatBtn, "Clear Chat History (/clear)");
+
+        var settingsBtn = CreateHeaderBtn("⚙", 30, (_, _) =>
+        {
+            HideDrawer();
+            NavigateRequested?.Invoke("/settings#cube", "Cube AI Settings");
+        });
+        _toolTip.SetToolTip(settingsBtn, "Cube AI & Mascot Settings");
+
+        _widthBtn = CreateHeaderBtn(_prefsStore.Current.DrawerWide ? "⇥" : "⇤", 30, (_, _) => ToggleWidth());
+        _toolTip.SetToolTip(_widthBtn, "Expand / Compact Drawer Width");
+
+        var closeBtn = CreateHeaderBtn("✕", 32, (_, _) => HideDrawer());
+        closeBtn.BackColor = Color.FromArgb(60, 26, 36);
+        closeBtn.ForeColor = Color.FromArgb(254, 202, 202);
+        closeBtn.FlatAppearance.BorderColor = Color.FromArgb(153, 27, 27);
+        closeBtn.FlatAppearance.MouseOverBackColor = AccentRed;
+        closeBtn.FlatAppearance.MouseDownBackColor = Color.FromArgb(185, 28, 28);
+        closeBtn.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        _toolTip.SetToolTip(closeBtn, "Close Cube AI (Esc / Ctrl+G)");
+
+        headerActionsFlow.Controls.AddRange([_langBtn, _clearChatBtn, settingsBtn, _widthBtn, closeBtn]);
+
+        // Left-filling brand + live screen subtitle
+        var headerLeft = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = BgSurface,
+            Padding = new Padding(10, 8, 4, 4)
         };
 
         _headerAvatarCanvas = new Panel
@@ -134,50 +210,40 @@ public sealed class NativeGuideBotDrawer : Panel
             }
             _headerAvatarCanvas.Invalidate();
         };
-        headerPanel.Controls.Add(_headerAvatarCanvas);
+        _toolTip.SetToolTip(_headerAvatarCanvas, "Click Cube to perform a trick (7 clicks switches skin)");
 
         var titleLbl = new Label
         {
             Text = "Cube AI Copilot",
-            Left = 62,
+            Left = 60,
             Top = 9,
             AutoSize = true,
-            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
             ForeColor = TextPrimary
         };
-        headerPanel.Controls.Add(titleLbl);
 
         _screenSubtitleLabel = new Label
         {
             Text = "/dashboard",
-            Left = 62,
+            Left = 60,
             Top = 31,
-            Width = 170,
+            Width = 140,
             Height = 18,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             AutoEllipsis = true,
             Font = new Font("Segoe UI", 8.2f, FontStyle.Regular),
             ForeColor = AccentCyan
         };
-        headerPanel.Controls.Add(_screenSubtitleLabel);
 
-        // Top-right action buttons
-        var closeBtn = CreateHeaderBtn("×", 30, (_, _) => HideDrawer());
-        closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        closeBtn.Location = new Point(Width - 38, 12);
+        headerLeft.Controls.AddRange([_headerAvatarCanvas, titleLbl, _screenSubtitleLabel]);
+        headerLeft.SizeChanged += (_, _) =>
+        {
+            _screenSubtitleLabel.Width = Math.Max(60, headerLeft.ClientSize.Width - 64);
+        };
 
-        _widthBtn = CreateHeaderBtn(_prefsStore.Current.DrawerWide ? "⇥" : "⇤", 30, (_, _) => ToggleWidth());
-        _widthBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _widthBtn.Location = new Point(Width - 72, 12);
-
-        var settingsBtn = CreateHeaderBtn("⚙", 30, (_, _) => NavigateRequested?.Invoke("/settings#cube", "Cube AI Settings"));
-        settingsBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        settingsBtn.Location = new Point(Width - 106, 12);
-
-        _langBtn = CreateHeaderBtn(_session.Language == "ur" ? "اردو" : "EN", 42, (_, _) => ToggleLanguage());
-        _langBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _langBtn.Location = new Point(Width - 152, 12);
-
-        headerPanel.Controls.AddRange([_langBtn, settingsBtn, _widthBtn, closeBtn]);
+        // WinForms Z-order inside headerTopRow: Fill first, Right second
+        headerTopRow.Controls.Add(headerLeft);
+        headerTopRow.Controls.Add(headerActionsFlow);
 
         // Tier 2: 3-Tab Switcher
         var tabBar = new TableLayoutPanel
@@ -199,7 +265,9 @@ public sealed class NativeGuideBotDrawer : Panel
         tabBar.Controls.Add(_tabChatBtn, 0, 0);
         tabBar.Controls.Add(_tabGuideBtn, 1, 0);
         tabBar.Controls.Add(_tabTasksBtn, 2, 0);
+
         headerPanel.Controls.Add(tabBar);
+        headerPanel.Controls.Add(headerTopRow);
 
         // ── Tab 1: AI Chat ───────────────────────────────────────────────────
         _chatTabPanel = new Panel { Dock = DockStyle.Fill, BackColor = BgRoot };
@@ -209,51 +277,51 @@ public sealed class NativeGuideBotDrawer : Panel
         var composerBar = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 82,
+            Height = 86,
             BackColor = BgSurface,
-            Padding = new Padding(8)
+            Padding = new Padding(8, 8, 8, 6)
         };
-        var slashBtn = new Button
+        composerBar.Paint += (_, e) =>
+        {
+            using var pen = new Pen(BorderColor, 1f);
+            e.Graphics.DrawLine(pen, 0, 0, composerBar.Width, 0);
+        };
+
+        var composerGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 48,
+            ColumnCount = 3,
+            RowCount = 1,
+            BackColor = BgSurface,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        composerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36f));
+        composerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        composerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74f));
+        composerGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        _slashBtn = new Button
         {
             Text = "/",
-            Width = 32,
-            Height = 34,
-            Left = 8,
-            Top = 10,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 4, 4, 4),
             FlatStyle = FlatStyle.Flat,
             BackColor = BgCard,
             ForeColor = AccentCyan,
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
             Cursor = Cursors.Hand
         };
-        slashBtn.FlatAppearance.BorderColor = BorderColor;
-        slashBtn.Click += (_, _) => _slashMenu.Show(slashBtn, new Point(0, -_slashMenu.Height));
-
-        _sendBtn = new Button
-        {
-            Text = "Send",
-            Width = 66,
-            Height = 34,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            Left = Width - 78,
-            Top = 10,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = AccentBlue,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 8.8f, FontStyle.Bold),
-            Cursor = Cursors.Hand
-        };
-        _sendBtn.FlatAppearance.BorderSize = 0;
-        _sendBtn.Click += async (_, _) => await HandleComposerSubmitAsync();
+        _slashBtn.FlatAppearance.BorderColor = BorderColor;
+        _slashBtn.Click += (_, _) => _slashMenu.Show(_slashBtn, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+        _toolTip.SetToolTip(_slashBtn, "Slash Commands (/add-product, /autofill, /walkthrough…)");
 
         _composerBox = new TextBox
         {
             Multiline = true,
-            Left = 46,
-            Top = 8,
-            Width = Math.Max(160, Width - 130),
-            Height = 46,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(2, 2, 4, 2),
             BackColor = BgRoot,
             ForeColor = TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
@@ -267,19 +335,52 @@ public sealed class NativeGuideBotDrawer : Panel
                 e.SuppressKeyPress = true;
                 await HandleComposerSubmitAsync();
             }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                e.SuppressKeyPress = true;
+                if (_slashMenu.Visible) _slashMenu.Close();
+                else HideDrawer();
+            }
         };
+        _composerBox.TextChanged += (_, _) =>
+        {
+            if (!_suppressSlashAutoPopup && _composerBox.Text == "/")
+            {
+                _slashMenu.Show(_slashBtn, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+            }
+        };
+
+        _sendBtn = new Button
+        {
+            Text = "Send",
+            Dock = DockStyle.Fill,
+            Margin = new Padding(2, 4, 0, 4),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = AccentBlue,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 8.8f, FontStyle.Bold),
+            Cursor = Cursors.Hand
+        };
+        _sendBtn.FlatAppearance.BorderSize = 0;
+        _sendBtn.Click += async (_, _) => await HandleComposerSubmitAsync();
+
+        composerGrid.Controls.Add(_slashBtn, 0, 0);
+        composerGrid.Controls.Add(_composerBox, 1, 0);
+        composerGrid.Controls.Add(_sendBtn, 2, 0);
 
         var hintLbl = new Label
         {
-            Text = "Enter Send · Shift+Enter New line · / Commands · Ctrl+G Toggle",
-            Left = 10,
-            Top = 58,
-            AutoSize = true,
+            Text = "Enter Send · Shift+Enter New line · / Commands · Esc / Click Outside Close",
+            Dock = DockStyle.Bottom,
+            Height = 20,
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true,
             Font = new Font("Segoe UI", 7.3f),
             ForeColor = TextMuted
         };
 
-        composerBar.Controls.AddRange([slashBtn, _composerBox, _sendBtn, hintLbl]);
+        composerBar.Controls.Add(composerGrid);
+        composerBar.Controls.Add(hintLbl);
 
         _chatFeedPanel = new FlowLayoutPanel
         {
@@ -298,55 +399,87 @@ public sealed class NativeGuideBotDrawer : Panel
         // ── Tab 2: Screen Guide & 80+ Screen Directory ───────────────────────
         _guideTabPanel = new Panel { Dock = DockStyle.Fill, BackColor = BgRoot, Visible = false, Padding = new Padding(10) };
 
-        var guideTopBar = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = BgRoot };
+        var guideTopBar = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 70,
+            ColumnCount = 2,
+            RowCount = 2,
+            BackColor = BgRoot,
+            Padding = new Padding(0, 0, 0, 6)
+        };
+        guideTopBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58f));
+        guideTopBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42f));
+        guideTopBar.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        guideTopBar.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+
         _screenSearchBox = new TextBox
         {
-            Left = 0, Top = 0, Width = 230, Height = 26,
-            BackColor = BgSurface, ForeColor = TextPrimary, BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "Search 80+ screens (e.g. POS, Ledger, Batch)…"
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 6, 4),
+            BackColor = BgSurface,
+            ForeColor = TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "Search 80+ screens (POS, Ledger, Batch)…"
         };
         _screenSearchBox.TextChanged += (_, _) => PopulateDirectoryList();
 
         _categoryFilterBox = new ComboBox
         {
-            Left = 236, Top = 0, Width = 148, DropDownStyle = ComboBoxStyle.DropDownList,
-            BackColor = BgSurface, ForeColor = TextPrimary, FlatStyle = FlatStyle.Flat
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 4),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = BgSurface,
+            ForeColor = TextPrimary,
+            FlatStyle = FlatStyle.Flat
         };
         _categoryFilterBox.SelectedIndexChanged += (_, _) => PopulateDirectoryList();
 
         var startTourBtn = new Button
         {
             Text = "▶ Live On-Screen Spotlight Tour",
-            Left = 0, Top = 32, Width = 225, Height = 28,
-            FlatStyle = FlatStyle.Flat, BackColor = AccentCyan, ForeColor = Color.White,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold), Cursor = Cursors.Hand
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 6, 2),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = AccentCyan,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 8.4f, FontStyle.Bold),
+            Cursor = Cursors.Hand
         };
         startTourBtn.FlatAppearance.BorderSize = 0;
-        startTourBtn.Click += (_, _) =>
-        {
-            var guide = _previewedScreen ?? _session.GetCurrentScreenGuide();
-            StartSpotlightTourRequested?.Invoke(guide?.WorkflowId ?? "dynamic_screen_tour");
-        };
+        startTourBtn.Click += (_, _) => LaunchSpotlightTourForGuide(_previewedScreen ?? _session.GetCurrentScreenGuide());
 
         var openGuideRouteBtn = new Button
         {
             Text = "Open Screen →",
-            Left = 232, Top = 32, Width = 152, Height = 28,
-            FlatStyle = FlatStyle.Flat, BackColor = BgSurface, ForeColor = TextPrimary,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold), Cursor = Cursors.Hand
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 2),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = BgSurface,
+            ForeColor = TextPrimary,
+            Font = new Font("Segoe UI", 8.4f, FontStyle.Bold),
+            Cursor = Cursors.Hand
         };
         openGuideRouteBtn.FlatAppearance.BorderColor = BorderColor;
         openGuideRouteBtn.Click += (_, _) =>
         {
             var g = _previewedScreen ?? _session.GetCurrentScreenGuide();
-            if (g != null) NavigateRequested?.Invoke(g.Route, g.TitleEn);
+            if (g != null)
+            {
+                HideDrawer();
+                NavigateRequested?.Invoke(g.Route, g.TitleEn);
+            }
         };
-        guideTopBar.Controls.AddRange([_screenSearchBox, _categoryFilterBox, startTourBtn, openGuideRouteBtn]);
+
+        guideTopBar.Controls.Add(_screenSearchBox, 0, 0);
+        guideTopBar.Controls.Add(_categoryFilterBox, 1, 0);
+        guideTopBar.Controls.Add(startTourBtn, 0, 1);
+        guideTopBar.Controls.Add(openGuideRouteBtn, 1, 1);
 
         _directoryList = new ListBox
         {
             Dock = DockStyle.Top,
-            Height = 140,
+            Height = 136,
             BackColor = BgSurface,
             ForeColor = TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
@@ -358,6 +491,14 @@ public sealed class NativeGuideBotDrawer : Panel
             {
                 _previewedScreen = item.Screen;
                 RenderScreenBlueprint();
+            }
+        };
+        _directoryList.DoubleClick += (_, _) =>
+        {
+            if (_directoryList.SelectedItem is ScreenListItem item)
+            {
+                HideDrawer();
+                NavigateRequested?.Invoke(item.Screen.Route, item.Screen.TitleEn);
             }
         };
 
@@ -381,30 +522,57 @@ public sealed class NativeGuideBotDrawer : Panel
             Text = "DRAP Bulk Formulation Auto-Fill (Runs Natively Across All Tabs)",
             Dock = DockStyle.Top,
             Height = 24,
-            Font = new Font("Segoe UI", 9.2f, FontStyle.Bold),
+            AutoEllipsis = true,
+            Font = new Font("Segoe UI", 9.1f, FontStyle.Bold),
             ForeColor = TextPrimary
         };
 
-        var taskControls = new Panel { Dock = DockStyle.Top, Height = 72, BackColor = BgRoot };
+        var taskControls = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 72,
+            ColumnCount = 4,
+            RowCount = 2,
+            BackColor = BgRoot,
+            Padding = new Padding(0, 2, 0, 6)
+        };
+        taskControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24f));
+        taskControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36f));
+        taskControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20f));
+        taskControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20f));
+        taskControls.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        taskControls.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+
         _taskFilterBox = new TextBox
         {
-            Left = 0, Top = 4, Width = 380, Height = 26,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            BackColor = BgSurface, ForeColor = TextPrimary, BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "Optional product filter (leave blank for all missing formulations)…"
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 4),
+            BackColor = BgSurface,
+            ForeColor = TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "Optional product filter (blank = all missing formulations)…"
         };
-        _taskPreviewBtn = CreateActionBtn("Preview", AccentAmber, 0, 36, 92, async (_, _) => await RunTaskPreviewAsync());
-        _taskStartBtn = CreateActionBtn("Start Auto-Fill", AccentEmerald, 98, 36, 114, (_, _) => StartBackgroundAutofill());
-        _taskStopBtn = CreateActionBtn("Stop", AccentRed, 218, 36, 68, (_, _) => _session.BackgroundTaskManager?.Stop());
-        _taskExportCsvBtn = CreateActionBtn("CSV", BgSurface, 292, 36, 64, (_, _) => ExportTaskReportCsv());
-        taskControls.Controls.AddRange([_taskFilterBox, _taskPreviewBtn, _taskStartBtn, _taskStopBtn, _taskExportCsvBtn]);
+        taskControls.Controls.Add(_taskFilterBox, 0, 0);
+        taskControls.SetColumnSpan(_taskFilterBox, 4);
+
+        _taskPreviewBtn = CreateGridActionBtn("Preview", AccentAmber, async (_, _) => await RunTaskPreviewAsync());
+        _taskStartBtn = CreateGridActionBtn("Start Auto-Fill", AccentEmerald, async (_, _) => await StartBackgroundAutofillAsync());
+        _taskStopBtn = CreateGridActionBtn("Stop", AccentRed, async (_, _) => await StopBackgroundAutofillAsync());
+        _taskStopBtn.Enabled = false;
+        _taskExportCsvBtn = CreateGridActionBtn("CSV", BgSurface, (_, _) => ExportTaskReportCsv());
+
+        taskControls.Controls.Add(_taskPreviewBtn, 0, 1);
+        taskControls.Controls.Add(_taskStartBtn, 1, 1);
+        taskControls.Controls.Add(_taskStopBtn, 2, 1);
+        taskControls.Controls.Add(_taskExportCsvBtn, 3, 1);
 
         _taskProgressBar = new ProgressBar { Dock = DockStyle.Top, Height = 14, Minimum = 0, Maximum = 100 };
         _taskStatusLabel = new Label
         {
             Text = "Idle — click Preview to inspect DRAP matches before posting.",
             Dock = DockStyle.Top,
-            Height = 26,
+            Height = 28,
+            AutoEllipsis = true,
             Font = new Font("Segoe UI", 8.2f),
             ForeColor = TextMuted
         };
@@ -426,9 +594,19 @@ public sealed class NativeGuideBotDrawer : Panel
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Segoe UI", 8.2f)
         };
-        _taskReportList.Columns.Add("Status", 66);
+        _taskReportList.Columns.Add("Status", 68);
         _taskReportList.Columns.Add("Product", 150);
-        _taskReportList.Columns.Add("Formulation / Reason", 170);
+        _taskReportList.Columns.Add("Formulation / Reason", 160);
+        _taskReportList.SizeChanged += (_, _) =>
+        {
+            if (_taskReportList.Columns.Count == 3)
+            {
+                var avail = Math.Max(180, _taskReportList.ClientSize.Width - 76);
+                _taskReportList.Columns[0].Width = 68;
+                _taskReportList.Columns[1].Width = (int)(avail * 0.48);
+                _taskReportList.Columns[2].Width = Math.Max(80, avail - _taskReportList.Columns[1].Width);
+            }
+        };
 
         _tasksTabPanel.Controls.Add(_taskReportList);
         _tasksTabPanel.Controls.Add(metricsGrid);
@@ -437,7 +615,7 @@ public sealed class NativeGuideBotDrawer : Panel
         _tasksTabPanel.Controls.Add(taskControls);
         _tasksTabPanel.Controls.Add(taskHeader);
 
-        // Assemble main drawer
+        // Assemble main drawer (Fill panels first, DockStyle.Top header last)
         Controls.Add(_tasksTabPanel);
         Controls.Add(_guideTabPanel);
         Controls.Add(_chatTabPanel);
@@ -463,11 +641,42 @@ public sealed class NativeGuideBotDrawer : Panel
             _headerAvatarCanvas.Invalidate();
         };
 
+        // Terminal-mode fallback poller when in-process BackgroundTaskManager is null
+        _terminalTaskPollTimer = new System.Windows.Forms.Timer { Interval = 1800 };
+        _terminalTaskPollTimer.Tick += async (_, _) =>
+        {
+            if (IsDisposed || !Visible || _session.BackgroundTaskManager != null) return;
+            var snap = await _session.PollBackgroundTaskStatusAsync();
+            if (snap != null)
+            {
+                ApplyTaskSnapshot(snap);
+                if (snap.Status != "running") _terminalTaskPollTimer.Stop();
+            }
+        };
+
         InitCategories();
         RefreshActiveScreenContext();
         SwitchMainTab("chat");
         RenderChatFeed();
         if (_session.BackgroundTaskManager != null) ApplyTaskSnapshot(_session.BackgroundTaskManager.GetSnapshot());
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Escape)
+        {
+            if (_slashMenu.Visible)
+            {
+                _slashMenu.Close();
+                return true;
+            }
+            if (Visible)
+            {
+                HideDrawer();
+                return true;
+            }
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     public void ShowDrawer(string? tab = null)
@@ -477,12 +686,15 @@ public sealed class NativeGuideBotDrawer : Panel
         BringToFront();
         _avatarAnimTimer.Start();
         RefreshActiveScreenContext();
-        _composerBox.Focus();
+        RenderChatFeed();
+        if (_activeMainTab == "chat") _composerBox.Focus();
         DrawerVisibilityChanged?.Invoke();
     }
 
     public void HideDrawer()
     {
+        if (!Visible) return;
+        try { if (_slashMenu.Visible) _slashMenu.Close(); } catch { }
         Visible = false;
         _avatarAnimTimer.Stop();
         DrawerVisibilityChanged?.Invoke();
@@ -497,7 +709,7 @@ public sealed class NativeGuideBotDrawer : Panel
     public void AskFromSpotlightStep(string promptText)
     {
         ShowDrawer("chat");
-        _ = _session.SendQuestionAsync(promptText);
+        _ = SendPromptAsync(promptText);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -520,13 +732,24 @@ public sealed class NativeGuideBotDrawer : Panel
         e.Graphics.DrawImage(bmp, new Rectangle(-4, -8, 52, 54));
     }
 
+    private void LaunchSpotlightTourForGuide(CubeScreenGuideInfo? guide)
+    {
+        var wfId = guide?.WorkflowId ?? "dynamic_screen_tour";
+        var targetRoute = guide != null && !guide.Route.Equals(_session.CurrentRoute, StringComparison.OrdinalIgnoreCase)
+            ? guide.Route
+            : null;
+        HideDrawer();
+        StartSpotlightTourRequested?.Invoke(wfId, targetRoute);
+    }
+
     private void ToggleWidth()
     {
         var wide = Width <= CompactWidth;
         Width = wide ? WideWidth : CompactWidth;
         _widthBtn.Text = wide ? "⇥" : "⇤";
         _prefsStore.Update(p => p.DrawerWide = wide);
-        ResizeChatCards();
+        RenderChatFeed();
+        if (_activeMainTab == "guide") RenderScreenBlueprint();
         DrawerVisibilityChanged?.Invoke();
     }
 
@@ -535,6 +758,7 @@ public sealed class NativeGuideBotDrawer : Panel
         _session.Language = _session.Language == "ur" ? "en" : "ur";
         _langBtn.Text = _session.Language == "ur" ? "اردو" : "EN";
         _prefsStore.Update(p => p.Language = _session.Language);
+        RefreshActiveScreenContext();
         RenderChatFeed();
         RenderScreenBlueprint();
     }
@@ -555,6 +779,20 @@ public sealed class NativeGuideBotDrawer : Panel
             PopulateDirectoryList();
             RenderScreenBlueprint();
         }
+        else if (tab == "tasks" && _session.BackgroundTaskManager == null)
+        {
+            _ = RefreshTerminalTaskStatusOnceAsync();
+        }
+    }
+
+    private async Task RefreshTerminalTaskStatusOnceAsync()
+    {
+        var snap = await _session.PollBackgroundTaskStatusAsync();
+        if (snap != null)
+        {
+            SafeUi(() => ApplyTaskSnapshot(snap));
+            if (snap.Status == "running") SafeUi(() => _terminalTaskPollTimer.Start());
+        }
     }
 
     private void RefreshActiveScreenContext()
@@ -572,11 +810,14 @@ public sealed class NativeGuideBotDrawer : Panel
         var text = _composerBox.Text.Trim();
         if (string.IsNullOrEmpty(text)) return;
 
+        _suppressSlashAutoPopup = true;
         _composerBox.Clear();
+        _suppressSlashAutoPopup = false;
 
         if (text.Equals("/clear", StringComparison.OrdinalIgnoreCase))
         {
             _session.ClearHistory();
+            _composerBox.Focus();
             return;
         }
         if (text.Equals("/tasks", StringComparison.OrdinalIgnoreCase))
@@ -586,117 +827,189 @@ public sealed class NativeGuideBotDrawer : Panel
         }
         if (text.Equals("/walkthrough", StringComparison.OrdinalIgnoreCase))
         {
-            var g = _session.GetCurrentScreenGuide();
-            StartSpotlightTourRequested?.Invoke(g?.WorkflowId ?? "dynamic_screen_tour");
+            LaunchSpotlightTourForGuide(_session.GetCurrentScreenGuide());
             return;
         }
+
+        await SendPromptAsync(text);
+    }
+
+    private async Task SendPromptAsync(string text, bool userConfirmed = false)
+    {
+        if (_isSending || string.IsNullOrWhiteSpace(text)) return;
 
         _isSending = true;
         _sendBtn.Enabled = false;
         _sendBtn.Text = "…";
+        RenderChatFeed();
         try
         {
-            await _session.SendQuestionAsync(text);
+            await _session.SendQuestionAsync(text, userConfirmed: userConfirmed);
         }
         finally
         {
             _isSending = false;
             _sendBtn.Enabled = true;
             _sendBtn.Text = "Send";
-            _composerBox.Focus();
+            RenderChatFeed();
+            if (Visible && _activeMainTab == "chat") _composerBox.Focus();
         }
     }
 
     private void RenderChatFeed()
     {
-        _chatFeedPanel.SuspendLayout();
-        _chatFeedPanel.Controls.Clear();
-
-        var cardW = Math.Max(260, _chatFeedPanel.ClientSize.Width - 28);
-        var isUr = _session.Language == "ur";
-
-        if (_session.Messages.Count == 0)
+        if (IsDisposed || _isRenderingChat) return;
+        _isRenderingChat = true;
+        try
         {
-            var hero = new Panel { Width = cardW, AutoSize = true, BackColor = BgSurface, Padding = new Padding(12), Margin = new Padding(0, 0, 0, 10) };
-            var heroFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-            heroFlow.Controls.Add(new Label
-            {
-                Text = isUr ? "خوش آمدید! میں کیوب اے آئی ہوں" : "Welcome to Cube AI Copilot (Native Windows)",
-                AutoSize = true, MaximumSize = new Size(cardW - 24, 0),
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = TextPrimary
-            });
-            heroFlow.Controls.Add(new Label
-            {
-                Text = isUr
-                    ? "کسی بھی اسکرین کی وضاحت پوچھیں، پروڈکٹس/برانڈز شامل کریں، یا خودکار فارمولیشن چلائیں۔"
-                    : "Ask how any ERP screen works, run non-destructive data tasks with Pre-DB preview guards, or launch a live Spotlight Tour.",
-                AutoSize = true, MaximumSize = new Size(cardW - 24, 0), Margin = new Padding(0, 4, 0, 10),
-                Font = new Font("Segoe UI", 8.5f), ForeColor = TextMuted
-            });
+            _lastRenderedChatWidth = _chatFeedPanel.ClientSize.Width;
+            _chatFeedPanel.SuspendLayout();
+            _chatFeedPanel.Controls.Clear();
 
-            var actions = new (string Label, Action Handler)[]
-            {
-                (isUr ? "اس اسکرین کی وضاحت کریں" : "Explain Current Screen", () => _ = _session.SendQuestionAsync("Explain this screen step by step")),
-                (isUr ? "نئی پروڈکٹ شامل کریں" : "+ Add New Product", () => _ = _session.SendQuestionAsync("/add-product")),
-                (isUr ? "خالی فارمولیشن خودکار بھریں" : "Auto-Fill Formulations", () => SwitchMainTab("tasks")),
-                (isUr ? "لائیو اسپاٹ لائٹ ٹور" : "▶ Live Spotlight Tour", () => StartSpotlightTourRequested?.Invoke(_session.GetCurrentScreenGuide()?.WorkflowId ?? "dynamic_screen_tour"))
-            };
+            var cardW = Math.Max(260, _chatFeedPanel.ClientSize.Width - 28);
+            var isUr = _session.Language == "ur";
 
-            foreach (var (lbl, handler) in actions)
+            if (_session.Messages.Count == 0 && !_isSending)
             {
-                var b = new Button
+                var hero = new Panel
                 {
-                    Text = lbl,
-                    Width = cardW - 28,
-                    Height = 32,
-                    FlatStyle = FlatStyle.Flat,
-                    BackColor = BgCard,
-                    ForeColor = TextPrimary,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Font = new Font("Segoe UI", 8.8f, FontStyle.Bold),
-                    Margin = new Padding(0, 3, 0, 3),
-                    Cursor = Cursors.Hand
+                    Width = cardW,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    MinimumSize = new Size(cardW, 0),
+                    MaximumSize = new Size(cardW, 0),
+                    BackColor = BgSurface,
+                    Padding = new Padding(12),
+                    Margin = new Padding(0, 0, 0, 10)
                 };
-                b.FlatAppearance.BorderColor = BorderColor;
-                b.Click += (_, _) => handler();
-                heroFlow.Controls.Add(b);
-            }
+                var heroFlow = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Top,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    MaximumSize = new Size(cardW - 24, 0),
+                    FlowDirection = FlowDirection.TopDown,
+                    WrapContents = false
+                };
+                heroFlow.Controls.Add(new Label
+                {
+                    Text = isUr ? "خوش آمدید! میں کیوب اے آئی ہوں" : "Welcome to Cube AI Copilot",
+                    AutoSize = true,
+                    MaximumSize = new Size(cardW - 28, 0),
+                    Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                    ForeColor = TextPrimary
+                });
+                heroFlow.Controls.Add(new Label
+                {
+                    Text = isUr
+                        ? "کسی بھی اسکرین کی وضاحت پوچھیں، پروڈکٹس/برانڈز شامل کریں، یا خودکار فارمولیشن چلائیں۔"
+                        : "Ask how any ERP screen works, run non-destructive data tasks with Pre-DB preview guards, or launch a live Spotlight Tour.",
+                    AutoSize = true,
+                    MaximumSize = new Size(cardW - 28, 0),
+                    Margin = new Padding(0, 4, 0, 10),
+                    Font = new Font("Segoe UI", 8.5f),
+                    ForeColor = TextMuted
+                });
 
-            hero.Controls.Add(heroFlow);
-            _chatFeedPanel.Controls.Add(hero);
-        }
-        else
-        {
-            foreach (var msg in _session.Messages)
+                var actions = new (string Label, Action Handler)[]
+                {
+                    (isUr ? "اس اسکرین کی وضاحت کریں" : "Explain Current Screen", () => _ = SendPromptAsync("Explain this screen step by step")),
+                    (isUr ? "نئی پروڈکٹ شامل کریں" : "+ Add New Product", () => _ = SendPromptAsync("/add-product")),
+                    (isUr ? "خالی فارمولیشن خودکار بھریں" : "Auto-Fill Formulations", () => SwitchMainTab("tasks")),
+                    (isUr ? "لائیو اسپاٹ لائٹ ٹور" : "▶ Live Spotlight Tour", () => LaunchSpotlightTourForGuide(_session.GetCurrentScreenGuide()))
+                };
+
+                foreach (var (lbl, handler) in actions)
+                {
+                    var b = new Button
+                    {
+                        Text = lbl,
+                        Width = cardW - 30,
+                        Height = 32,
+                        FlatStyle = FlatStyle.Flat,
+                        BackColor = BgCard,
+                        ForeColor = TextPrimary,
+                        TextAlign = ContentAlignment.MiddleLeft,
+                        Padding = new Padding(6, 0, 6, 0),
+                        Font = new Font("Segoe UI", 8.8f, FontStyle.Bold),
+                        Margin = new Padding(0, 3, 0, 3),
+                        Cursor = Cursors.Hand
+                    };
+                    b.FlatAppearance.BorderColor = BorderColor;
+                    b.Click += (_, _) => handler();
+                    heroFlow.Controls.Add(b);
+                }
+
+                hero.Controls.Add(heroFlow);
+                _chatFeedPanel.Controls.Add(hero);
+            }
+            else
             {
-                _chatFeedPanel.Controls.Add(BuildMessageCard(msg, cardW, isUr));
+                foreach (var msg in _session.Messages)
+                {
+                    _chatFeedPanel.Controls.Add(BuildMessageCard(msg, cardW, isUr));
+                }
+            }
+
+            if (_isSending)
+            {
+                var thinkingCard = new Panel
+                {
+                    Width = cardW - 12,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    MinimumSize = new Size(cardW - 12, 36),
+                    MaximumSize = new Size(cardW - 12, 0),
+                    BackColor = BgCard,
+                    Padding = new Padding(10, 8, 10, 8),
+                    Margin = new Padding(0, 0, 12, 8)
+                };
+                thinkingCard.Controls.Add(new Label
+                {
+                    Text = isUr ? "کیوب اے آئی جواب تیار کر رہا ہے…" : "Cube AI is thinking…",
+                    AutoSize = true,
+                    Font = new Font("Segoe UI", 8.6f, FontStyle.Italic),
+                    ForeColor = AccentCyan
+                });
+                _chatFeedPanel.Controls.Add(thinkingCard);
+            }
+
+            _chatFeedPanel.ResumeLayout(true);
+            if (_chatFeedPanel.Controls.Count > 0)
+            {
+                _chatFeedPanel.ScrollControlIntoView(_chatFeedPanel.Controls[^1]);
             }
         }
-
-        _chatFeedPanel.ResumeLayout();
-        if (_chatFeedPanel.Controls.Count > 0)
+        finally
         {
-            _chatFeedPanel.ScrollControlIntoView(_chatFeedPanel.Controls[^1]);
+            _isRenderingChat = false;
         }
     }
 
     private Control BuildMessageCard(GuideBotChatMessage msg, int cardW, bool isUr)
     {
         var isUser = msg.Role == "user";
+        var effectiveW = Math.Max(220, cardW - (isUser ? 26 : 12));
         var card = new Panel
         {
-            Width = cardW,
+            Width = effectiveW,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(effectiveW, 0),
+            MaximumSize = new Size(effectiveW, 0),
             BackColor = isUser ? AccentBlue : BgSurface,
             Padding = new Padding(10),
             Margin = new Padding(isUser ? 26 : 0, 0, isUser ? 0 : 12, 8),
             RightToLeft = isUr ? RightToLeft.Yes : RightToLeft.No
         };
 
+        var innerW = Math.Max(180, effectiveW - 22);
         var stack = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MaximumSize = new Size(innerW, 0),
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false
         };
@@ -704,23 +1017,26 @@ public sealed class NativeGuideBotDrawer : Panel
         if (!isUser)
         {
             var title = isUr && !string.IsNullOrWhiteSpace(msg.TitleUr) ? msg.TitleUr : msg.TitleEn;
-            stack.Controls.Add(new Label
+            if (!string.IsNullOrWhiteSpace(title))
             {
-                Text = title,
-                AutoSize = true,
-                MaximumSize = new Size(cardW - 24, 0),
-                Font = new Font("Segoe UI", 9.2f, FontStyle.Bold),
-                ForeColor = AccentCyan
-            });
+                stack.Controls.Add(new Label
+                {
+                    Text = title,
+                    AutoSize = true,
+                    MaximumSize = new Size(innerW - 4, 0),
+                    Font = new Font("Segoe UI", 9.2f, FontStyle.Bold),
+                    ForeColor = AccentCyan
+                });
+            }
         }
 
         var body = isUr && !string.IsNullOrWhiteSpace(msg.AnswerUr) ? msg.AnswerUr : msg.AnswerEn;
-        body = Regex.Replace(body, @"\*\*(.*?)\*\*", "$1");
+        body = Regex.Replace(body ?? "", @"\*\*(.*?)\*\*", "$1");
         stack.Controls.Add(new Label
         {
             Text = body,
             AutoSize = true,
-            MaximumSize = new Size(cardW - 24, 0),
+            MaximumSize = new Size(innerW - 4, 0),
             Margin = new Padding(0, 4, 0, 4),
             Font = new Font("Segoe UI", 8.8f),
             ForeColor = TextPrimary
@@ -733,8 +1049,10 @@ public sealed class NativeGuideBotDrawer : Panel
         {
             var guardBox = new FlowLayoutPanel
             {
-                Width = cardW - 24,
+                Width = innerW - 4,
                 AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MaximumSize = new Size(innerW - 4, 0),
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
                 BackColor = Color.FromArgb(46, 36, 18),
@@ -745,6 +1063,7 @@ public sealed class NativeGuideBotDrawer : Panel
             {
                 Text = "⚠ NOT POSTED TO DATABASE YET — Approval Required",
                 AutoSize = true,
+                MaximumSize = new Size(innerW - 24, 0),
                 Font = new Font("Segoe UI", 8.2f, FontStyle.Bold),
                 ForeColor = AccentAmber
             });
@@ -757,16 +1076,17 @@ public sealed class NativeGuideBotDrawer : Panel
                     {
                         Text = $"Table: {tbl}  |  Operation: {pr.GetValueOrDefault("operation") ?? "WRITE"}",
                         AutoSize = true,
+                        MaximumSize = new Size(innerW - 24, 0),
                         Font = new Font("Segoe UI", 7.8f),
                         ForeColor = TextMuted
                     });
                 }
-                if (pr.TryGetValue("records", out var recsObj) && recsObj is System.Collections.IEnumerable rawRecs)
+                if (pr.TryGetValue("records", out var recsObj) && recsObj is IEnumerable rawRecs)
                 {
                     foreach (var rd in rawRecs.Cast<object?>().OfType<Dictionary<string, object?>>().Take(5))
                     {
                         var line = $"• {rd.GetValueOrDefault("title")}";
-                        if (rd.TryGetValue("fields", out var fObj) && fObj is System.Collections.IEnumerable rawFields)
+                        if (rd.TryGetValue("fields", out var fObj) && fObj is IEnumerable rawFields)
                         {
                             var fParts = rawFields.Cast<object?>().OfType<Dictionary<string, object?>>()
                                 .Take(4)
@@ -777,7 +1097,7 @@ public sealed class NativeGuideBotDrawer : Panel
                         {
                             Text = line,
                             AutoSize = true,
-                            MaximumSize = new Size(cardW - 44, 0),
+                            MaximumSize = new Size(innerW - 24, 0),
                             Font = new Font("Segoe UI", 8f),
                             ForeColor = TextPrimary
                         });
@@ -785,39 +1105,52 @@ public sealed class NativeGuideBotDrawer : Panel
                 }
             }
 
-            var btnRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 6, 0, 0) };
-            var approveBtn = CreateSmallPillBtn("✓ Approve & Post", AccentEmerald, async () =>
+            var btnRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                Margin = new Padding(0, 6, 0, 0)
+            };
+            var approveBtn = CreateSmallPillBtn("✓ Approve & Post", AccentEmerald, () =>
             {
                 var pendingAction = msg.TaskMeta.GetValueOrDefault("pending_action")?.ToString()
                     ?? msg.TaskMeta.GetValueOrDefault("action")?.ToString();
                 if (pendingAction == "bulk_autofill_missing_formulations")
                 {
                     SwitchMainTab("tasks");
-                    StartBackgroundAutofill();
+                    _ = StartBackgroundAutofillAsync();
                 }
                 else
                 {
-                    await _session.SendQuestionAsync("yes", userConfirmed: true);
+                    _ = SendPromptAsync("yes", userConfirmed: true);
                 }
             });
-            var denyBtn = CreateSmallPillBtn("✕ Deny", AccentRed, async () => await _session.SendQuestionAsync("cancel"));
+            var denyBtn = CreateSmallPillBtn("✕ Deny", AccentRed, () => _ = SendPromptAsync("cancel"));
             btnRow.Controls.AddRange([approveBtn, denyBtn]);
             guardBox.Controls.Add(btnRow);
             stack.Controls.Add(guardBox);
         }
 
         // DB Match Disambiguation Buttons
-        if (!isUser && msg.TaskMeta != null && msg.TaskMeta.TryGetValue("db_matches", out var dmObj) && dmObj is System.Collections.IEnumerable dmEnum)
+        if (!isUser && msg.TaskMeta != null && msg.TaskMeta.TryGetValue("db_matches", out var dmObj) && dmObj is IEnumerable dmEnum)
         {
             var dmItems = dmEnum.Cast<object?>().OfType<Dictionary<string, object?>>().Take(5).ToList();
             if (dmItems.Count > 0)
             {
-                var matchRow = new FlowLayoutPanel { Width = cardW - 24, AutoSize = true, Margin = new Padding(0, 4, 0, 2) };
+                var matchRow = new FlowLayoutPanel
+                {
+                    Width = innerW - 4,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    MaximumSize = new Size(innerW - 4, 0),
+                    Margin = new Padding(0, 4, 0, 2)
+                };
                 foreach (var item in dmItems)
                 {
                     var id = item.GetValueOrDefault("id")?.ToString() ?? "";
                     var name = item.GetValueOrDefault("name")?.ToString() ?? "";
-                    matchRow.Controls.Add(CreateSmallPillBtn($"✓ {name}", BgCard, async () => await _session.SendQuestionAsync(id)));
+                    matchRow.Controls.Add(CreateSmallPillBtn($"✓ {name}", BgCard, () => _ = SendPromptAsync(id)));
                 }
                 stack.Controls.Add(matchRow);
             }
@@ -826,14 +1159,45 @@ public sealed class NativeGuideBotDrawer : Panel
         // Route Navigation Links
         if (!isUser && msg.Links.Count > 0)
         {
-            var linksRow = new FlowLayoutPanel { Width = cardW - 24, AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
+            var linksRow = new FlowLayoutPanel
+            {
+                Width = innerW - 4,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MaximumSize = new Size(innerW - 4, 0),
+                Margin = new Padding(0, 4, 0, 0)
+            };
             foreach (var lnk in msg.Links.Take(3))
             {
                 var path = lnk.GetValueOrDefault("path", "/dashboard");
                 var lbl = isUr && !string.IsNullOrWhiteSpace(lnk.GetValueOrDefault("ur")) ? lnk["ur"] : lnk.GetValueOrDefault("en", path);
-                linksRow.Controls.Add(CreateSmallPillBtn($"→ {lbl}", BgCard, () => NavigateRequested?.Invoke(path, lbl)));
+                linksRow.Controls.Add(CreateSmallPillBtn($"→ {lbl}", BgCard, () =>
+                {
+                    HideDrawer();
+                    NavigateRequested?.Invoke(path, lbl);
+                }));
             }
             stack.Controls.Add(linksRow);
+        }
+
+        // Provider / Source subtle badge
+        if (!isUser && !string.IsNullOrWhiteSpace(msg.Provider))
+        {
+            var provText = msg.Provider.ToLowerInvariant() switch
+            {
+                "groq" => "Groq AI",
+                "gemini" => "Gemini AI",
+                "task" or "cube_task" => "Cube Task Engine",
+                _ => "Local ERP Knowledge"
+            };
+            stack.Controls.Add(new Label
+            {
+                Text = provText,
+                AutoSize = true,
+                Margin = new Padding(0, 4, 0, 0),
+                Font = new Font("Segoe UI", 7.1f),
+                ForeColor = TextMuted
+            });
         }
 
         card.Controls.Add(stack);
@@ -842,8 +1206,9 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private void ResizeChatCards()
     {
-        var cardW = Math.Max(260, _chatFeedPanel.ClientSize.Width - 28);
-        foreach (Control c in _chatFeedPanel.Controls) c.Width = cardW;
+        if (!Visible || _activeMainTab != "chat" || _isRenderingChat) return;
+        if (Math.Abs(_chatFeedPanel.ClientSize.Width - _lastRenderedChatWidth) < 24) return;
+        RenderChatFeed();
     }
 
     private void InitCategories()
@@ -903,6 +1268,7 @@ public sealed class NativeGuideBotDrawer : Panel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             RightToLeft = isUr ? RightToLeft.Yes : RightToLeft.No
@@ -911,17 +1277,27 @@ public sealed class NativeGuideBotDrawer : Panel
         flow.Controls.Add(new Label
         {
             Text = isUr && !string.IsNullOrWhiteSpace(g.TitleUr) ? g.TitleUr : g.TitleEn,
-            AutoSize = true, MaximumSize = new Size(w, 0),
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = AccentCyan
+            AutoSize = true,
+            MaximumSize = new Size(w, 0),
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            ForeColor = AccentCyan
         });
         flow.Controls.Add(new Label
         {
             Text = g.Route,
-            AutoSize = true, Font = new Font("Consolas", 8.2f), ForeColor = TextMuted
+            AutoSize = true,
+            Font = new Font("Consolas", 8.2f),
+            ForeColor = TextMuted
         });
 
         // 4 Blueprint Sub-Tabs
-        var subRow = new FlowLayoutPanel { Width = w, AutoSize = true, Margin = new Padding(0, 6, 0, 6) };
+        var subRow = new FlowLayoutPanel
+        {
+            Width = w,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 6, 0, 6)
+        };
         foreach (var (key, label) in new[] { ("overview", "Overview"), ("fields", "Fields"), ("steps", "Steps"), ("impact", "4-Pillar Impact") })
         {
             var active = _activeBlueprintSubTab == key;
@@ -997,8 +1373,10 @@ public sealed class NativeGuideBotDrawer : Panel
         flow.Controls.Add(new Label
         {
             Text = sb.ToString().Trim(),
-            AutoSize = true, MaximumSize = new Size(w, 0),
-            Font = new Font("Segoe UI", 8.6f), ForeColor = TextPrimary
+            AutoSize = true,
+            MaximumSize = new Size(w, 0),
+            Font = new Font("Segoe UI", 8.6f),
+            ForeColor = TextPrimary
         });
 
         _guideDetailScroll.Controls.Add(flow);
@@ -1015,18 +1393,35 @@ public sealed class NativeGuideBotDrawer : Panel
             var tm = res?.GetValueOrDefault("task_meta") as Dictionary<string, object?>;
             var pr = tm?.GetValueOrDefault("preview_result") as Dictionary<string, object?>;
             var totalMissing = Convert.ToInt32(pr?.GetValueOrDefault("total_missing") ?? 0);
+            var scanned = Convert.ToInt32(tm?.GetValueOrDefault("scanned_count") ?? 0);
             var resolvable = Convert.ToInt32(pr?.GetValueOrDefault("resolvable_in_preview") ?? 0);
+            var skipped = Convert.ToInt32(tm?.GetValueOrDefault("skipped_count") ?? 0);
+
             _taskStatusLabel.Text = $"Preview: {totalMissing} missing total, {resolvable} verified in sample batch (0 DB writes).";
+            _metricScannedLbl.Text = $"{scanned}\nScanned";
+            _metricFilledLbl.Text = $"{resolvable}\nMatched";
+            _metricSkippedLbl.Text = $"{skipped}\nSkipped";
+            _metricRemainingLbl.Text = $"{totalMissing}\nMissing";
 
             _taskReportList.BeginUpdate();
             _taskReportList.Items.Clear();
-            if (tm?.GetValueOrDefault("updated_products") is System.Collections.IEnumerable rawUpds)
+            if (tm?.GetValueOrDefault("updated_products") is IEnumerable rawUpds)
             {
                 foreach (var u in rawUpds.Cast<object?>().OfType<Dictionary<string, object?>>())
                 {
                     var li = new ListViewItem("PREVIEW") { ForeColor = AccentEmerald };
                     li.SubItems.Add(u.GetValueOrDefault("name")?.ToString() ?? "");
                     li.SubItems.Add(u.GetValueOrDefault("formulation")?.ToString() ?? "");
+                    _taskReportList.Items.Add(li);
+                }
+            }
+            if (tm?.GetValueOrDefault("skipped_products") is IEnumerable rawSkps)
+            {
+                foreach (var s in rawSkps.Cast<object?>().OfType<Dictionary<string, object?>>())
+                {
+                    var li = new ListViewItem("SKIP") { ForeColor = AccentAmber };
+                    li.SubItems.Add(s.GetValueOrDefault("name")?.ToString() ?? "");
+                    li.SubItems.Add(s.GetValueOrDefault("reason_en")?.ToString() ?? "");
                     _taskReportList.Items.Add(li);
                 }
             }
@@ -1038,15 +1433,34 @@ public sealed class NativeGuideBotDrawer : Panel
         }
     }
 
-    private void StartBackgroundAutofill()
+    private async Task StartBackgroundAutofillAsync()
     {
-        var mgr = _session.BackgroundTaskManager;
-        if (mgr == null) return;
-        mgr.StartBulkAutofill(new CubeUserContext { UserId = 1, IsAdmin = true }, _taskFilterBox.Text.Trim(), 20);
+        _taskStartBtn.Enabled = false;
+        var snap = await _session.StartBackgroundAutofillAsync(_taskFilterBox.Text.Trim(), 20);
+        if (snap != null)
+        {
+            ApplyTaskSnapshot(snap);
+            if (_session.BackgroundTaskManager == null && snap.Status == "running")
+            {
+                _terminalTaskPollTimer.Start();
+            }
+        }
+        else
+        {
+            _taskStartBtn.Enabled = true;
+            _taskStatusLabel.Text = "Unable to start background task — ensure you are signed in.";
+        }
+    }
+
+    private async Task StopBackgroundAutofillAsync()
+    {
+        var snap = await _session.StopBackgroundAutofillAsync();
+        if (snap != null) ApplyTaskSnapshot(snap);
     }
 
     private void ApplyTaskSnapshot(CubeBackgroundTaskSnapshot snap)
     {
+        _lastTaskSnapshot = snap;
         _taskProgressBar.Value = Math.Clamp(snap.Percent, 0, 100);
         _taskStatusLabel.Text = string.IsNullOrWhiteSpace(snap.Message) ? $"Status: {snap.Status}" : snap.Message;
         _metricScannedLbl.Text = $"{snap.ScannedCount}\nScanned";
@@ -1079,7 +1493,7 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private void ExportTaskReportCsv()
     {
-        var snap = _session.BackgroundTaskManager?.GetSnapshot();
+        var snap = _session.BackgroundTaskManager?.GetSnapshot() ?? _lastTaskSnapshot;
         if (snap == null || (snap.UpdatedProducts.Count == 0 && snap.SkippedProducts.Count == 0)) return;
         using var sfd = new SaveFileDialog
         {
@@ -1115,8 +1529,39 @@ public sealed class NativeGuideBotDrawer : Panel
             var item = new ToolStripMenuItem($"{cmd.Command}  —  {cmd.LabelEn}");
             item.Click += (_, _) =>
             {
+                _suppressSlashAutoPopup = true;
+                if (cmd.Command == "/clear")
+                {
+                    _composerBox.Clear();
+                    _suppressSlashAutoPopup = false;
+                    _session.ClearHistory();
+                    _composerBox.Focus();
+                    return;
+                }
+                if (cmd.Command == "/tasks")
+                {
+                    _composerBox.Clear();
+                    _suppressSlashAutoPopup = false;
+                    SwitchMainTab("tasks");
+                    return;
+                }
+                if (cmd.Command == "/walkthrough")
+                {
+                    _composerBox.Clear();
+                    _suppressSlashAutoPopup = false;
+                    LaunchSpotlightTourForGuide(_session.GetCurrentScreenGuide());
+                    return;
+                }
+                if (cmd.Command is "/explain" or "/autofill")
+                {
+                    _composerBox.Clear();
+                    _suppressSlashAutoPopup = false;
+                    _ = SendPromptAsync(cmd.Template);
+                    return;
+                }
                 _composerBox.Text = cmd.Template;
                 _composerBox.SelectionStart = _composerBox.Text.Length;
+                _suppressSlashAutoPopup = false;
                 _composerBox.Focus();
             };
             menu.Items.Add(item);
@@ -1124,13 +1569,14 @@ public sealed class NativeGuideBotDrawer : Panel
         return menu;
     }
 
-    private Button CreateHeaderBtn(string text, int width, EventHandler onClick)
+    private static Button CreateHeaderBtn(string text, int width, EventHandler onClick)
     {
         var b = new Button
         {
             Text = text,
             Width = width,
             Height = 28,
+            Margin = new Padding(3, 0, 0, 0),
             FlatStyle = FlatStyle.Flat,
             BackColor = BgCard,
             ForeColor = TextPrimary,
@@ -1142,7 +1588,7 @@ public sealed class NativeGuideBotDrawer : Panel
         return b;
     }
 
-    private Button CreateTabSwitchButton(string text, Action onClick)
+    private static Button CreateTabSwitchButton(string text, Action onClick)
     {
         var b = new Button
         {
@@ -1164,13 +1610,18 @@ public sealed class NativeGuideBotDrawer : Panel
         btn.ForeColor = active ? Color.White : TextMuted;
     }
 
-    private static Button CreateActionBtn(string text, Color bg, int left, int top, int width, EventHandler onClick)
+    private static Button CreateGridActionBtn(string text, Color bg, EventHandler onClick)
     {
         var b = new Button
         {
-            Text = text, Left = left, Top = top, Width = width, Height = 28,
-            FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White,
-            Font = new Font("Segoe UI", 8.2f, FontStyle.Bold), Cursor = Cursors.Hand
+            Text = text,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 4, 2),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = bg,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 8.1f, FontStyle.Bold),
+            Cursor = Cursors.Hand
         };
         b.FlatAppearance.BorderColor = BorderColor;
         b.Click += onClick;
@@ -1181,10 +1632,16 @@ public sealed class NativeGuideBotDrawer : Panel
     {
         var b = new Button
         {
-            Text = text, AutoSize = true, Height = 26,
-            FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = TextPrimary,
-            Font = new Font("Segoe UI", 7.8f, FontStyle.Bold), Padding = new Padding(4, 0, 4, 0),
-            Margin = new Padding(0, 0, 5, 4), Cursor = Cursors.Hand
+            Text = text,
+            AutoSize = true,
+            Height = 26,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = bg,
+            ForeColor = TextPrimary,
+            Font = new Font("Segoe UI", 7.8f, FontStyle.Bold),
+            Padding = new Padding(4, 0, 4, 0),
+            Margin = new Padding(0, 0, 5, 4),
+            Cursor = Cursors.Hand
         };
         b.FlatAppearance.BorderColor = BorderColor;
         b.Click += (_, _) => onClick();
@@ -1217,7 +1674,9 @@ public sealed class NativeGuideBotDrawer : Panel
         if (disposing)
         {
             try { _avatarAnimTimer.Stop(); _avatarAnimTimer.Dispose(); } catch { }
+            try { _terminalTaskPollTimer.Stop(); _terminalTaskPollTimer.Dispose(); } catch { }
             try { _slashMenu.Dispose(); } catch { }
+            try { _toolTip.Dispose(); } catch { }
         }
         base.Dispose(disposing);
     }

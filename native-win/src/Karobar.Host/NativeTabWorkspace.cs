@@ -306,8 +306,11 @@ public sealed class NativeTabWorkspace
 
     public static string StripQuery(string routePath)
     {
-        var q = routePath.IndexOf('?');
-        var p = q >= 0 ? routePath[..q] : routePath;
+        var p = routePath;
+        var h = p.IndexOf('#');
+        if (h >= 0) p = p[..h];
+        var q = p.IndexOf('?');
+        if (q >= 0) p = p[..q];
         p = p.TrimEnd('/');
         return string.IsNullOrEmpty(p) ? "/dashboard" : p;
     }

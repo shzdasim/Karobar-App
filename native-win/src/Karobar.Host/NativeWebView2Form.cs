@@ -32,6 +32,8 @@ public sealed class NativeWebView2Form : Form
     private GuideBotSessionController? _guideSession;
     private NativeGuideBotDrawer? _guideDrawer;
     private NativeMascotOverlayForm? _mascotOverlay;
+    private GuideBotOutsideClickFilter? _outsideClickFilter;
+    private long _lastGuideToggleMs;
     private long _lastTabShortcutMs;
     private string _lastTabShortcutAction = "";
 
@@ -111,6 +113,11 @@ public sealed class NativeWebView2Form : Form
         Deactivate += (_, _) => _winInstance.IsFocused = false;
         FormClosed += (_, _) =>
         {
+            if (_outsideClickFilter != null)
+            {
+                try { Application.RemoveMessageFilter(_outsideClickFilter); } catch { }
+                _outsideClickFilter = null;
+            }
             if (_mascotOverlay != null)
             {
                 try { _mascotOverlay.Close(); _mascotOverlay.Dispose(); } catch { }
@@ -265,21 +272,29 @@ public sealed class NativeWebView2Form : Form
 
         _guideDrawer = new NativeGuideBotDrawer(_guideSession, _desktopBridge.MascotPreferencesStore);
         _guideDrawer.NavigateRequested += (route, title) => _ = OpenTabAsync(route, title, allowDuplicate: false);
-        _guideDrawer.StartSpotlightTourRequested += workflowId =>
+        _guideDrawer.StartSpotlightTourRequested += (workflowId, targetRoute) =>
         {
-            var payload = JsonSerializer.Serialize(new
-            {
-                type = "ipc-event",
-                channel = "karobar:guide-tour",
-                payload = new { action = "start", workflowId, lang = _guideSession.Language }
-            });
-            BroadcastMessageToActiveTab(payload);
+            _ = LaunchSpotlightTourAsync(workflowId, targetRoute);
         };
         _guideDrawer.DrawerVisibilityChanged += () =>
         {
             _mascotOverlay?.SetDrawerState(_guideDrawer.Visible, _guideDrawer.Width);
+            if (!_guideDrawer.Visible)
+            {
+                // Resume any paused Spotlight Tour detour cleanly when the drawer closes
+                var resumePayload = JsonSerializer.Serialize(new
+                {
+                    type = "ipc-event",
+                    channel = "karobar:guide-tour",
+                    payload = new { action = "resume" }
+                });
+                BroadcastMessageToActiveTab(resumePayload);
+            }
         };
         Controls.Add(_guideDrawer);
+
+        _outsideClickFilter = new GuideBotOutsideClickFilter(this);
+        Application.AddMessageFilter(_outsideClickFilter);
 
         _mascotOverlay = new NativeMascotOverlayForm(this, _desktopBridge.MascotPreferencesStore);
         _mascotOverlay.MascotClicked += () =>
@@ -308,9 +323,30 @@ public sealed class NativeWebView2Form : Form
         };
     }
 
+    private async Task LaunchSpotlightTourAsync(string workflowId, string? targetRoute)
+    {
+        if (IsDisposed || _guideSession == null) return;
+        if (!string.IsNullOrWhiteSpace(targetRoute))
+        {
+            await OpenTabAsync(targetRoute, null, allowDuplicate: false);
+            await Task.Delay(550);
+        }
+        var payload = JsonSerializer.Serialize(new
+        {
+            type = "ipc-event",
+            channel = "karobar:guide-tour",
+            payload = new { action = "start", workflowId, lang = _guideSession.Language }
+        });
+        BroadcastMessageToActiveTab(payload);
+    }
+
     private void ToggleGuideBot()
     {
         if (IsDisposed) return;
+        var now = Environment.TickCount64;
+        if (now - _lastGuideToggleMs < 150) return;
+        _lastGuideToggleMs = now;
+
         if (InvokeRequired)
         {
             BeginInvoke((Action)(() => _guideDrawer?.ToggleDrawer()));
@@ -318,6 +354,67 @@ public sealed class NativeWebView2Form : Form
         else
         {
             _guideDrawer?.ToggleDrawer();
+        }
+    }
+
+    private void CloseGuideBotIfOpen()
+    {
+        if (IsDisposed || _guideDrawer == null || !_guideDrawer.Visible) return;
+        if (InvokeRequired) BeginInvoke((Action)(() => _guideDrawer?.HideDrawer()));
+        else _guideDrawer.HideDrawer();
+    }
+
+    private sealed class GuideBotOutsideClickFilter : IMessageFilter
+    {
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_RBUTTONDOWN = 0x0204;
+        private const int WM_NCLBUTTONDOWN = 0x00A1;
+        private readonly NativeWebView2Form _form;
+
+        public GuideBotOutsideClickFilter(NativeWebView2Form form) => _form = form;
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg != WM_LBUTTONDOWN && m.Msg != WM_RBUTTONDOWN && m.Msg != WM_NCLBUTTONDOWN)
+            {
+                return false;
+            }
+            if (_form.IsDisposed || !_form.Visible || _form._guideDrawer == null || !_form._guideDrawer.Visible)
+            {
+                return false;
+            }
+            if (_form._guideDrawer.IsPopupOpen)
+            {
+                return false;
+            }
+
+            var targetCtrl = Control.FromHandle(m.HWnd);
+            // Ignore clicks inside MenuStrip or any ToolStripDropDown (menus, slash menu, context menus)
+            if (targetCtrl is MenuStrip or ToolStripDropDown || targetCtrl?.FindForm() is ToolStripDropDown)
+            {
+                return false;
+            }
+            // Only act on clicks inside this main window (not dialogs or other forms)
+            if (targetCtrl != null && targetCtrl.FindForm() != _form)
+            {
+                return false;
+            }
+
+            var cursorScreen = Cursor.Position;
+            // Ignore clicks inside the GuideBot drawer itself
+            var drawerRect = _form._guideDrawer.RectangleToScreen(_form._guideDrawer.ClientRectangle);
+            if (drawerRect.Contains(cursorScreen))
+            {
+                return false;
+            }
+            // Ignore clicks on the "Cube AI" pill in the tab strip so it toggles cleanly without double-toggling
+            if (_form._tabStrip != null && _form._tabStrip.IsPointOnGuideBotPill(cursorScreen))
+            {
+                return false;
+            }
+
+            _form.CloseGuideBotIfOpen();
+            return false; // Let the user's click proceed normally on whatever they clicked!
         }
     }
 
@@ -524,10 +621,10 @@ public sealed class NativeWebView2Form : Form
         }
         else if (_tabWebViews.TryGetValue(tab.TabId, out var existingWv) && existingWv.CoreWebView2 != null)
         {
-            // If caller navigated to a different query string on the same singleton route, update it
+            // If caller navigated to a different query string or hash (e.g. /settings#cube) on the same singleton route, update it
             var targetUrl = BuildAbsoluteUrl(tab.RoutePath);
             if (!string.Equals(existingWv.CoreWebView2.Source, targetUrl, StringComparison.OrdinalIgnoreCase) &&
-                tab.RoutePath.Contains('?'))
+                (tab.RoutePath.Contains('?') || tab.RoutePath.Contains('#')))
             {
                 existingWv.CoreWebView2.Navigate(targetUrl);
             }
@@ -806,6 +903,11 @@ public sealed class NativeWebView2Form : Form
                         if (msgType == "guide-activity")
                         {
                             _mascotOverlay?.NotifyUserActivity();
+                            return;
+                        }
+                        if (msgType == "guide-outside-click")
+                        {
+                            CloseGuideBotIfOpen();
                             return;
                         }
                         if (msgType == "guide-focus-rect" && tab.TabId == _workspace.ActiveTabId)
