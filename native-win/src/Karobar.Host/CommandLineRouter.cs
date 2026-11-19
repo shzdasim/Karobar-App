@@ -100,8 +100,11 @@ public static class CommandLineRouter
         }
 
         var networkConfig = new NetworkConfigManager(appRoot);
-        Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", networkConfig.AppRoot);
-        Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", networkConfig.AppRoot);
+        if (string.IsNullOrWhiteSpace(appRoot))
+        {
+            Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", networkConfig.AppRoot);
+            Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", networkConfig.AppRoot);
+        }
 
         // Directly invoke KarobarCliCommandRunner.RunAsync (works in single-file publish and pre-install {tmp})
         var runner = new KarobarCliCommandRunner(networkConfig.AppRoot);

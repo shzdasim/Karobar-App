@@ -248,6 +248,8 @@ public class Phase11And12PrintingAndBackgroundTests
         machineId.Should().MatchRegex("^KRB-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$");
 
         // Verify CommandLineRouter headless `--cli license:machine-id --out=...` works end-to-end (exact Inno Setup call)
+        var prevRootPath = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH");
+        var prevAppRoot = Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
         var tempCliDir = Path.Combine(Path.GetTempPath(), $"karobar_qa_cli_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempCliDir);
         try
@@ -347,6 +349,7 @@ public class Phase11And12PrintingAndBackgroundTests
 
             // Confirm LicenseService.CurrentStatusAsync() verifies the installed sealed row with UTC timestamp parsing
             Karobar.Services.LicenseService.SetTestOverrides(publicKey: kpRes.Data["public_key"]!.ToString()!, machineId: machineId);
+            Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", tempCliDir);
             try
             {
                 var kDb = new Karobar.Services.Infrastructure.KarobarDb(explicitSqlitePath: installDbPath);
@@ -358,10 +361,14 @@ public class Phase11And12PrintingAndBackgroundTests
             finally
             {
                 Karobar.Services.LicenseService.SetTestOverrides(null, null, null);
+                Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", prevRootPath);
             }
         }
         finally
         {
+            Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", prevRootPath);
+            Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", prevAppRoot);
+            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
             try { Directory.Delete(tempCliDir, recursive: true); } catch { }
         }
 
