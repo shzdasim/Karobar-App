@@ -69,7 +69,11 @@ public class KarobarDb
         "enable_prescription_attachments",
         "enable_drug_interaction_warnings",
         "enable_cold_chain_log",
-        "operator_pin_auto_submit"
+        "operator_pin_auto_submit",
+        "is_blind",
+        "has_narcotics",
+        "record_expense",
+        "is_manual"
     };
 
     public KarobarDb(IServiceProvider? serviceProvider = null, IConfiguration? configuration = null, string? explicitSqlitePath = null)
@@ -458,10 +462,11 @@ public class KarobarDb
         object? param,
         int page,
         int perPage,
-        Func<List<Dictionary<string, object?>>, Task<List<Dictionary<string, object?>>>>? enrichBatch = null)
+        Func<List<Dictionary<string, object?>>, Task<List<Dictionary<string, object?>>>>? enrichBatch = null,
+        int maxPerPage = 500)
     {
         page = Math.Max(1, page);
-        perPage = perPage <= 0 ? 15 : Math.Min(perPage, 500);
+        perPage = perPage <= 0 ? 15 : Math.Min(perPage, Math.Max(1, maxPerPage));
         var offset = (page - 1) * perPage;
 
         await using var conn = await OpenConnectionAsync();

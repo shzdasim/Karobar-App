@@ -2,11 +2,13 @@ using System.Text.Json;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/accounting")]
+[Authorize]
 public class AccountingController : ApiControllerBase
 {
     private readonly AccountingService _accountingService;
@@ -19,7 +21,7 @@ public class AccountingController : ApiControllerBase
     [HttpGet("overview")]
     public async Task<IActionResult> Overview()
     {
-        if (!await CanAsync("account.view", "report.net-profit.view"))
+        if (!await CanAsync("accounting.view", "accounting.manage", "report.financial-statements.view", "account.view", "report.net-profit.view"))
             return Forbidden();
 
         var now = DateTime.UtcNow;
@@ -54,7 +56,7 @@ public class AccountingController : ApiControllerBase
     [HttpGet("chart-of-accounts")]
     public async Task<IActionResult> ChartOfAccounts()
     {
-        if (!await CanAsync("account.view", "report.net-profit.view"))
+        if (!await CanAsync("accounting.view", "accounting.manage", "report.financial-statements.view", "account.view", "report.net-profit.view"))
             return Forbidden();
 
         var activeOnly = string.Equals(Request.Query["active_only"], "1", StringComparison.OrdinalIgnoreCase) ||
@@ -66,7 +68,7 @@ public class AccountingController : ApiControllerBase
     [HttpPost("chart-of-accounts")]
     public async Task<IActionResult> StoreAccount()
     {
-        if (!await CanAsync("account.create", "account.update"))
+        if (!await CanAsync("accounting.manage", "account.create", "account.update"))
             return Forbidden();
 
         await _accountingService.EnsureDefaultsAsync();
@@ -114,7 +116,7 @@ public class AccountingController : ApiControllerBase
     [HttpPut("chart-of-accounts/{chartOfAccount:long}")]
     public async Task<IActionResult> UpdateAccount(long chartOfAccount)
     {
-        if (!await CanAsync("account.update", "account.create"))
+        if (!await CanAsync("accounting.manage", "account.update", "account.create"))
             return Forbidden();
 
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM chart_of_accounts WHERE id = @id", new { id = chartOfAccount });
@@ -153,7 +155,7 @@ public class AccountingController : ApiControllerBase
     [HttpGet("journal-entries")]
     public async Task<IActionResult> JournalEntries()
     {
-        if (!await CanAsync("account.view", "report.net-profit.view"))
+        if (!await CanAsync("accounting.view", "accounting.manage", "report.financial-statements.view", "account.view", "report.net-profit.view"))
             return Forbidden();
 
         var now = DateTime.UtcNow;
@@ -174,7 +176,7 @@ public class AccountingController : ApiControllerBase
     [HttpPost("journal-entries")]
     public async Task<IActionResult> StoreJournalEntry()
     {
-        if (!await CanAsync("account.create", "account.update", "payment.create", "expense.create"))
+        if (!await CanAsync("accounting.manage", "account.create", "account.update", "payment.create", "expense.create"))
             return Forbidden();
 
         var body = await ReadJsonBodyAsync();
@@ -230,7 +232,7 @@ public class AccountingController : ApiControllerBase
     [HttpPost("journal-entries/{journalEntry:long}/reverse")]
     public async Task<IActionResult> ReverseJournalEntry(long journalEntry)
     {
-        if (!await CanAsync("account.update", "account.delete"))
+        if (!await CanAsync("accounting.manage", "account.update", "account.delete"))
             return Forbidden();
 
         var body = await ReadJsonBodyAsync();
@@ -265,7 +267,7 @@ public class AccountingController : ApiControllerBase
     [HttpGet("tax-rates")]
     public async Task<IActionResult> TaxRates()
     {
-        if (!await CanAsync("account.view", "tax.view", "report.net-profit.view", "report.tax-return.view", "sale-invoice.view", "sale-invoice.create", "purchase-invoice.view", "purchase-invoice.create", "barcode-pos.view", "barcode-pos.create"))
+        if (!await CanAsync("accounting.view", "accounting.manage", "tax.manage", "account.view", "report.net-profit.view", "report.tax-return.view", "sale-invoice.view", "sale-invoice.create", "purchase-invoice.view", "purchase-invoice.create", "barcode-pos.view", "barcode-pos.create"))
             return Forbidden();
 
         var activeOnly = string.Equals(Request.Query["active_only"], "1", StringComparison.OrdinalIgnoreCase) ||
@@ -277,7 +279,7 @@ public class AccountingController : ApiControllerBase
     [HttpPost("tax-rates")]
     public async Task<IActionResult> StoreTaxRate()
     {
-        if (!await CanAsync("account.create", "account.update"))
+        if (!await CanAsync("tax.manage", "accounting.manage", "account.create", "account.update"))
             return Forbidden();
 
         await _accountingService.EnsureDefaultsAsync();
@@ -324,7 +326,7 @@ public class AccountingController : ApiControllerBase
     [HttpPut("tax-rates/{taxRate:long}")]
     public async Task<IActionResult> UpdateTaxRate(long taxRate)
     {
-        if (!await CanAsync("account.update", "account.create"))
+        if (!await CanAsync("tax.manage", "accounting.manage", "account.update", "account.create"))
             return Forbidden();
 
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM tax_rates WHERE id = @id", new { id = taxRate });
@@ -374,7 +376,7 @@ public class AccountingController : ApiControllerBase
     [HttpDelete("tax-rates/{taxRate:long}")]
     public async Task<IActionResult> DestroyTaxRate(long taxRate)
     {
-        if (!await CanAsync("account.delete", "account.update"))
+        if (!await CanAsync("tax.manage", "accounting.manage", "account.delete", "account.update"))
             return Forbidden();
 
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM tax_rates WHERE id = @id", new { id = taxRate });

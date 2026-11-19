@@ -272,7 +272,7 @@ public class StocktakeController : ApiControllerBase
     public async Task<IActionResult> Items(
         long id,
         [FromQuery] string? status = "all",
-        [FromQuery] bool reveal = false,
+        [FromQuery(Name = "reveal")] string? revealRaw = null,
         [FromQuery] int page = 1,
         [FromQuery(Name = "per_page")] int perPage = 100)
     {
@@ -280,6 +280,9 @@ public class StocktakeController : ApiControllerBase
         {
             return Forbidden();
         }
+
+        var reveal = !string.IsNullOrWhiteSpace(revealRaw) &&
+            (revealRaw.Trim() == "1" || revealRaw.Trim().Equals("true", StringComparison.OrdinalIgnoreCase));
 
         var session = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id });
         if (session == null)
@@ -319,7 +322,8 @@ public class StocktakeController : ApiControllerBase
                     MaskBlindItems(enriched);
                 }
                 return enriched;
-            });
+            },
+            maxPerPage: 2500);
 
         return Ok(paginated);
     }
@@ -375,6 +379,17 @@ public class StocktakeController : ApiControllerBase
                 ["counted_qty"] = countedQty,
                 ["discrepancy_reason"] = GetString(body, "discrepancy_reason")
             }, CurrentUserId);
+
+            var session = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id });
+            if (session != null)
+            {
+                var isBlind = session.GetValueOrDefault("is_blind") is true or 1 or 1L;
+                var sStatus = session.GetValueOrDefault("status")?.ToString() ?? "";
+                if (isBlind && string.Equals(sStatus, "in_progress", StringComparison.OrdinalIgnoreCase))
+                {
+                    MaskBlindItems(new List<Dictionary<string, object?>> { item });
+                }
+            }
 
             return StatusCode(201, item);
         }

@@ -444,7 +444,7 @@ public class AccountingService
         {
             var deltaRows = await _db.QueryListAsync(
                 @"SELECT account_id,
-                         COALESCE(SUM(CASE WHEN type IN ('deposit', 'transfer_in') THEN amount WHEN type IN ('withdrawal', 'transfer_out') THEN -amount ELSE 0 END), 0) as net_after
+                         COALESCE(SUM(CASE WHEN type IN ('deposit', 'transfer_in') THEN amount WHEN type IN ('withdrawal', 'transfer_out') THEN -amount WHEN type = 'adjustment' THEN amount ELSE 0 END), 0) as net_after
                   FROM account_transactions
                   WHERE DATE(transaction_date) > @to
                   GROUP BY account_id",

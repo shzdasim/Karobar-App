@@ -3,11 +3,13 @@ using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/payments")]
+[Authorize]
 public class PaymentController : ApiControllerBase
 {
     private readonly PaymentService _paymentService;

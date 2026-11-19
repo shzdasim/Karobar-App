@@ -2,11 +2,13 @@ using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/accounts")]
+[Authorize]
 public class AccountController : ApiControllerBase
 {
     private readonly AccountService _accountService;
@@ -70,7 +72,7 @@ public class AccountController : ApiControllerBase
                 return Forbidden();
         }
 
-        var summary = await _accountService.GetSummaryAsync(CurrentUserId);
+        var summary = await _accountService.GetSummaryAsync(CurrentUserId, activeOnly);
         return Ok(summary);
     }
 
@@ -187,7 +189,7 @@ public class AccountController : ApiControllerBase
             ["account_number"] = GetString(body, "account_number"),
             ["opening_balance"] = opening,
             ["current_balance"] = opening,
-            ["is_active"] = true,
+            ["is_active"] = GetBool(body, "is_active", true),
             ["is_default"] = isDefault,
             ["notes"] = GetString(body, "notes")
         });

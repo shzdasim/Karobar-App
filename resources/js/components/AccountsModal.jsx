@@ -206,7 +206,7 @@ export default function AccountsModal({ isOpen, onClose, onAccountUpdated, onOpe
       const res = await axios.get(`/api/accounts/${accId}/transactions`, {
         params: { per_page: 50 },
       });
-      setTransactions(res.data?.data || []);
+      setTransactions(res.data?.transactions?.data || res.data?.data || []);
     } catch {
       setTransactions([]);
     } finally {
@@ -892,15 +892,20 @@ export default function AccountsModal({ isOpen, onClose, onAccountUpdated, onOpe
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {filteredTxns.map((t) => {
-                        const isInflow = [
-                          "opening_balance",
-                          "sale_deposit",
-                          "customer_payment",
-                          "transfer_in",
-                          "manual_deposit",
-                          "purchase_return_recovery",
-                          "reversal_restore",
-                        ].includes(t.type);
+                        const rawAmount = parseFloat(t.amount || 0);
+                        const absAmount = Math.abs(rawAmount);
+                        const isInflow =
+                          [
+                            "opening_balance",
+                            "deposit",
+                            "sale_deposit",
+                            "customer_payment",
+                            "transfer_in",
+                            "manual_deposit",
+                            "purchase_return_recovery",
+                            "reversal_restore",
+                          ].includes(t.type) ||
+                          (t.type === "adjustment" && rawAmount >= 0);
 
                         return (
                           <tr key={t.id} className={isDark ? "hover:bg-slate-800/40" : "hover:bg-slate-50"}>
@@ -918,17 +923,17 @@ export default function AccountsModal({ isOpen, onClose, onAccountUpdated, onOpe
                                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                   : "bg-red-500/10 text-red-600 dark:text-red-400"
                               }`}>
-                                {t.type.replace(/_/g, " ")}
+                                {(t.type || "").replace(/_/g, " ")}
                               </span>
                             </td>
                             <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">
                               {t.description || "—"}
                             </td>
                             <td className="px-4 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                              {isInflow ? `+${formatCurrency(t.amount)}` : "—"}
+                              {isInflow ? `+${formatCurrency(absAmount)}` : "—"}
                             </td>
                             <td className="px-4 py-2.5 text-right font-bold text-red-600 dark:text-red-400">
-                              {!isInflow ? `-${formatCurrency(t.amount)}` : "—"}
+                              {!isInflow ? `-${formatCurrency(absAmount)}` : "—"}
                             </td>
                             <td className="px-4 py-2.5 text-right font-black">
                               {formatCurrency(t.balance_after)}

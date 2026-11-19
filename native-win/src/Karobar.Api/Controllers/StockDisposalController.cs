@@ -43,7 +43,7 @@ public class StockDisposalController : ApiControllerBase
         [FromQuery(Name = "disposal_method")] string? disposalMethod = null,
         [FromQuery] string? from = null,
         [FromQuery] string? to = null,
-        [FromQuery(Name = "has_narcotics")] bool? hasNarcotics = null,
+        [FromQuery(Name = "has_narcotics")] string? hasNarcoticsRaw = null,
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery(Name = "per_page")] int perPage = 20)
@@ -51,6 +51,20 @@ public class StockDisposalController : ApiControllerBase
         if (!await CanAsync("stock-disposal.view"))
         {
             return Forbidden();
+        }
+
+        bool? hasNarcotics = null;
+        if (!string.IsNullOrWhiteSpace(hasNarcoticsRaw))
+        {
+            var trimmed = hasNarcoticsRaw.Trim();
+            if (trimmed == "1" || trimmed.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                hasNarcotics = true;
+            }
+            else if (trimmed == "0" || trimmed.Equals("false", StringComparison.OrdinalIgnoreCase))
+            {
+                hasNarcotics = false;
+            }
         }
 
         var conditions = new List<string>();
@@ -255,6 +269,7 @@ public class StockDisposalController : ApiControllerBase
         {
             payload[kv.Key] = kv.Value;
         }
+        payload["record_expense"] = GetBool(body, "record_expense", true);
 
         try
         {

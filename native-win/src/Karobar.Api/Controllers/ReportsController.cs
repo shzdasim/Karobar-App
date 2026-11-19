@@ -2945,7 +2945,13 @@ public class ReportsController : ApiControllerBase
     [HttpGet("financial-statements/pdf")]
     public async Task<IActionResult> FinancialStatementsPdf()
     {
-        var authErr = await AuthorizeReportActionAsync("report.net-profit.export", "report.net-profit.view", "account.view");
+        var authErr = await AuthorizeReportActionAsync(
+            "report.financial-statements.view",
+            "accounting.view",
+            "accounting.manage",
+            "report.net-profit.export",
+            "report.net-profit.view",
+            "account.view");
         if (authErr != null) return authErr;
 
         var (from, to) = ResolveDateRange(
@@ -2953,10 +2959,49 @@ public class ReportsController : ApiControllerBase
             Request.Query["to"].FirstOrDefault(),
             true);
 
-        var pdf = BuildReportPdf("Financial Statements (Trial Balance & Balance Sheet)", new[]
+        var accounting = new Karobar.Services.AccountingService(Db);
+        var tb = await accounting.GetTrialBalanceAsync(from, to);
+        var bs = await accounting.GetBalanceSheetAsync(to);
+        var cf = await accounting.GetCashFlowStatementAsync(from, to);
+
+        var lines = new List<string>
         {
-            $"Period: {from} to {to}"
-        });
+            $"Period: {from} to {to}",
+            "",
+            "--- TRIAL BALANCE ---",
+            $"Total Debit: {ToDouble(tb, "total_debit"):N2} | Total Credit: {ToDouble(tb, "total_credit"):N2} | Balanced: {(tb.GetValueOrDefault("is_balanced") is true ? "YES" : "NO")}"
+        };
+
+        if (tb.GetValueOrDefault("rows") is List<Dictionary<string, object?>> tbRows)
+        {
+            foreach (var r in tbRows.Take(20))
+            {
+                var code = r.GetValueOrDefault("code")?.ToString() ?? "";
+                var name = r.GetValueOrDefault("name")?.ToString() ?? "";
+                var dr = ToDouble(r, "debit");
+                var cr = ToDouble(r, "credit");
+                if (Math.Abs(dr) < 0.01 && Math.Abs(cr) < 0.01) continue;
+                lines.Add($"  {code} {name}: Dr {dr:N2} | Cr {cr:N2}");
+            }
+        }
+
+        lines.Add("");
+        lines.Add($"--- BALANCE SHEET (As of {to}) ---");
+        lines.Add($"Total Assets: {ToDouble(bs, "total_assets"):N2} | Total Liabilities: {ToDouble(bs, "total_liabilities"):N2}");
+        lines.Add($"Period Net Income: {ToDouble(bs, "period_net_income"):N2} | Total Equity: {ToDouble(bs, "total_equity"):N2}");
+        lines.Add($"Total Liabilities & Equity: {ToDouble(bs, "total_liabilities_and_equity"):N2} | Balanced: {(bs.GetValueOrDefault("is_balanced") is true ? "YES" : "NO")}");
+
+        var op = cf.GetValueOrDefault("operating") as Dictionary<string, object?>;
+        var inv = cf.GetValueOrDefault("investing") as Dictionary<string, object?>;
+        var fin = cf.GetValueOrDefault("financing") as Dictionary<string, object?>;
+        lines.Add("");
+        lines.Add("--- CASH FLOW STATEMENT ---");
+        lines.Add($"Net Operating Cash Flow: {(op != null ? ToDouble(op, "net_operating_cash_flow") : 0):N2}");
+        lines.Add($"Net Investing Cash Flow: {(inv != null ? ToDouble(inv, "net_investing_cash_flow") : 0):N2}");
+        lines.Add($"Net Financing Cash Flow: {(fin != null ? ToDouble(fin, "net_financing_cash_flow") : 0):N2}");
+        lines.Add($"Net Cash Change: {ToDouble(cf, "net_cash_change"):N2} | Closing Cash & Bank: {ToDouble(cf, "closing_cash_and_bank"):N2}");
+
+        var pdf = BuildReportPdf("Financial Statements (Trial Balance, Balance Sheet & Cash Flow)", lines);
         return DeliverPdf(pdf, $"financial-statements-{from}-to-{to}.pdf");
     }
 

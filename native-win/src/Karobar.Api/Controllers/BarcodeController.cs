@@ -4,11 +4,13 @@ using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/barcodes")]
+[Authorize]
 public class BarcodeController : ApiControllerBase
 {
     public BarcodeController(KarobarDb db) : base(db)
@@ -565,7 +567,7 @@ public class BarcodeController : ApiControllerBase
             if (body.ContainsKey(intKey))
             {
                 var raw = GetString(body, intKey);
-                data[intKey] = !string.IsNullOrWhiteSpace(raw) && int.TryParse(raw, out var iv) ? iv : null;
+                data[intKey] = !string.IsNullOrWhiteSpace(raw) && int.TryParse(raw, out var iv) && iv > 0 ? iv : 1;
             }
         }
 
@@ -574,7 +576,7 @@ public class BarcodeController : ApiControllerBase
             if (body.ContainsKey(numKey))
             {
                 var raw = GetString(body, numKey);
-                data[numKey] = !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : null;
+                data[numKey] = !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : 0d;
             }
         }
 

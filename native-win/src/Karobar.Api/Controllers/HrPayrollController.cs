@@ -23,14 +23,14 @@ public class HrPayrollController : ApiControllerBase
     private async Task<bool> CanViewHrAsync()
     {
         if (await IsAdminAsync()) return true;
-        if (await CanAsync("hr.view", "hr.manage", "user.manage")) return true;
+        if (await CanAsync("hr.view", "hr.manage", "payroll.manage", "user.manage")) return true;
         return await CanAsync("user.view") && await CanAsync("account.view");
     }
 
     private async Task<bool> CanManageHrAsync()
     {
         if (await IsAdminAsync()) return true;
-        if (await CanAsync("hr.manage", "user.manage", "account.manage")) return true;
+        if (await CanAsync("hr.manage", "payroll.manage", "user.manage")) return true;
         return await CanAsync("user.update") && await CanAsync("account.update");
     }
 

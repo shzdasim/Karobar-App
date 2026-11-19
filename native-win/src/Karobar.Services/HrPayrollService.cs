@@ -617,7 +617,9 @@ public class HrPayrollService
             }
             if (account == null)
             {
-                var lookupType = string.Equals(paymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) ? "bank" : paymentMethod;
+                var lookupType = string.Equals(paymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase)
+                    ? "bank"
+                    : (string.Equals(paymentMethod, "wallet", StringComparison.OrdinalIgnoreCase) ? "mobile_wallet" : paymentMethod);
                 account = await _db.QuerySingleOrDefaultAsync(
                     "SELECT * FROM accounts WHERE is_active = 1 AND (type = @lookupType OR is_default = 1) ORDER BY CASE WHEN type = @lookupType AND is_default = 1 THEN 0 WHEN type = @lookupType THEN 1 ELSE 2 END, id ASC LIMIT 1",
                     new { lookupType });
@@ -650,35 +652,33 @@ public class HrPayrollService
             ["advance_balance"] = newBalance
         });
 
+        var accountSvc = new AccountService(_db);
         if (account != null)
         {
-            var accountId = Convert.ToInt64(account["id"]);
-            var accBalance = ToDecimal(account.GetValueOrDefault("current_balance"));
-            var newAccBalance = type == "advance"
-                ? Math.Round(accBalance - amount, 2)
-                : Math.Round(accBalance + amount, 2);
+            var txDesc = type == "advance"
+                ? $"Staff Advance {advanceNumber} - {empName}"
+                : $"Staff Advance Repayment {advanceNumber} - {empName}";
 
-            await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+            if (type == "advance")
             {
-                ["current_balance"] = newAccBalance
-            });
+                await accountSvc.WithdrawAsync(account, amount, "employee_advance", advanceId, txDesc, userId);
+            }
+            else
+            {
+                await accountSvc.DepositAsync(account, amount, "employee_advance", advanceId, txDesc, userId);
+            }
 
-            if (await _db.HasTableAsync("account_transactions"))
+            if (accountSvc.IsDefaultCashDrawerAccount(account, paymentMethod))
             {
-                await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
-                {
-                    ["account_id"] = accountId,
-                    ["type"] = type == "advance" ? "debit" : "credit",
-                    ["amount"] = amount,
-                    ["balance_after"] = newAccBalance,
-                    ["reference_type"] = "App\\Models\\EmployeeAdvance",
-                    ["reference_id"] = advanceId,
-                    ["description"] = type == "advance"
-                        ? $"Staff Advance {advanceNumber} - {empName}"
-                        : $"Staff Advance Repayment {advanceNumber} - {empName}",
-                    ["user_id"] = userId,
-                    ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-                });
+                var cashDrawerSvc = new CashDrawerService(_db);
+                await cashDrawerSvc.RecordTransactionAsync(
+                    null,
+                    type == "advance" ? "cash_out" : "cash_in",
+                    amount,
+                    "employee_advance",
+                    advanceId,
+                    txDesc,
+                    userId);
             }
         }
 
@@ -978,9 +978,21 @@ public class HrPayrollService
                ?? employee.GetValueOrDefault("payment_method")?.ToString()
                ?? "cash");
 
-        var expensePaymentMethod = string.Equals(paymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase)
-            ? "bank"
-            : paymentMethod;
+        var expensePaymentMethod = paymentMethod.ToLowerInvariant() switch
+        {
+            "bank" or "bank_transfer" => "bank_transfer",
+            "wallet" or "mobile_wallet" => "mobile_wallet",
+            "cash" => "cash",
+            "card" => "card",
+            "cheque" => "cheque",
+            _ => "other"
+        };
+        var accountLookupType = expensePaymentMethod switch
+        {
+            "bank_transfer" => "bank",
+            "mobile_wallet" => "mobile_wallet",
+            _ => expensePaymentMethod
+        };
 
         long? accountId = null;
         if (paymentData != null && paymentData.TryGetValue("account_id", out var accObj) && accObj != null && long.TryParse(accObj.ToString(), out var parsedAccId) && parsedAccId > 0)
@@ -1063,7 +1075,7 @@ public class HrPayrollService
                 {
                     account = await _db.QuerySingleOrDefaultAsync(
                         "SELECT * FROM accounts WHERE is_active = 1 AND (type = @t OR is_default = 1) ORDER BY CASE WHEN type = @t AND is_default = 1 THEN 0 WHEN type = @t THEN 1 ELSE 2 END, id ASC LIMIT 1",
-                        new { t = expensePaymentMethod });
+                        new { t = accountLookupType });
                     if (account != null) accountId = Convert.ToInt64(account["id"]);
                 }
             }
@@ -1091,30 +1103,24 @@ public class HrPayrollService
                 ["is_recurring"] = 0
             });
 
+            var accountSvc = new AccountService(_db);
+            var payrollDesc = $"Payroll ({periodMonth}) for {empName} ({empCode})";
             if (account != null && accountId.HasValue)
             {
-                var curBal = ToDecimal(account.GetValueOrDefault("current_balance"));
-                var newBal = Math.Round(curBal - netPayable, 2);
-                await _db.UpdateAsync("accounts", accountId.Value, new Dictionary<string, object?>
-                {
-                    ["current_balance"] = newBal
-                });
+                await accountSvc.WithdrawAsync(account, netPayable, "expense", expenseId.Value, payrollDesc, userId);
+            }
 
-                if (await _db.HasTableAsync("account_transactions"))
-                {
-                    await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
-                    {
-                        ["account_id"] = accountId.Value,
-                        ["type"] = "debit",
-                        ["amount"] = netPayable,
-                        ["balance_after"] = newBal,
-                        ["reference_type"] = "App\\Models\\Expense",
-                        ["reference_id"] = expenseId.Value,
-                        ["description"] = $"Payroll ({periodMonth}) for {empName} ({empCode})",
-                        ["user_id"] = userId,
-                        ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-                    });
-                }
+            if (accountSvc.IsDefaultCashDrawerAccount(account, expensePaymentMethod))
+            {
+                var cashDrawerSvc = new CashDrawerService(_db);
+                await cashDrawerSvc.RecordTransactionAsync(
+                    null,
+                    "expense",
+                    netPayable,
+                    "expense",
+                    expenseId.Value,
+                    payrollDesc,
+                    userId);
             }
         }
 

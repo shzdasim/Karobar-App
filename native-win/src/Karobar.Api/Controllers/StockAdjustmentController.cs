@@ -46,7 +46,8 @@ public class StockAdjustmentController : ApiControllerBase
             param,
             page,
             perPage <= 0 ? 50 : perPage,
-            rows => EnrichAdjustmentsBatchAsync(rows, false));
+            rows => EnrichAdjustmentsBatchAsync(rows, false),
+            maxPerPage: 2000);
 
         return Ok(result);
     }
@@ -272,7 +273,9 @@ public class StockAdjustmentController : ApiControllerBase
                     {
                         ["product_id"] = productId,
                         ["batch_number"] = batchNumber,
-                        ["expiry_date"] = expiry,
+                        ["expiry_date"] = string.IsNullOrWhiteSpace(expiry)
+                            ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
+                            : expiry.Trim(),
                         ["quantity"] = actual
                     }, conn, tx);
                 }

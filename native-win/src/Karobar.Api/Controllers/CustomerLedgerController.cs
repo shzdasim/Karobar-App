@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -732,17 +733,16 @@ public class CustomerLedgerController : ApiControllerBase
                 ["payment_number"] = payNo,
                 ["party_type"] = "customer",
                 ["party_id"] = customerId,
-                ["direction"] = "in",
                 ["payment_date"] = entryDate,
                 ["amount"] = balance,
                 ["allocated_amount"] = balance,
-                ["unallocated_amount"] = 0m,
+                ["unapplied_amount"] = 0m,
                 ["payment_method"] = payMethod,
                 ["account_id"] = accountId,
                 ["reference"] = $"Inv #{postedNumber ?? saleInvoiceId.Value.ToString()}",
                 ["notes"] = $"Settled Sale Invoice {refLabel}",
                 ["status"] = "posted",
-                ["user_id"] = CurrentUserId
+                ["created_by_id"] = CurrentUserId
             });
 
             await Db.InsertAsync("payment_allocations", new Dictionary<string, object?>
@@ -776,29 +776,29 @@ public class CustomerLedgerController : ApiControllerBase
                 ["created_by"] = CurrentUserId
             });
 
+            var accountSvc = new AccountService(Db);
             if (account != null && accountId.HasValue)
             {
-                var newBal = Math.Round(StocktakeService.ToDecimal(account.GetValueOrDefault("current_balance")) + balance, 2);
-                await Db.UpdateAsync("accounts", accountId.Value, new Dictionary<string, object?>
-                {
-                    ["current_balance"] = newBal
-                });
+                await accountSvc.DepositAsync(
+                    account,
+                    balance,
+                    "customer_payment",
+                    paymentId.Value,
+                    $"Settled Sale Invoice {refLabel} ({payNo})",
+                    CurrentUserId);
+            }
 
-                if (await Db.HasTableAsync("account_transactions"))
-                {
-                    await Db.InsertAsync("account_transactions", new Dictionary<string, object?>
-                    {
-                        ["account_id"] = accountId.Value,
-                        ["type"] = "credit",
-                        ["amount"] = balance,
-                        ["balance_after"] = newBal,
-                        ["reference_type"] = "App\\Models\\Payment",
-                        ["reference_id"] = paymentId.Value,
-                        ["description"] = $"Settled Sale Invoice {refLabel}",
-                        ["user_id"] = CurrentUserId,
-                        ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-                    });
-                }
+            if (accountSvc.IsDefaultCashDrawerAccount(account, payMethod))
+            {
+                var cashDrawerSvc = new CashDrawerService(Db);
+                await cashDrawerSvc.RecordTransactionAsync(
+                    null,
+                    "customer_payment",
+                    balance,
+                    "payment",
+                    paymentId.Value,
+                    $"Settled Sale Invoice {refLabel} ({payNo})",
+                    CurrentUserId);
             }
         }
         else
@@ -873,12 +873,20 @@ public class CustomerLedgerController : ApiControllerBase
             return NotFound(new { message = "Customer not found." });
         }
 
-        var qs = new List<string> { $"customer_id={customerId.Value}", "silent_print=1" };
-        if (!string.IsNullOrWhiteSpace(type)) qs.Add($"type={Uri.EscapeDataString(type)}");
-        if (!string.IsNullOrWhiteSpace(from)) qs.Add($"from={Uri.EscapeDataString(from)}");
-        if (!string.IsNullOrWhiteSpace(to)) qs.Add($"to={Uri.EscapeDataString(to)}");
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["customer_id"] = customerId.Value.ToString(),
+            ["silent_print"] = "1"
+        };
+        if (!string.IsNullOrWhiteSpace(type)) queryParams["type"] = type;
+        if (!string.IsNullOrWhiteSpace(from)) queryParams["from"] = from;
+        if (!string.IsNullOrWhiteSpace(to)) queryParams["to"] = to;
 
-        var url = $"/customer-ledger/print?{string.Join("&", qs)}";
+        var url = SignedUrlMiddleware.CreateSignedUrl(
+            Request,
+            "/customer-ledger/print",
+            queryParams,
+            TimeSpan.FromMinutes(15));
         var html = await RenderCustomerLedgerHtmlAsync(customer, type, from, to);
 
         return Ok(new
@@ -1121,47 +1129,8 @@ public class CustomerLedgerController : ApiControllerBase
     private async Task ReverseCustomerPaymentAsync(Dictionary<string, object?> payment)
     {
         var paymentId = Convert.ToInt64(payment["id"]);
-        var amount = StocktakeService.ToDecimal(payment.GetValueOrDefault("amount"));
-
-        if (await Db.HasTableAsync("payment_allocations") && await Db.HasTableAsync("sale_invoices"))
-        {
-            var allocs = await Db.QueryListAsync(
-                "SELECT * FROM payment_allocations WHERE payment_id = @paymentId AND invoice_type = 'sale_invoice'",
-                new { paymentId });
-
-            foreach (var al in allocs)
-            {
-                var invId = Convert.ToInt64(al["invoice_id"]);
-                var alAmt = StocktakeService.ToDecimal(al.GetValueOrDefault("amount"));
-                await Db.ExecuteAsync(
-                    "UPDATE sale_invoices SET total_receive = MAX(0, COALESCE(total_receive, 0) - @alAmt) WHERE id = @invId",
-                    new { alAmt, invId });
-            }
-        }
-
-        await Db.UpdateAsync("payments", paymentId, new Dictionary<string, object?>
-        {
-            ["status"] = "reversed",
-            ["reversed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
-            ["reversed_by"] = CurrentUserId,
-            ["reversal_reason"] = "Deleted from Customer Ledger"
-        });
-
-        if (payment.TryGetValue("account_id", out var accObj) && accObj != null && long.TryParse(accObj.ToString(), out var accountId) &&
-            accountId > 0 && await Db.HasTableAsync("accounts"))
-        {
-            var account = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId });
-            if (account != null)
-            {
-                var newBal = Math.Round(StocktakeService.ToDecimal(account.GetValueOrDefault("current_balance")) - amount, 2);
-                await Db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
-                {
-                    ["current_balance"] = newBal
-                });
-            }
-        }
-
-        await Db.ExecuteAsync("DELETE FROM customer_ledgers WHERE payment_id = @paymentId", new { paymentId });
+        var paymentService = new PaymentService(Db);
+        await paymentService.ReversePaymentAsync(paymentId, "Deleted from Customer Ledger", CurrentUserId);
     }
 
     private async Task<string> RenderCustomerLedgerHtmlAsync(

@@ -1,11 +1,13 @@
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/expense-categories")]
+[Authorize]
 public class ExpenseCategoryController : ApiControllerBase
 {
     public ExpenseCategoryController(KarobarDb db) : base(db)
@@ -15,7 +17,7 @@ public class ExpenseCategoryController : ApiControllerBase
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        if (!await CanAsync("expense.view")) return Forbidden();
+        if (!await CanAsync("expense-category.view", "expense-category.manage", "expense.view")) return Forbidden();
 
         var activeOnly = string.Equals(Request.Query["active_only"], "1", StringComparison.OrdinalIgnoreCase) ||
                          string.Equals(Request.Query["active_only"], "true", StringComparison.OrdinalIgnoreCase);
@@ -34,7 +36,7 @@ public class ExpenseCategoryController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Store()
     {
-        if (!await CanAsync("expense.create")) return Forbidden();
+        if (!await CanAsync("expense-category.manage", "expense.create")) return Forbidden();
 
         var body = await ReadJsonBodyAsync();
         var name = GetString(body, "name")?.Trim();
@@ -65,7 +67,7 @@ public class ExpenseCategoryController : ApiControllerBase
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Show(long id)
     {
-        if (!await CanAsync("expense.view")) return Forbidden();
+        if (!await CanAsync("expense-category.view", "expense-category.manage", "expense.view")) return Forbidden();
 
         var category = await Db.QuerySingleOrDefaultAsync(
             @"SELECT ec.*,
@@ -81,7 +83,7 @@ public class ExpenseCategoryController : ApiControllerBase
     [HttpPut("{id:long}")]
     public async Task<IActionResult> Update(long id)
     {
-        if (!await CanAsync("expense.update")) return Forbidden();
+        if (!await CanAsync("expense-category.manage", "expense.update")) return Forbidden();
 
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM expense_categories WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Expense category not found." });
@@ -115,7 +117,7 @@ public class ExpenseCategoryController : ApiControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Destroy(long id)
     {
-        if (!await CanAsync("expense.delete")) return Forbidden();
+        if (!await CanAsync("expense-category.manage", "expense.delete")) return Forbidden();
 
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM expense_categories WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Expense category not found." });

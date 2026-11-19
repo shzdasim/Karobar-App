@@ -524,11 +524,14 @@ public class StocktakeService
                 }
                 else if (countedQty > 0m)
                 {
+                    var itemExpiry = item.GetValueOrDefault("expiry_date")?.ToString()?.Trim();
                     await _db.InsertAsync("batches", new Dictionary<string, object?>
                     {
                         ["product_id"] = productId,
                         ["batch_number"] = batchNumber,
-                        ["expiry_date"] = item.GetValueOrDefault("expiry_date")?.ToString(),
+                        ["expiry_date"] = string.IsNullOrWhiteSpace(itemExpiry)
+                            ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
+                            : itemExpiry,
                         ["quantity"] = Math.Max(0m, countedQty)
                     }, conn, tx);
                 }
@@ -699,19 +702,75 @@ public class StocktakeService
                 counted: Convert.ToInt32(r.GetValueOrDefault("counted_items_count") ?? 0)
             ));
 
+        // Batch-load scope_name lookups (category, brand, supplier, storage_location)
+        var scopeIdsByType = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in sessions)
+        {
+            var st = s.GetValueOrDefault("scope_type")?.ToString()?.Trim();
+            if (!string.IsNullOrEmpty(st) &&
+                s.TryGetValue("scope_id", out var scObj) &&
+                scObj != null &&
+                long.TryParse(scObj.ToString(), out var scId) &&
+                scId > 0)
+            {
+                if (!scopeIdsByType.TryGetValue(st, out var set))
+                {
+                    set = new HashSet<long>();
+                    scopeIdsByType[st] = set;
+                }
+                set.Add(scId);
+            }
+        }
+
+        var scopeNameMaps = new Dictionary<string, Dictionary<long, string>>(StringComparer.OrdinalIgnoreCase);
+        var scopeTables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["category"] = "categories",
+            ["brand"] = "brands",
+            ["supplier"] = "suppliers",
+            ["storage_location"] = "storage_locations"
+        };
+        foreach (var (sType, tableName) in scopeTables)
+        {
+            if (scopeIdsByType.TryGetValue(sType, out var ids) && ids.Count > 0 && await _db.HasTableAsync(tableName))
+            {
+                var rows = await _db.QueryListAsync($"SELECT id, name FROM {tableName} WHERE id IN @ids", new { ids = ids.ToList() });
+                scopeNameMaps[sType] = rows.ToDictionary(
+                    r => Convert.ToInt64(r["id"]),
+                    r => r.GetValueOrDefault("name")?.ToString() ?? "");
+            }
+        }
+
         foreach (var s in sessions)
         {
             var sid = Convert.ToInt64(s["id"]);
+            int totalItems = 0;
+            int countedItems = 0;
             if (countsMap.TryGetValue(sid, out var c))
             {
-                s["items_count"] = c.total;
-                s["counted_items_count"] = c.counted;
+                totalItems = c.total;
+                countedItems = c.counted;
             }
-            else
+            s["items_count"] = totalItems;
+            s["counted_items_count"] = countedItems;
+            s["progress"] = new Dictionary<string, object?>
             {
-                s["items_count"] = 0;
-                s["counted_items_count"] = 0;
+                ["counted"] = countedItems,
+                ["total"] = totalItems
+            };
+
+            string? scopeName = null;
+            var st = s.GetValueOrDefault("scope_type")?.ToString()?.Trim();
+            if (!string.IsNullOrEmpty(st) &&
+                s.TryGetValue("scope_id", out var scObj) &&
+                scObj != null &&
+                long.TryParse(scObj.ToString(), out var scId) &&
+                scopeNameMaps.TryGetValue(st, out var nameMap) &&
+                nameMap.TryGetValue(scId, out var resolvedScopeName))
+            {
+                scopeName = resolvedScopeName;
             }
+            s["scope_name"] = scopeName;
 
             if (s.TryGetValue("user_id", out var uObj) && uObj != null && long.TryParse(uObj.ToString(), out var uid) && usersMap.TryGetValue(uid, out var uDict))
             {

@@ -458,9 +458,10 @@ public class AccountService
         var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId })
                      ?? throw new KeyNotFoundException("Account not found.");
 
+        var isDeposit = string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase);
         decimal newBalance;
         string desc;
-        if (string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase))
+        if (isDeposit)
         {
             newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
             desc = $"Manual deposit / adjustment: {reason}";
@@ -481,7 +482,7 @@ public class AccountService
             ["account_id"] = accountId,
             ["user_id"] = userId,
             ["type"] = "adjustment",
-            ["amount"] = amount,
+            ["amount"] = isDeposit ? amount : -amount,
             ["balance_after"] = newBalance,
             ["reference_type"] = "manual",
             ["reference_id"] = null,
@@ -492,7 +493,7 @@ public class AccountService
         if (IsDefaultCashDrawerAccount(locked))
         {
             var cashDrawerService = new CashDrawerService(_db);
-            if (string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase))
+            if (isDeposit)
             {
                 await cashDrawerService.RecordTransactionAsync(null, "cash_in", amount, "account_adjustment", txnId, desc, userId);
             }
@@ -505,12 +506,15 @@ public class AccountService
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM account_transactions WHERE id = @id", new { id = txnId });
     }
 
-    public async Task<Dictionary<string, object?>> GetSummaryAsync(long? userId = null)
+    public async Task<Dictionary<string, object?>> GetSummaryAsync(long? userId = null, bool activeOnly = false)
     {
         await ReconcileWithOpenCashDrawersAsync(userId);
 
+        var accountsSql = activeOnly
+            ? "SELECT * FROM accounts WHERE is_active = 1 ORDER BY type ASC, name ASC"
+            : "SELECT * FROM accounts ORDER BY type ASC, name ASC";
         var accounts = await _db.HasTableAsync("accounts")
-            ? await _db.QueryListAsync("SELECT * FROM accounts ORDER BY type ASC, name ASC")
+            ? await _db.QueryListAsync(accountsSql)
             : new List<Dictionary<string, object?>>();
 
         decimal totalBalance = 0m;

@@ -125,7 +125,7 @@ public class StockDisposalService
         bool recordExpense = true;
         if (data.TryGetValue("record_expense", out var reObj) && reObj != null)
         {
-            recordExpense = reObj is true or 1 or 1L || (reObj is string res && (res == "1" || res.Equals("true", StringComparison.OrdinalIgnoreCase)));
+            recordExpense = ParseFlexibleBool(reObj, true);
         }
 
         var itemsInput = ExtractItemsList(data);
@@ -442,7 +442,7 @@ public class StockDisposalService
         bool recordExpense = disposal.GetValueOrDefault("record_expense") is true or 1 or 1L;
         if (data.TryGetValue("record_expense", out var reObj) && reObj != null)
         {
-            recordExpense = reObj is true or 1 or 1L || (reObj is string res && (res == "1" || res.Equals("true", StringComparison.OrdinalIgnoreCase)));
+            recordExpense = ParseFlexibleBool(reObj, recordExpense);
         }
 
         bool hasNarcotics = disposal.GetValueOrDefault("has_narcotics") is true or 1 or 1L;
@@ -877,6 +877,36 @@ public class StockDisposalService
         if (val is int i) return i;
         if (val is long l) return (int)l;
         if (int.TryParse(val.ToString(), out var parsed)) return parsed;
+        return defaultVal;
+    }
+
+    private static bool ParseFlexibleBool(object? val, bool defaultVal = true)
+    {
+        if (val == null) return defaultVal;
+        if (val is bool b) return b;
+        if (val is int i) return i != 0;
+        if (val is long l) return l != 0;
+        if (val is JsonElement je)
+        {
+            return je.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number => je.TryGetDecimal(out var d) ? d != 0m : defaultVal,
+                JsonValueKind.String => ParseFlexibleBool(je.GetString(), defaultVal),
+                JsonValueKind.Null or JsonValueKind.Undefined => defaultVal,
+                _ => defaultVal
+            };
+        }
+        if (val is string s)
+        {
+            var trimmed = s.Trim();
+            if (trimmed.Length == 0) return defaultVal;
+            if (trimmed == "1" || trimmed.Equals("true", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("yes", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (trimmed == "0" || trimmed.Equals("false", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("no", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
         return defaultVal;
     }
 }

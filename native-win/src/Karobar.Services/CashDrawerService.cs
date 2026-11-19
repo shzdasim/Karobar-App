@@ -785,11 +785,11 @@ public class CashDrawerService
 
                 var mode = (ret.GetValueOrDefault("settlement_mode")?.ToString() ?? "").ToLowerInvariant();
                 var pm = (ret.GetValueOrDefault("payment_method")?.ToString() ?? "cash").ToLowerInvariant();
-                if (mode is "credit_ledger" or "ledger")
+                if (mode is "credit_ledger" or "ledger" or "credit_note" or "invoice_offset")
                 {
                     creditAdjReturns += retTotal;
                 }
-                else if (linkedReturnSet.Contains(retId) || (mode == "refund" && pm == "cash") || mode == "")
+                else if (linkedReturnSet.Contains(retId) || (mode is "refund" or "cash_refund" or "" && pm == "cash"))
                 {
                     cashRefundReturns += retTotal;
                 }
@@ -838,13 +838,15 @@ public class CashDrawerService
             {
                 var inv = await _db.HasTableAsync("sale_invoices")
                     ? await _db.QuerySingleOrDefaultAsync(
-                        "SELECT si.id, si.posted_number, si.walk_in_customer_name, c.name as customer_name FROM sale_invoices si LEFT JOIN customers c ON c.id = si.customer_id WHERE si.id = @refId",
+                        "SELECT si.id, si.posted_number, si.patient_name, c.name as customer_name FROM sale_invoices si LEFT JOIN customers c ON c.id = si.customer_id WHERE si.id = @refId",
                         new { refId })
                     : null;
                 refLabel = inv?.GetValueOrDefault("posted_number")?.ToString() ?? $"SI-#{refId}";
-                partyName = inv?.GetValueOrDefault("customer_name")?.ToString()
-                            ?? inv?.GetValueOrDefault("walk_in_customer_name")?.ToString()
-                            ?? "Walk-in Customer";
+                var custName = inv?.GetValueOrDefault("customer_name")?.ToString();
+                var patientName = inv?.GetValueOrDefault("patient_name")?.ToString();
+                partyName = !string.IsNullOrWhiteSpace(custName)
+                            ? custName
+                            : (!string.IsNullOrWhiteSpace(patientName) ? patientName : "Walk-in Customer");
                 refUrl = $"/sale-invoices/{refId}";
                 categoryLabel = txnType == "cash_return" ? "Sale Invoice Refund / Reversal" : "Cash Sale Invoice";
             }
@@ -975,7 +977,13 @@ public class CashDrawerService
             return null;
         }
 
-        var amount = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
+        var grossAmount = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
+        var whtAmount = AccountService.ToDecimal(payment.GetValueOrDefault("wht_amount"));
+        var netCashDisbursed = AccountService.ToDecimal(payment.GetValueOrDefault("net_cash_disbursed"));
+        var partyTypeRaw = payment.GetValueOrDefault("party_type")?.ToString() ?? "customer";
+        var amount = partyTypeRaw.Equals("supplier", StringComparison.OrdinalIgnoreCase)
+            ? (netCashDisbursed > 0m ? netCashDisbursed : Math.Max(0m, grossAmount - whtAmount))
+            : grossAmount;
         if (amount <= 0m) return null;
 
         var payId = AccountService.ToLong(payment.GetValueOrDefault("id"));

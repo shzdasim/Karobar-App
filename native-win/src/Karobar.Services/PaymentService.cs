@@ -363,6 +363,10 @@ public class PaymentService
             createPayload["wht_percentage"] = whtPercentage;
             createPayload["wht_amount"] = whtAmount;
         }
+        if (await _db.HasColumnAsync("payments", "net_cash_disbursed"))
+        {
+            createPayload["net_cash_disbursed"] = netCashDisbursed;
+        }
 
         if (isCheque && await _db.HasColumnAsync("payments", "cheque_status"))
         {
@@ -551,7 +555,12 @@ public class PaymentService
             var accountService = new AccountService(_db);
             var accId = AccountService.ToLong(payment.GetValueOrDefault("account_id"));
             var account = await accountService.ResolveAccountAsync(accId > 0 ? accId : null, payMethod);
-            var amt = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
+            var grossAmt = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
+            var whtAmt = AccountService.ToDecimal(payment.GetValueOrDefault("wht_amount"));
+            var netDisbursed = AccountService.ToDecimal(payment.GetValueOrDefault("net_cash_disbursed"));
+            var amt = partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase)
+                ? (netDisbursed > 0m ? netDisbursed : Math.Max(0m, grossAmt - whtAmt))
+                : grossAmt;
             var payNo = payment.GetValueOrDefault("payment_number")?.ToString() ?? $"#{paymentId}";
 
             if (account != null && amt > 0m)
@@ -651,8 +660,13 @@ public class PaymentService
             var accountService = new AccountService(_db);
             var resolvedAccId = accountId ?? AccountService.ToLong(locked.GetValueOrDefault("account_id"));
             var account = await accountService.ResolveAccountAsync(resolvedAccId > 0 ? resolvedAccId : null, "cheque");
-            var amount = AccountService.ToDecimal(locked.GetValueOrDefault("amount"));
+            var grossAmount = AccountService.ToDecimal(locked.GetValueOrDefault("amount"));
+            var whtAmount = AccountService.ToDecimal(locked.GetValueOrDefault("wht_amount"));
+            var netDisbursed = AccountService.ToDecimal(locked.GetValueOrDefault("net_cash_disbursed"));
             var partyType = locked.GetValueOrDefault("party_type")?.ToString() ?? "customer";
+            var amount = partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase)
+                ? (netDisbursed > 0m ? netDisbursed : Math.Max(0m, grossAmount - whtAmount))
+                : grossAmount;
             var partyId = AccountService.ToLong(locked.GetValueOrDefault("party_id"));
             var payNo = locked.GetValueOrDefault("payment_number")?.ToString() ?? $"#{paymentId}";
 
