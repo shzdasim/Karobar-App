@@ -2,11 +2,13 @@ using System.Text.Json;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/notifications")]
+[Authorize]
 public class NotificationController : ApiControllerBase
 {
     public NotificationController(KarobarDb db) : base(db)

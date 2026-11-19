@@ -2,11 +2,13 @@ using System.Text;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/categories")]
+[Authorize]
 public class CategoryController : ApiControllerBase
 {
     private static readonly string[] LookupPermissions =

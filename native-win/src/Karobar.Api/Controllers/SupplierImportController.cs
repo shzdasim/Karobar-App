@@ -2,11 +2,13 @@ using System.Text;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/suppliers/import")]
+[Authorize]
 public class SupplierImportController : ApiControllerBase
 {
     private readonly SupplierImportService _service;

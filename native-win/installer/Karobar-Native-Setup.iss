@@ -8,8 +8,8 @@
 ;   3. Privacy Policy & Data Ownership acceptance gate
 ;   4. Smart Database Mode:
 ;      - Auto-detects existing installation for 100% Zero-Data-Loss In-Place Update
-;      - Fresh Database for new store installations
-;      - Herd / Abuzar Waseela SQLite Database Import (preserves 100% of store data)
+;      - Fresh Database for new store installations (for Abuzar Waseela migration, use Settings -> SQLite / Waseela Import after install)
+;      - Existing Karobar / Herd SQLite Database Import (preserves 100% of store data)
 ;      - Multi-PC POS Terminal Mode connecting over LAN
 ;   5. Pre-install Hardware Machine ID display + Ed25519 License Key binding gate
 ;      using native `Karobar-App.exe --cli license:machine-id` & `--cli license:verify-installer`
@@ -173,6 +173,8 @@ var
   AdminConfirmPasswordEdit: TPasswordEdit;
 
   DetectedMachineId: String;
+  IsCliUpgradeSession: Boolean;
+  IsCliUpgradeSessionResolved: Boolean;
 
 function OtaUpgradeFlagPath(): String;
 begin
@@ -183,12 +185,19 @@ function IsCliUpgradeMode(): Boolean;
 var
   SrcExeUpper: String;
 begin
+  if IsCliUpgradeSessionResolved then
+  begin
+    Result := IsCliUpgradeSession;
+    Exit;
+  end;
   SrcExeUpper := UpperCase(ExtractFileName(ExpandConstant('{srcexe}')));
-  Result :=
+  IsCliUpgradeSession :=
     WizardSilent() or
     (ExpandConstant('{param:UPGRADE|0}') = '1') or
     (Pos('KAROBAR-NATIVE-UPDATE', SrcExeUpper) > 0) or
     FileExists(OtaUpgradeFlagPath());
+  IsCliUpgradeSessionResolved := True;
+  Result := IsCliUpgradeSession;
 end;
 
 function ExistingInstallDbPath(): String;
@@ -322,7 +331,7 @@ var
 begin
   SelectedFile := SqliteFileEdit.Text;
   if GetOpenFileName(
-    'Select Existing Herd / Abuzar Waseela / Karobar SQLite Database File',
+    'Select Existing Karobar / Herd SQLite Database File',
     SelectedFile,
     '',
     'SQLite Database Files (*.sqlite;*.db;*.sqlite3)|*.sqlite;*.db;*.sqlite3|All Files (*.*)|*.*',
@@ -342,7 +351,7 @@ begin
   DatabaseImportPage := CreateCustomPage(
     wpSelectDir,
     'Deployment Mode, Database Setup & Multi-PC Terminal',
-    'Choose Standalone 1-PC setup (Fresh, Update, or SQLite/Waseela Import) or connect this PC as a Multi-PC POS Terminal.'
+    'Choose Standalone 1-PC setup (Fresh, Update, or existing Karobar SQLite Import) or connect as a Multi-PC POS Terminal.'
   );
 
   KeepExistingDbRadio := TNewRadioButton.Create(DatabaseImportPage);
@@ -359,7 +368,7 @@ begin
   FreshDbRadio.Left := 0;
   FreshDbRadio.Top := KeepExistingDbRadio.Top + ScaleY(22);
   FreshDbRadio.Width := DatabaseImportPage.SurfaceWidth;
-  FreshDbRadio.Caption := 'Standalone 1-PC: Start with a Fresh Database (New Store Installation)';
+  FreshDbRadio.Caption := 'Standalone 1-PC: Start with a Fresh Database (New Store / Waseela In-App Import)';
   FreshDbRadio.Checked := True;
   FreshDbRadio.OnClick := @OnDbModeChange;
 
@@ -368,7 +377,7 @@ begin
   ImportDbRadio.Left := 0;
   ImportDbRadio.Top := FreshDbRadio.Top + ScaleY(22);
   ImportDbRadio.Width := DatabaseImportPage.SurfaceWidth;
-  ImportDbRadio.Caption := 'Standalone 1-PC: Import Existing SQLite / Abuzar Waseela Database';
+  ImportDbRadio.Caption := 'Standalone 1-PC: Import Existing Karobar SQLite Database (For Waseela, use Fresh + Settings Import)';
   ImportDbRadio.Checked := False;
   ImportDbRadio.OnClick := @OnDbModeChange;
 
@@ -554,7 +563,7 @@ end;
 
 procedure WriteAdminInitJson();
 var
-  AdminJson, ImportPath: String;
+  AdminJson, ImportPath, FreshDbFlag: String;
 begin
   if IsUpgradeDatabaseModeSelected() then
   begin
@@ -566,12 +575,17 @@ begin
     if Assigned(ImportDbRadio) and ImportDbRadio.Checked then
       ImportPath := Trim(SqliteFileEdit.Text);
 
+    FreshDbFlag := 'false';
+    if Assigned(FreshDbRadio) and FreshDbRadio.Checked then
+      FreshDbFlag := 'true';
+
     AdminJson :=
       '{"name":"' + EscapeJsonString(Trim(AdminNameEdit.Text)) +
       '","email":"' + EscapeJsonString(Trim(AdminEmailEdit.Text)) +
       '","password":"' + EscapeJsonString(AdminPasswordEdit.Text) +
       '","import_sqlite":"' + EscapeJsonString(ImportPath) +
-      '","upgrade_only":false}';
+      '","fresh_db":' + FreshDbFlag +
+      ',"upgrade_only":false}';
   end;
 
   SaveStringToFile(ExpandConstant('{tmp}\admin-init.json'), AdminJson, False);
@@ -827,6 +841,17 @@ begin
       NetCfgJson :=
         '{"mode":"terminal","serverUrl":"' + EscapeJsonString(Trim(ServerUrlEdit.Text)) +
         '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) + '"}';
+      ForceDirectories(ExpandConstant('{app}\storage\app'));
+      SaveStringToFile(ExpandConstant('{app}\storage\app\network-mode.json'), NetCfgJson, False);
+      ForceDirectories(ExpandConstant('{userappdata}\Karobar-App-Native'));
+      SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-mode.json'), NetCfgJson, False);
+      SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-config.json'), NetCfgJson, False);
+    end
+    else if not IsCliUpgradeMode() then
+    begin
+      { Explicitly reset to Standalone Mode when reinstalling Standalone over a prior Terminal config }
+      NetCfgJson := '{"mode":"standalone","serverUrl":"","terminalName":""}';
+      ForceDirectories(ExpandConstant('{app}\storage\app'));
       SaveStringToFile(ExpandConstant('{app}\storage\app\network-mode.json'), NetCfgJson, False);
       ForceDirectories(ExpandConstant('{userappdata}\Karobar-App-Native'));
       SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-mode.json'), NetCfgJson, False);

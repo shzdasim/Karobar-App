@@ -64,7 +64,7 @@ public class SignedUrlMiddleware
     public static string CreateSignedUrl(HttpRequest request, string relativePath, IDictionary<string, string?>? queryParams = null, TimeSpan? ttl = null)
     {
         var scheme = string.IsNullOrWhiteSpace(request.Scheme) ? "http" : request.Scheme;
-        var host = request.Host.HasValue ? request.Host.Value : "127.0.0.1:8000";
+        var host = request.Host.HasValue ? request.Host.Value : "127.0.0.1:18960";
         var cleanPath = relativePath.StartsWith("/") ? relativePath : "/" + relativePath;
 
         var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal);
@@ -107,7 +107,7 @@ public class SignedUrlMiddleware
 
         // Accept either native signed URL or Laravel's APP_KEY HMAC-SHA256 URL
         var scheme = string.IsNullOrWhiteSpace(request.Scheme) ? "http" : request.Scheme;
-        var host = request.Host.HasValue ? request.Host.Value : "127.0.0.1:8000";
+        var host = request.Host.HasValue ? request.Host.Value : "127.0.0.1:18960";
         var path = request.Path.Value ?? "/";
 
         var providedSigBytes = Encoding.UTF8.GetBytes(sigVals.ToString().ToLowerInvariant());

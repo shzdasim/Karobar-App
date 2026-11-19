@@ -1,11 +1,13 @@
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/doctors")]
+[Authorize]
 public class DoctorController : ApiControllerBase
 {
     private static bool _schemaChecked;

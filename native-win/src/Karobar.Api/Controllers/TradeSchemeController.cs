@@ -3,11 +3,13 @@ using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/trade-schemes")]
+[Authorize]
 public class TradeSchemeController : ApiControllerBase
 {
     private readonly TradeSchemeService _schemeService;

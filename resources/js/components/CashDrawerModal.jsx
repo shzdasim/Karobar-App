@@ -205,8 +205,14 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
     setErrorMsg("");
     try {
       const { data } = await axios.get(`/api/cash-drawer/session/${idToPrint}/thermal-slip`);
-      await printSlipUrl(data.url, data.html);
-      setSuccessMsg(`${data.report_type || "Z-REPORT"} thermal slip sent to printer.`);
+      const printed = await printSlipUrl(data, {
+        successMessage: `${data.report_type || "Z-REPORT"} thermal slip sent to printer.`,
+      });
+      if (printed) {
+        setSuccessMsg(`${data.report_type || "Z-REPORT"} thermal slip sent to printer.`);
+      } else {
+        setErrorMsg("Failed to send thermal shift slip to printer.");
+      }
     } catch (err) {
       setErrorMsg(err.response?.data?.message || "Failed to print thermal shift slip.");
     } finally {

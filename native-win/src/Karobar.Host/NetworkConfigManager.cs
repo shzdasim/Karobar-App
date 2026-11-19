@@ -284,20 +284,30 @@ public sealed class NetworkConfigManager
             NetworkConfig? loaded = null;
             var hadTerminalIdOnDisk = false;
 
-            foreach (var cfgPath in GetNetworkConfigPaths())
+            // When multiple candidate files exist (e.g. standard user %APPDATA% vs elevated installer {app}\storage\app),
+            // prefer the most recently modified valid file so installer mode switches always take effect immediately.
+            var existingPaths = GetNetworkConfigPaths()
+                .Select((path, index) => (path, index))
+                .Where(item => File.Exists(item.path))
+                .OrderByDescending(item =>
+                {
+                    try { return File.GetLastWriteTimeUtc(item.path); }
+                    catch { return DateTime.MinValue; }
+                })
+                .ThenBy(item => item.index)
+                .Select(item => item.path);
+
+            foreach (var cfgPath in existingPaths)
             {
                 try
                 {
-                    if (File.Exists(cfgPath))
+                    var json = File.ReadAllText(cfgPath, Encoding.UTF8);
+                    var parsed = JsonSerializer.Deserialize<NetworkConfig>(json, JsonReadOptions);
+                    if (parsed != null)
                     {
-                        var json = File.ReadAllText(cfgPath, Encoding.UTF8);
-                        var parsed = JsonSerializer.Deserialize<NetworkConfig>(json, JsonReadOptions);
-                        if (parsed != null)
-                        {
-                            loaded = parsed;
-                            hadTerminalIdOnDisk = !string.IsNullOrWhiteSpace(parsed.TerminalId);
-                            break;
-                        }
+                        loaded = parsed;
+                        hadTerminalIdOnDisk = !string.IsNullOrWhiteSpace(parsed.TerminalId);
+                        break;
                     }
                 }
                 catch

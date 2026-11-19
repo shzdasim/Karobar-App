@@ -452,7 +452,7 @@ public class TerminalController : ApiControllerBase
 
         var pulseVersions = SyncPulseService.GetVersions();
         var lanIps = DetectLanIpv4Addresses();
-        var port = Request.Host.Port ?? 8000;
+        var port = Request.Host.Port ?? 18960;
         var hostname = Dns.GetHostName();
 
         var checks = new object[]
@@ -631,7 +631,7 @@ public class TerminalController : ApiControllerBase
         }
 
         var lanIps = DetectLanIpv4Addresses();
-        var port = Request.Host.Port ?? 8000;
+        var port = Request.Host.Port ?? 18960;
         var scheme = string.IsNullOrWhiteSpace(Request.Scheme) ? "http" : Request.Scheme;
         var primaryIp = lanIps.FirstOrDefault() ?? "127.0.0.1";
         var serverUrl = port is 80 or 443 ? $"{scheme}://{primaryIp}" : $"{scheme}://{primaryIp}:{port}";

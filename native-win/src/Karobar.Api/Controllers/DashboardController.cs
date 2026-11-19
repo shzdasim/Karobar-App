@@ -2,11 +2,13 @@ using System.Globalization;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/dashboard")]
+[Authorize]
 public class DashboardController : ApiControllerBase
 {
     public DashboardController(KarobarDb db) : base(db)

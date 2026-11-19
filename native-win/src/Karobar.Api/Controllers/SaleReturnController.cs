@@ -2,12 +2,16 @@ using System.Data;
 using System.Text.Json;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Background;
+using Karobar.Data;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
+[Authorize]
 [Route("api/sale-returns")]
 public class SaleReturnController : ApiControllerBase
 {
@@ -17,8 +21,13 @@ public class SaleReturnController : ApiControllerBase
     private readonly ReturnSettlementService _settlementService;
     private readonly SaleCostSnapshotService _costSnapshotService;
     private readonly OperatorPinService _operatorPinService;
+    private readonly FbrFiscalizationEngine? _fbrEngine;
+    private readonly KarobarDbContext? _dbContext;
 
-    public SaleReturnController(KarobarDb db) : base(db)
+    public SaleReturnController(
+        KarobarDb db,
+        FbrFiscalizationEngine? fbrEngine = null,
+        KarobarDbContext? dbContext = null) : base(db)
     {
         _sequenceService = new DocumentSequenceService(db);
         _calculationService = new InvoiceCalculationService(db);
@@ -26,6 +35,8 @@ public class SaleReturnController : ApiControllerBase
         _settlementService = new ReturnSettlementService(db);
         _costSnapshotService = new SaleCostSnapshotService(db);
         _operatorPinService = new OperatorPinService(db);
+        _fbrEngine = fbrEngine;
+        _dbContext = dbContext;
     }
 
     [HttpGet("new-code")]
@@ -189,6 +200,24 @@ public class SaleReturnController : ApiControllerBase
 
                 await tx.CommitAsync();
                 SyncPulseService.Bump("stock", "drawer");
+
+                if (_fbrEngine != null && _dbContext != null && await Db.HasTableAsync("settings"))
+                {
+                    try
+                    {
+                        var st = await Db.QuerySingleOrDefaultAsync("SELECT fbr_enabled, fbr_auto_sync FROM settings ORDER BY id ASC LIMIT 1");
+                        var fbrOn = st != null && st.GetValueOrDefault("fbr_enabled") is true or 1 or 1L;
+                        var fbrAuto = st != null && st.GetValueOrDefault("fbr_auto_sync") is true or 1 or 1L;
+                        if (fbrOn && fbrAuto)
+                        {
+                            await _fbrEngine.FiscalizeSaleReturnAsync(_dbContext, (int)srId, force: false, HttpContext?.RequestAborted ?? CancellationToken.None);
+                        }
+                    }
+                    catch
+                    {
+                        // Never block return creation if FBR gateway is unreachable
+                    }
+                }
 
                 var loaded = (await LoadSaleReturnAsync(srId))!;
                 loaded["operator_name"] = op.GetValueOrDefault("operator_name");

@@ -2,12 +2,14 @@ using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/expenses")]
+[Authorize]
 public class ExpenseController : ApiControllerBase
 {
     private readonly ExpenseService _expenseService;

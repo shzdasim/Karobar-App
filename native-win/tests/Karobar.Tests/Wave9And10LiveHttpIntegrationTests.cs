@@ -253,9 +253,11 @@ public class Wave9And10LiveHttpIntegrationTests
                 ["dosage_instruction"] = "1 + 0 + 1 After Meal"
             });
 
-            // 4. PHI protection: unauthenticated dosage-labels must return 401
+            // 4. PHI protection & [Authorize] guards: unauthenticated dosage-labels & API routes must return 401 (not 403)
             var unauthDosage = await client.GetAsync($"/sale-invoices/{saleId}/dosage-labels");
             unauthDosage.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            (await client.GetAsync("/api/products")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            (await client.GetAsync("/api/customers")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
             // Login as Admin
             var token = await LoginAsync(client, "qa-w910-admin@karobar.local", "AdminPass123!");
@@ -366,6 +368,29 @@ public class Wave9And10LiveHttpIntegrationTests
             poPdf.StatusCode.Should().Be(HttpStatusCode.OK);
             (await poPdf.Content.ReadAsByteArrayAsync()).Length.Should().BeGreaterThan(2000);
 
+            // Verify additional real QuestPDF shared document branch (customer_ledger) & Role PUT permissions alias
+            var custLedgerPdf = await client.GetAsync($"/api/share/pdf?type=customer_ledger&id={custId}");
+            custLedgerPdf.StatusCode.Should().Be(HttpStatusCode.OK, await custLedgerPdf.Content.ReadAsStringAsync());
+            var custLedgerBytes = await custLedgerPdf.Content.ReadAsByteArrayAsync();
+            custLedgerBytes.Length.Should().BeGreaterThan(2000);
+            Encoding.ASCII.GetString(custLedgerBytes, 0, 5).Should().Be("%PDF-");
+
+            var rolesListResp = await client.GetAsync("/api/roles");
+            rolesListResp.StatusCode.Should().Be(HttpStatusCode.OK, await rolesListResp.Content.ReadAsStringAsync());
+            using (var rlDoc = JsonDocument.Parse(await rolesListResp.Content.ReadAsStringAsync()))
+            {
+                var rolesArr = rlDoc.RootElement.ValueKind == JsonValueKind.Array
+                    ? rlDoc.RootElement
+                    : (rlDoc.RootElement.TryGetProperty("data", out var rd) ? rd : default);
+                if (rolesArr.ValueKind == JsonValueKind.Array && rolesArr.GetArrayLength() > 0 && rolesArr[0].TryGetProperty("id", out var rIdProp))
+                {
+                    var rolePut = await client.PutAsync($"/api/roles/{rIdProp.GetInt64()}/permissions", JsonBody(new { permissions = Array.Empty<string>() }));
+                    rolePut.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Forbidden, HttpStatusCode.UnprocessableEntity);
+                    rolePut.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+                    rolePut.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
+                }
+            }
+
             // 7. SettingController dosage_sticker_config string persistence (C8) & real external test failures (C6)
             var saveStickerResp = await client.PostAsync("/api/settings", JsonBody(new Dictionary<string, object?>
             {
@@ -423,7 +448,11 @@ public class Wave9And10LiveHttpIntegrationTests
             preloadJs.Should().Contain("\"reopen-closed\"");
             preloadJs.Should().Contain("\"duplicate\"");
 
-            // 2. Live HTTP SystemUpdateController: force=1 must bind without reflection ArgumentException; install without bridge -> 503
+            // 2. Live HTTP SystemUpdateController: force=1 must bind without reflection ArgumentException; version exposes runtime_layout & deps_fingerprint; install without bridge -> 503
+            var verResp = await client.GetAsync("/api/system/version");
+            verResp.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await verResp.Content.ReadAsStringAsync()).Should().Contain("runtime_layout").And.Contain("deps_fingerprint");
+
             var checkUpd = await client.GetAsync("/api/system/check-update?force=1");
             checkUpd.StatusCode.Should().Be(HttpStatusCode.OK, await checkUpd.Content.ReadAsStringAsync());
 
@@ -433,8 +462,9 @@ public class Wave9And10LiveHttpIntegrationTests
             var instNoBridge = await client.PostAsync("/api/system/install-update", JsonBody(new { mode = "download_and_install" }));
             instNoBridge.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
 
-            // 3. Desktop Bridge unit-level checks: SilentPrint without host returns ok=false; WAL-safe Online Backup works
-            var netMgr = new NetworkConfigManager(tempRoot, userDataDirOverride: Path.Combine(tempRoot, "appdata"));
+            // 3. Desktop Bridge unit-level checks: SilentPrint without host returns ok=false; WAL-safe Online Backup works; newest network-mode.json wins
+            var fakeAppData = Path.Combine(tempRoot, "appdata");
+            var netMgr = new NetworkConfigManager(tempRoot, userDataDirOverride: fakeAppData);
             netMgr.SaveNetworkConfig(new NetworkConfigUpdate
             {
                 Mode = "terminal",
@@ -444,6 +474,13 @@ public class Wave9And10LiveHttpIntegrationTests
             });
             var headers = netMgr.GetTerminalIdentityHeaders();
             headers["X-Network-Token"].Should().Be("SECRET-PAIR-TOKEN");
+
+            // Simulate elevated installer writing standalone reset to {app}/storage/app/network-mode.json AFTER standard user's %APPDATA% file
+            var appStorageCfg = Path.Combine(tempRoot, "storage", "app", "network-mode.json");
+            await File.WriteAllTextAsync(appStorageCfg, "{\"mode\":\"standalone\",\"serverUrl\":\"\",\"terminalName\":\"\"}");
+            File.SetLastWriteTimeUtc(appStorageCfg, DateTime.UtcNow.AddMinutes(5));
+            var netMgrReloaded = new NetworkConfigManager(tempRoot, userDataDirOverride: fakeAppData);
+            netMgrReloaded.LoadNetworkConfig().Mode.Should().Be("standalone", "newer {app}/storage/app/network-mode.json must override older %APPDATA% terminal config");
 
             var winMgr = new WebView2WindowManager(netMgr);
             var bridge = new KarobarDesktopBridge(netMgr, winMgr);
@@ -478,9 +515,13 @@ public class Wave9And10LiveHttpIntegrationTests
             issContent.Should().Contain("18960", "Installer Terminal Mode & Firewall rule must use native port 18960");
             issContent.Should().Contain("advfirewall firewall add rule", "Installer must open TCP 18960 for LAN POS Terminals");
             issContent.Should().Contain("runasoriginaluser", "Installer must relaunch Karobar-Native.exe de-elevated");
+            issContent.Should().Contain("fresh_db", "Installer must emit fresh_db flag when Fresh Database is selected");
+            issContent.Should().Contain("IsCliUpgradeSession", "Installer must cache CLI upgrade mode across ssPostInstall flag cleanup");
+            issContent.Should().Contain("\"mode\":\"standalone\"", "Installer must reset stale terminal network-mode.json when reinstalling Standalone");
 
             var ps1Content = await File.ReadAllTextAsync(Path.Combine(repoRoot, "native-win", "build-native-win.ps1"));
             ps1Content.Should().Contain("installer_sha256", "Release manifest must publish full installer SHA-256");
+            ps1Content.Should().Contain("installer_size", "Release manifest must publish installer_size for dynamic UI display");
             ps1Content.Should().Contain("deps_fingerprint", "Release manifest must track third-party DLL fingerprint");
         }
         finally

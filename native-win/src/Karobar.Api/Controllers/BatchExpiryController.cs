@@ -1,10 +1,12 @@
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
+[Authorize]
 public class BatchExpiryController : ApiControllerBase
 {
     public BatchExpiryController(KarobarDb db) : base(db)

@@ -281,10 +281,13 @@ export default function AppUpdateNotification() {
 
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
     const isPatch = Boolean(updateInfo.is_patch && updateInfo.patch_url);
+    const defaultInstallerUrl =
+      desktop?.isNative || String(updateInfo.app_name || "").toLowerCase().includes("native")
+        ? "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Setup.exe"
+        : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
     const downloadUrl = isPatch
       ? updateInfo.patch_url
-      : updateInfo.download_url ||
-        "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+      : updateInfo.download_url || defaultInstallerUrl;
 
     setIsDownloading(true);
     setProgress({
@@ -296,13 +299,14 @@ export default function AppUpdateNotification() {
       message: isPatch ? "Downloading fast patch in background…" : "Downloading update in background…",
     });
 
-    // 1. Try Electron IPC background downloader first
+    // 1. Try Desktop IPC background downloader first
     if (desktop?.isDesktop && typeof desktop.downloadAndInstallUpdate === "function") {
       try {
         const res = await desktop.downloadAndInstallUpdate({
           downloadUrl,
           patchUrl: updateInfo.patch_url,
           patchSha256: updateInfo.patch_sha256,
+          installerSha256: updateInfo.installer_sha256,
           isPatch,
           version: updateInfo.latest_version,
           mode: "download",
@@ -339,9 +343,10 @@ export default function AppUpdateNotification() {
       }, 450);
 
       const { data } = await axios.post("/api/system/install-update", {
-        download_url: updateInfo.download_url,
+        download_url: updateInfo.download_url || defaultInstallerUrl,
         patch_url: updateInfo.patch_url,
         patch_sha256: updateInfo.patch_sha256,
+        installer_sha256: updateInfo.installer_sha256,
         is_patch: isPatch,
         version: updateInfo.latest_version,
         mode: "download",
@@ -371,10 +376,13 @@ export default function AppUpdateNotification() {
 
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
     const isPatch = Boolean(updateInfo.is_patch && updateInfo.patch_url);
+    const defaultInstallerUrl =
+      desktop?.isNative || String(updateInfo.app_name || "").toLowerCase().includes("native")
+        ? "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Setup.exe"
+        : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
     const downloadUrl = isPatch
       ? updateInfo.patch_url
-      : updateInfo.download_url ||
-        "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+      : updateInfo.download_url || defaultInstallerUrl;
 
     setIsApplying(true);
     setProgress((prev) => ({
@@ -387,13 +395,14 @@ export default function AppUpdateNotification() {
         : "Creating safety backup & launching installer…",
     }));
 
-    // 1. Try Electron IPC installer (uses already-downloaded file in temp directory)
+    // 1. Try Desktop IPC installer (uses already-downloaded file in temp directory)
     if (desktop?.isDesktop && typeof desktop.downloadAndInstallUpdate === "function") {
       try {
         const res = await desktop.downloadAndInstallUpdate({
           downloadUrl,
           patchUrl: updateInfo.patch_url,
           patchSha256: updateInfo.patch_sha256,
+          installerSha256: updateInfo.installer_sha256,
           isPatch,
           version: updateInfo.latest_version,
           mode: "install",
@@ -406,12 +415,13 @@ export default function AppUpdateNotification() {
       }
     }
 
-    // 2. Fallback to Laravel in-app installer
+    // 2. Fallback to backend in-app installer
     try {
       const { data } = await axios.post("/api/system/install-update", {
-        download_url: updateInfo.download_url,
+        download_url: updateInfo.download_url || defaultInstallerUrl,
         patch_url: updateInfo.patch_url,
         patch_sha256: updateInfo.patch_sha256,
+        installer_sha256: updateInfo.installer_sha256,
         is_patch: isPatch,
         version: updateInfo.latest_version,
         mode: "install",
@@ -503,7 +513,9 @@ export default function AppUpdateNotification() {
                   </span>
                 ) : (
                   <span className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                    Full (~275 MB)
+                    {updateInfo.installer_size
+                      ? `Full (~${Math.max(1, Math.round(updateInfo.installer_size / (1024 * 1024)))} MB)`
+                      : "Full Installer"}
                   </span>
                 )}
               </div>

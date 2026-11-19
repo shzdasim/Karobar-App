@@ -172,12 +172,15 @@ public class SystemUpdateController : ApiControllerBase
     {
         var defaults = new Dictionary<string, object?>
         {
-            ["app_name"] = "Karobar-App",
+            ["app_name"] = "Karobar-App Native",
             ["version"] = "2.0.1",
             ["build_number"] = 1,
             ["commit_sha"] = "native",
             ["repository"] = "shzdasim/Karobar-App",
-            ["released_at"] = "2026-04-17T00:00:00Z"
+            ["released_at"] = "2026-04-17T00:00:00Z",
+            ["runtime"] = "dotnet-native",
+            ["runtime_layout"] = "split-v2",
+            ["deps_fingerprint"] = ""
         };
 
         var versionPath = Db.PublicPath("version.json");
@@ -189,12 +192,15 @@ public class SystemUpdateController : ApiControllerBase
             var root = doc.RootElement;
             if (root.ValueKind == JsonValueKind.Object)
             {
-                if (root.TryGetProperty("app_name", out var an)) defaults["app_name"] = an.GetString() ?? "Karobar-App";
+                if (root.TryGetProperty("app_name", out var an)) defaults["app_name"] = an.GetString() ?? "Karobar-App Native";
                 if (root.TryGetProperty("version", out var v)) defaults["version"] = (v.GetString() ?? "2.0.1").TrimStart('v', 'V');
                 if (root.TryGetProperty("build_number", out var bn) && bn.TryGetInt32(out var bni)) defaults["build_number"] = bni;
                 if (root.TryGetProperty("commit_sha", out var cs)) defaults["commit_sha"] = cs.GetString() ?? "native";
                 if (root.TryGetProperty("repository", out var rp)) defaults["repository"] = rp.GetString() ?? "shzdasim/Karobar-App";
                 if (root.TryGetProperty("released_at", out var ra)) defaults["released_at"] = ra.GetString() ?? "2026-04-17T00:00:00Z";
+                if (root.TryGetProperty("runtime", out var rt) && rt.ValueKind == JsonValueKind.String) defaults["runtime"] = rt.GetString() ?? "dotnet-native";
+                if (root.TryGetProperty("runtime_layout", out var rl) && rl.ValueKind == JsonValueKind.String) defaults["runtime_layout"] = rl.GetString() ?? "split-v2";
+                if (root.TryGetProperty("deps_fingerprint", out var df) && df.ValueKind == JsonValueKind.String) defaults["deps_fingerprint"] = df.GetString() ?? "";
             }
         }
         catch

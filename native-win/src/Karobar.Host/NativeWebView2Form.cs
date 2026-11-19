@@ -78,7 +78,7 @@ public sealed class NativeWebView2Form : Form
         Controls.Add(_tabStrip);
 
         BuildNativeMenuBar();
-        if (winInstance.IsMain)
+        if (winInstance.Id == _windowManager.MainWindow?.Id || (!winInstance.IsOffscreenPrintWorker && _windowManager.MainWindow == null))
         {
             BuildSystemTrayIcon(iconPath);
         }
@@ -187,13 +187,7 @@ public sealed class NativeWebView2Form : Form
         _tabStrip.TabCloseRequested += tabId => CloseTabById(tabId);
         _tabStrip.NewTabRequested += () => _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
         _tabStrip.QuickOpenRequested += (route, title, allowDup) => _ = OpenTabAsync(route, title, allowDuplicate: allowDup);
-        _tabStrip.TabReloadRequested += tabId =>
-        {
-            if (_tabWebViews.TryGetValue(tabId, out var wv) && wv.CoreWebView2 != null)
-            {
-                wv.CoreWebView2.Reload();
-            }
-        };
+        _tabStrip.TabReloadRequested += tabId => ReloadTab(tabId);
         _tabStrip.TabDuplicateRequested += tabId =>
         {
             var tab = _workspace.Tabs.FirstOrDefault(t => t.TabId == tabId);
@@ -229,6 +223,14 @@ public sealed class NativeWebView2Form : Form
             }
         };
         _tabStrip.DetachTabRequested += tabId => DetachTabToSeparateWindow(tabId);
+    }
+
+    private void ReloadTab(string tabId)
+    {
+        if (_tabWebViews.TryGetValue(tabId, out var wv) && wv.CoreWebView2 != null)
+        {
+            wv.CoreWebView2.Reload();
+        }
     }
 
     private void BuildNativeMenuBar()

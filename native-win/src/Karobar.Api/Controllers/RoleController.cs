@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
@@ -120,6 +121,27 @@ public class RoleController : ApiControllerBase
             guard_name = role.GetValueOrDefault("guard_name")?.ToString() ?? "sanctum",
             permissions = permNames
         });
+    }
+
+    [HttpPut("{id:long}/permissions")]
+    public async Task<IActionResult> SyncPermissions(long id)
+    {
+        if (!await CanAsync("role.sync.permissions", "role.update")) return Forbidden();
+        var role = await Db.QuerySingleOrDefaultAsync("SELECT * FROM roles WHERE id = @id AND guard_name = 'sanctum'", new { id });
+        if (role == null) return NotFound();
+
+        var body = await ReadJsonBodyAsync();
+        var permissions = new List<string>();
+        if (body.TryGetValue("permissions", out var permsEl) && permsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in permsEl.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                    permissions.Add(item.GetString()!.Trim());
+            }
+        }
+        await SyncRolePermissionsInternalAsync(id, permissions);
+        return Ok(await GetRoleWithPermissionsAsync(id));
     }
 
     [HttpPut("{id:long}")]

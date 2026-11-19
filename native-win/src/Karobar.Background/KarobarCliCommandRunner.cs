@@ -248,6 +248,7 @@ public sealed class KarobarCliCommandRunner
     private bool PreparePreInstallSqliteImport(IDictionary<string, string?> args)
     {
         var isUpgradeOnly = IsTruthyArg(args, "upgrade-only");
+        var isFreshDb = IsTruthyArg(args, "fresh-db");
         var importPath = args.TryGetValue("import-sqlite", out var imp) ? (imp ?? "").Trim() : "";
 
         if (args.TryGetValue("admin-config", out var adminCfgPath) && !string.IsNullOrWhiteSpace(adminCfgPath) && File.Exists(adminCfgPath))
@@ -258,6 +259,10 @@ public sealed class KarobarCliCommandRunner
                 if (doc.RootElement.TryGetProperty("upgrade_only", out var uo) && uo.ValueKind == JsonValueKind.True)
                 {
                     isUpgradeOnly = true;
+                }
+                if (doc.RootElement.TryGetProperty("fresh_db", out var fd) && fd.ValueKind == JsonValueKind.True)
+                {
+                    isFreshDb = true;
                 }
                 if (!isUpgradeOnly && string.IsNullOrWhiteSpace(importPath) &&
                     doc.RootElement.TryGetProperty("import_sqlite", out var impProp) &&
@@ -272,14 +277,51 @@ public sealed class KarobarCliCommandRunner
             }
         }
 
+        var destDb = Path.Combine(_appRoot, "database", "database.sqlite");
+        var destDir = Path.GetDirectoryName(destDb);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+
+        // Fresh Database requested on an existing installation: safely archive the existing DB first,
+        // then clear database.sqlite (+ WAL/SHM) so EnsureSchemaReadyAsync creates a truly clean database.
+        if (isFreshDb && !isUpgradeOnly && string.IsNullOrWhiteSpace(importPath))
+        {
+            if (File.Exists(destDb))
+            {
+                try
+                {
+                    var backupDir = Path.Combine(_appRoot, "storage", "app", "backups");
+                    Directory.CreateDirectory(backupDir);
+                    var archivePath = Path.Combine(backupDir, $"pre-fresh-install-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
+                    using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={destDb};Mode=ReadOnly;Pooling=False");
+                    using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={archivePath};Mode=ReadWriteCreate;Pooling=False");
+                    srcConn.Open();
+                    dstConn.Open();
+                    srcConn.BackupDatabase(dstConn);
+                }
+                catch
+                {
+                    // Best-effort raw fallback copy if SQLite online backup fails on a corrupt source file
+                    try
+                    {
+                        var backupDir = Path.Combine(_appRoot, "storage", "app", "backups");
+                        Directory.CreateDirectory(backupDir);
+                        var archivePath = Path.Combine(backupDir, $"pre-fresh-install-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
+                        File.Copy(destDb, archivePath, overwrite: true);
+                    }
+                    catch { }
+                }
+
+                try { File.Delete(destDb); } catch { }
+                try { if (File.Exists(destDb + "-wal")) File.Delete(destDb + "-wal"); } catch { }
+                try { if (File.Exists(destDb + "-shm")) File.Delete(destDb + "-shm"); } catch { }
+            }
+            return false;
+        }
+
         if (isUpgradeOnly || string.IsNullOrWhiteSpace(importPath) || !File.Exists(importPath))
         {
             return false;
         }
-
-        var destDb = Path.Combine(_appRoot, "database", "database.sqlite");
-        var destDir = Path.GetDirectoryName(destDb);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
 
         if (!string.Equals(Path.GetFullPath(importPath), Path.GetFullPath(destDb), StringComparison.OrdinalIgnoreCase))
         {

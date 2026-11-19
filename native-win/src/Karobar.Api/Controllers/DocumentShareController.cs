@@ -436,21 +436,34 @@ public class DocumentShareController : ApiControllerBase
                     if (canMutateRefill)
                     {
                         var nowUtc = DateTime.UtcNow;
+                        var nowDtStr = nowUtc.ToString("yyyy-MM-dd HH:mm:ss");
+                        var nowDateStr = nowUtc.ToString("yyyy-MM-dd");
                         var custUpdates = new Dictionary<string, object?>();
                         if (await Db.HasColumnAsync("customers", "last_refill_reminded_at"))
-                            custUpdates["last_refill_reminded_at"] = nowUtc.ToString("yyyy-MM-dd HH:mm:ss");
+                            custUpdates["last_refill_reminded_at"] = nowDtStr;
+                        if (await Db.HasColumnAsync("customers", "last_reminded_at"))
+                            custUpdates["last_reminded_at"] = nowDtStr;
                         var lang = (GetString(body, "language") ?? "").Trim();
                         if (!string.IsNullOrEmpty(lang) && await Db.HasColumnAsync("customers", "reminder_language"))
                             custUpdates["reminder_language"] = lang;
 
                         if (GetBool(body, "advance_cycle", false))
                         {
-                            var cycleDays = Convert.ToInt32(custRow.GetValueOrDefault("refill_cycle_days") ?? 30);
-                            if (cycleDays <= 0) cycleDays = 30;
+                            var rawCycle = custRow.GetValueOrDefault("refill_custom_days")
+                                ?? custRow.GetValueOrDefault("refill_interval_days")
+                                ?? custRow.GetValueOrDefault("refill_cycle_days");
+                            var cycleDays = rawCycle != null && int.TryParse(rawCycle.ToString(), out var parsedDays) && parsedDays > 0
+                                ? parsedDays
+                                : 30;
+                            var nextDateStr = nowUtc.AddDays(cycleDays).ToString("yyyy-MM-dd");
                             if (await Db.HasColumnAsync("customers", "last_refill_collected_at"))
-                                custUpdates["last_refill_collected_at"] = nowUtc.ToString("yyyy-MM-dd");
+                                custUpdates["last_refill_collected_at"] = nowDateStr;
+                            if (await Db.HasColumnAsync("customers", "last_collected_at"))
+                                custUpdates["last_collected_at"] = nowDateStr;
                             if (await Db.HasColumnAsync("customers", "next_refill_date"))
-                                custUpdates["next_refill_date"] = nowUtc.AddDays(cycleDays).ToString("yyyy-MM-dd");
+                                custUpdates["next_refill_date"] = nextDateStr;
+                            if (await Db.HasColumnAsync("customers", "next_due_date"))
+                                custUpdates["next_due_date"] = nextDateStr;
                         }
 
                         if (custUpdates.Count > 0)
@@ -1231,6 +1244,328 @@ public class DocumentShareController : ApiControllerBase
                 req.Rows.Add([GetVal(it, "product_name", "Item"), qty.ToString("0.##"), cost.ToString("N2"), lt.ToString("N2")]);
             }
             req.Totals = [new PdfKeyValuePair("Order Total", $"Rs. {grand:N2}", isGrandTotal: true)];
+        }
+        else if (type == "sale_return" && docId > 0)
+        {
+            var sr = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id = docId });
+            if (sr != null)
+            {
+                req.DocumentNumber = GetVal(sr, "posted_number", $"SLRET-{docId}");
+                req.DocumentDate = GetVal(sr, "date", req.DocumentDate);
+                req.FbrInvoiceNumber = GetVal(sr, "fbr_invoice_number", "");
+                req.FbrQrData = GetVal(sr, "fbr_qr_data", "");
+                req.Remarks = GetVal(sr, "remarks", "");
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM sale_return_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.sale_return_id = @id", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
+                    new PdfTableColumnDef { Header = "Ret Qty", RelativeWidth = 1.2f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.4f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.4f, AlignRight = true }
+                ];
+                foreach (var it in items)
+                {
+                    req.Rows.Add([
+                        GetVal(it, "product_name", "Item"),
+                        ToDouble(it, "unit_return_quantity").ToString("0.##", CultureInfo.InvariantCulture),
+                        ToDouble(it, "unit_sale_price").ToString("N2", CultureInfo.InvariantCulture),
+                        ToDouble(it, "sub_total").ToString("N2", CultureInfo.InvariantCulture)
+                    ]);
+                }
+                req.Totals =
+                [
+                    new PdfKeyValuePair("Gross Return", $"Rs. {ToDouble(sr, "gross_total"):N2}"),
+                    new PdfKeyValuePair("Discount", $"- Rs. {ToDouble(sr, "discount_amount"):N2}"),
+                    new PdfKeyValuePair("Return Total", $"Rs. {ToDouble(sr, "total"):N2}", isGrandTotal: true)
+                ];
+            }
+        }
+        else if (type == "purchase_return" && docId > 0)
+        {
+            var pr = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_returns WHERE id = @id", new { id = docId });
+            if (pr != null)
+            {
+                req.DocumentNumber = GetVal(pr, "posted_number", $"PRET-{docId}");
+                req.DocumentDate = GetVal(pr, "date", req.DocumentDate);
+                req.Remarks = GetVal(pr, "remarks", "");
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM purchase_return_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.purchase_return_id = @id", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
+                    new PdfTableColumnDef { Header = "Ret Qty", RelativeWidth = 1.2f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Cost", RelativeWidth = 1.4f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.4f, AlignRight = true }
+                ];
+                foreach (var it in items)
+                {
+                    req.Rows.Add([
+                        GetVal(it, "product_name", "Item"),
+                        ToDouble(it, "return_unit_quantity").ToString("0.##", CultureInfo.InvariantCulture),
+                        ToDouble(it, "unit_purchase_price").ToString("N2", CultureInfo.InvariantCulture),
+                        ToDouble(it, "sub_total").ToString("N2", CultureInfo.InvariantCulture)
+                    ]);
+                }
+                req.Totals = [new PdfKeyValuePair("Return Total", $"Rs. {ToDouble(pr, "total"):N2}", isGrandTotal: true)];
+            }
+        }
+        else if (type == "quotation" && docId > 0)
+        {
+            var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = docId });
+            if (draft != null)
+            {
+                req.DocumentNumber = GetVal(draft, "title", GetVal(draft, "uuid", $"QTN-{docId}"));
+                req.DocumentDate = GetVal(draft, "created_at", req.DocumentDate);
+                var payloadStr = GetVal(draft, "payload", "");
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
+                    new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.5f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                double sumTotal = 0;
+                if (!string.IsNullOrWhiteSpace(payloadStr))
+                {
+                    try
+                    {
+                        using var pDoc = JsonDocument.Parse(payloadStr);
+                        if (pDoc.RootElement.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var it in itemsEl.EnumerateArray())
+                            {
+                                var name = it.TryGetProperty("product_name", out var pn) ? pn.ToString() : (it.TryGetProperty("name", out var n) ? n.ToString() : "Item");
+                                var qty = it.TryGetProperty("quantity", out var q) && double.TryParse(q.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var qv) ? qv : 1;
+                                var rate = it.TryGetProperty("price", out var prEl) && double.TryParse(prEl.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var pv) ? pv : 0;
+                                var st = it.TryGetProperty("sub_total", out var stEl) && double.TryParse(stEl.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var sv) ? sv : (qty * rate);
+                                sumTotal += st;
+                                req.Rows.Add([name, qty.ToString("0.##"), rate.ToString("N2"), st.ToString("N2")]);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                var estTotal = ToDouble(draft, "total_amount");
+                if (estTotal == 0) estTotal = sumTotal;
+                req.Totals = [new PdfKeyValuePair("Estimated Total", $"Rs. {estTotal:N2}", isGrandTotal: true)];
+            }
+        }
+        else if (type == "customer_ledger" && long.TryParse(customerIdStr ?? idStr, out var clCustId) && clCustId > 0)
+        {
+            req.DocumentNumber = $"CL-{clCustId}";
+            req.PartyHeading = "Customer";
+            var rows = await Db.QueryListAsync(@"
+                SELECT entry_date, posted_number, description, invoice_total, total_received, credited_amount
+                FROM customer_ledgers
+                WHERE customer_id = @cid
+                  AND (@from IS NULL OR @from = '' OR entry_date >= @from)
+                  AND (@to IS NULL OR @to = '' OR entry_date <= @to)
+                ORDER BY entry_date ASC, id ASC
+                LIMIT 250", new { cid = clCustId, from = from ?? "", to = to ?? "" });
+            req.Columns =
+            [
+                new PdfTableColumnDef { Header = "Date", RelativeWidth = 1.6f },
+                new PdfTableColumnDef { Header = "Ref #", RelativeWidth = 1.6f },
+                new PdfTableColumnDef { Header = "Description", RelativeWidth = 3f },
+                new PdfTableColumnDef { Header = "Debit", RelativeWidth = 1.3f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Credit", RelativeWidth = 1.3f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Balance", RelativeWidth = 1.5f, AlignRight = true }
+            ];
+            double bal = 0;
+            foreach (var r in rows)
+            {
+                var inv = ToDouble(r, "invoice_total");
+                var cr = ToDouble(r, "total_received") + ToDouble(r, "credited_amount");
+                bal += inv - cr;
+                req.Rows.Add([GetVal(r, "entry_date", ""), GetVal(r, "posted_number", "-"), GetVal(r, "description", ""), inv.ToString("N2"), cr.ToString("N2"), bal.ToString("N2")]);
+            }
+            req.Totals = [new PdfKeyValuePair("Net Balance", $"Rs. {bal:N2}", isGrandTotal: true)];
+        }
+        else if (type == "supplier_ledger" && long.TryParse(supplierIdStr ?? idStr, out var slSupId) && slSupId > 0)
+        {
+            req.DocumentNumber = $"SL-{slSupId}";
+            req.PartyHeading = "Supplier";
+            var rows = await Db.QueryListAsync(@"
+                SELECT entry_date, posted_number, description, invoice_total, total_paid, debited_amount
+                FROM supplier_ledgers
+                WHERE supplier_id = @sid
+                  AND (@from IS NULL OR @from = '' OR entry_date >= @from)
+                  AND (@to IS NULL OR @to = '' OR entry_date <= @to)
+                ORDER BY entry_date ASC, id ASC
+                LIMIT 250", new { sid = slSupId, from = from ?? "", to = to ?? "" });
+            req.Columns =
+            [
+                new PdfTableColumnDef { Header = "Date", RelativeWidth = 1.6f },
+                new PdfTableColumnDef { Header = "Ref #", RelativeWidth = 1.6f },
+                new PdfTableColumnDef { Header = "Description", RelativeWidth = 3f },
+                new PdfTableColumnDef { Header = "Invoiced", RelativeWidth = 1.3f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Paid", RelativeWidth = 1.3f, AlignRight = true },
+                new PdfTableColumnDef { Header = "Balance", RelativeWidth = 1.5f, AlignRight = true }
+            ];
+            double bal = 0;
+            foreach (var r in rows)
+            {
+                var inv = ToDouble(r, "invoice_total");
+                var paid = ToDouble(r, "total_paid") + ToDouble(r, "debited_amount");
+                bal += inv - paid;
+                req.Rows.Add([GetVal(r, "entry_date", ""), GetVal(r, "posted_number", "-"), GetVal(r, "description", ""), inv.ToString("N2"), paid.ToString("N2"), bal.ToString("N2")]);
+            }
+            req.Totals = [new PdfKeyValuePair("Net Payable", $"Rs. {bal:N2}", isGrandTotal: true)];
+        }
+        else if (type == "payment" && docId > 0)
+        {
+            var pmt = await Db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = docId });
+            if (pmt != null)
+            {
+                req.DocumentNumber = GetVal(pmt, "payment_number", $"PMT-{docId}");
+                req.DocumentDate = GetVal(pmt, "payment_date", req.DocumentDate);
+                req.Remarks = GetVal(pmt, "notes", "");
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Voucher Field", RelativeWidth = 3f },
+                    new PdfTableColumnDef { Header = "Details", RelativeWidth = 5f }
+                ];
+                req.Rows.Add(["Payment #", req.DocumentNumber]);
+                req.Rows.Add(["Method", GetVal(pmt, "payment_method", "cash").ToUpperInvariant()]);
+                if (!string.IsNullOrWhiteSpace(GetVal(pmt, "reference"))) req.Rows.Add(["Reference", GetVal(pmt, "reference")]);
+                if (!string.IsNullOrWhiteSpace(GetVal(pmt, "cheque_number"))) req.Rows.Add(["Cheque #", $"{GetVal(pmt, "cheque_number")} ({GetVal(pmt, "bank_name", "")})"]);
+                req.Rows.Add(["Status", GetVal(pmt, "status", "posted").ToUpperInvariant()]);
+                req.Totals =
+                [
+                    new PdfKeyValuePair("Allocated", $"Rs. {ToDouble(pmt, "allocated_amount"):N2}"),
+                    new PdfKeyValuePair("Unapplied", $"Rs. {ToDouble(pmt, "unapplied_amount"):N2}"),
+                    new PdfKeyValuePair("Voucher Amount", $"Rs. {ToDouble(pmt, "amount"):N2}", isGrandTotal: true)
+                ];
+            }
+        }
+        else if (type == "stock_disposal" && docId > 0)
+        {
+            var dsp = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stock_disposals WHERE id = @id", new { id = docId });
+            if (dsp != null)
+            {
+                req.DocumentNumber = GetVal(dsp, "posted_number", $"DSP-{docId}");
+                req.DocumentDate = GetVal(dsp, "disposal_date", req.DocumentDate);
+                req.Remarks = GetVal(dsp, "notes", "");
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM stock_disposal_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.stock_disposal_id = @id", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Product", RelativeWidth = 3.5f },
+                    new PdfTableColumnDef { Header = "Batch", RelativeWidth = 1.5f },
+                    new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Cost Value", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                double totalCost = 0;
+                foreach (var it in items)
+                {
+                    var cv = ToDouble(it, "cost_value");
+                    totalCost += cv;
+                    req.Rows.Add([GetVal(it, "product_name", "Item"), GetVal(it, "batch_number", "-"), ToDouble(it, "dispose_qty").ToString("0.##"), cv.ToString("N2")]);
+                }
+                req.Totals = [new PdfKeyValuePair("Total Disposal Cost", $"Rs. {totalCost:N2}", isGrandTotal: true)];
+            }
+        }
+        else if (type == "cash_drawer_session" && docId > 0)
+        {
+            var cds = await Db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE id = @id", new { id = docId });
+            if (cds != null)
+            {
+                req.DocumentNumber = $"SHIFT-{docId}";
+                req.DocumentDate = GetVal(cds, "opened_at", req.DocumentDate);
+                var txns = await Db.QueryListAsync(
+                    "SELECT created_at, type, amount, notes FROM cash_drawer_transactions WHERE session_id = @id ORDER BY id ASC LIMIT 200",
+                    new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Time", RelativeWidth = 2f },
+                    new PdfTableColumnDef { Header = "Type", RelativeWidth = 2f },
+                    new PdfTableColumnDef { Header = "Notes", RelativeWidth = 3f },
+                    new PdfTableColumnDef { Header = "Amount", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                foreach (var t in txns)
+                {
+                    req.Rows.Add([GetVal(t, "created_at", ""), GetVal(t, "type", ""), GetVal(t, "notes", "-"), ToDouble(t, "amount").ToString("N2")]);
+                }
+                req.Totals =
+                [
+                    new PdfKeyValuePair("Opening Balance", $"Rs. {ToDouble(cds, "opening_balance"):N2}"),
+                    new PdfKeyValuePair("Expected Closing", $"Rs. {ToDouble(cds, "closing_balance_expected"):N2}", isGrandTotal: true)
+                ];
+            }
+        }
+        else if (type == "stocktake_session" && docId > 0)
+        {
+            var stk = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id = docId });
+            if (stk != null)
+            {
+                req.DocumentNumber = GetVal(stk, "reference_no", $"STK-{docId}");
+                req.DocumentDate = GetVal(stk, "created_at", req.DocumentDate);
+                var items = await Db.QueryListAsync(@"
+                    SELECT i.*, p.name AS product_name
+                    FROM stocktake_items i
+                    LEFT JOIN products p ON p.id = i.product_id
+                    WHERE i.stocktake_session_id = @id
+                    LIMIT 250", new { id = docId });
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Product", RelativeWidth = 3.5f },
+                    new PdfTableColumnDef { Header = "System", RelativeWidth = 1.2f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Counted", RelativeWidth = 1.2f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Variance", RelativeWidth = 1.3f, AlignRight = true },
+                    new PdfTableColumnDef { Header = "Var Value", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                double totalVarVal = 0;
+                foreach (var it in items)
+                {
+                    var vv = ToDouble(it, "variance_value");
+                    totalVarVal += vv;
+                    req.Rows.Add([
+                        GetVal(it, "product_name", "Item"),
+                        ToDouble(it, "system_qty").ToString("0.##"),
+                        it.GetValueOrDefault("counted_qty") != null ? ToDouble(it, "counted_qty").ToString("0.##") : "-",
+                        ToDouble(it, "variance_qty").ToString("0.##"),
+                        vv.ToString("N2")
+                    ]);
+                }
+                req.Totals = [new PdfKeyValuePair("Net Variance Value", $"Rs. {totalVarVal:N2}", isGrandTotal: true)];
+            }
+        }
+        else if (type == "regular_refill_reminder" && long.TryParse(customerIdStr ?? idStr, out var rrCustId) && rrCustId > 0)
+        {
+            req.DocumentNumber = $"REFILL-{rrCustId}";
+            req.PartyHeading = "Patient / Regular Customer";
+            var meds = await Db.QueryListAsync(@"
+                SELECT p.name AS product_name, MAX(si.date) AS last_date, SUM(sii.quantity) AS total_qty
+                FROM sale_invoice_items sii
+                INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id
+                LEFT JOIN products p ON p.id = sii.product_id
+                WHERE si.customer_id = @cid AND (si.status IS NULL OR si.status != 'reversed')
+                GROUP BY p.id, p.name
+                ORDER BY last_date DESC
+                LIMIT 20", new { cid = rrCustId });
+            if (meds.Count > 0)
+            {
+                req.Columns =
+                [
+                    new PdfTableColumnDef { Header = "Regular Medicine", RelativeWidth = 4.5f },
+                    new PdfTableColumnDef { Header = "Last Purchased", RelativeWidth = 2f },
+                    new PdfTableColumnDef { Header = "Total Qty", RelativeWidth = 1.5f, AlignRight = true }
+                ];
+                foreach (var m in meds)
+                {
+                    req.Rows.Add([GetVal(m, "product_name", "Medicine"), GetVal(m, "last_date", ""), ToDouble(m, "total_qty").ToString("0.##")]);
+                }
+            }
         }
 
         if (req.Columns.Count == 0 && ctx.PdfSummaryLines.Count > 0)

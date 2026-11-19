@@ -333,6 +333,24 @@ export async function printCurrentView(options = {}) {
 export const printUrlViaIframe = printSlipUrl;
 export const printHtmlViaIframe = printSlipHtml;
 
+/**
+ * Send ESC/POS cash drawer kick pulse (ESC p 0 25 250) via native desktop bridge.
+ */
+export async function kickCashDrawer(deviceName) {
+  const desktop = getDesktopPrintBridge();
+  if (!desktop || typeof desktop.kickCashDrawer !== "function") {
+    return { ok: false, error: "Desktop cash drawer bridge unavailable." };
+  }
+  const resolvedPrinter = deviceName ?? getPreferredPrinter();
+  try {
+    return await desktop.kickCashDrawer({
+      deviceName: resolvedPrinter || undefined,
+    });
+  } catch (err) {
+    return { ok: false, error: err?.message || "Failed to kick cash drawer." };
+  }
+}
+
 // Ensure window.print() in both the main window and any MDI sub-window <iframe>
 // routes through silent desktop printing when running inside the Windows Desktop .exe
 if (typeof window !== "undefined") {

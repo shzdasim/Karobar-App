@@ -56,7 +56,7 @@ export default function NetworkTerminalSettings() {
   const isElectronDesktop = Boolean(typeof window !== "undefined" && window.karobarDesktop?.isDesktop);
   const [desktopNetCfg, setDesktopNetCfg] = useState({
     mode: "standalone",
-    serverUrl: "http://192.168.1.10:8000",
+    serverUrl: "http://192.168.1.10:18960",
     terminalId: "",
     terminalName: "Counter 1",
   });
@@ -124,7 +124,7 @@ export default function NetworkTerminalSettings() {
           if (cfg) {
             setDesktopNetCfg({
               mode: cfg.mode || "standalone",
-              serverUrl: cfg.serverUrl || "http://192.168.1.10:8000",
+              serverUrl: cfg.serverUrl || "http://192.168.1.10:18960",
               terminalId: cfg.terminalId || "",
               terminalName: cfg.terminalName || "Counter 1",
             });
@@ -425,7 +425,7 @@ export default function NetworkTerminalSettings() {
   const showTroubleshoot = activeSection === "all" || activeSection === "troubleshoot";
 
   const lanUrl = serverInfo?.recommended_url || window.location.origin;
-  const mdnsUrl = `http://${serverInfo?.hostname || "karobar-server"}.local:${serverInfo?.port || 8000}`;
+  const mdnsUrl = `http://${serverInfo?.hostname || "karobar-server"}.local:${serverInfo?.port || 18960}`;
 
   return (
     <div className="space-y-6">
@@ -1314,19 +1314,19 @@ export default function NetworkTerminalSettings() {
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold"
               >
                 <option value="standalone">Standalone 1-PC (Local SQLite Database)</option>
-                <option value="terminal">Multi-PC POS Terminal (Connect to Linux Server)</option>
+                <option value="terminal">Multi-PC POS Terminal (Connect to Store Server)</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
-                Linux Store Server LAN URL
+                Store Server LAN URL
               </label>
               <input
                 type="text"
                 value={desktopNetCfg.serverUrl}
                 onChange={(e) => setDesktopNetCfg((p) => ({ ...p, serverUrl: e.target.value }))}
-                placeholder="http://192.168.1.10:8000"
+                placeholder="http://192.168.1.10:18960"
                 disabled={desktopNetCfg.mode !== "terminal"}
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono disabled:opacity-50"
               />

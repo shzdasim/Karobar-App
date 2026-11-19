@@ -158,6 +158,21 @@ New-Item -ItemType Directory -Force -Path `
     (Join-Path $StageDir "storage\backups"), `
     (Join-Path $StageDir "storage\logs") | Out-Null
 
+# Compute deterministic third-party DLL fingerprint BEFORE Inno Setup & OTA patch packaging
+# so public/version.json inside BOTH the installer and patch carries the exact deps_fingerprint
+$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
+$Sha = [System.Security.Cryptography.SHA256]::Create()
+$DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ThirdPartyDllList))
+$DepsHash8 = ([System.BitConverter]::ToString($DepsHashBytes) -replace "-", "").ToLower().Substring(0, 8)
+$RuntimeLayoutTag = "split-v2-$DepsHash8"
+$Sha.Dispose()
+
+$VersionMeta["deps_fingerprint"] = $DepsHash8
+$VersionMetaJson = $VersionMeta | ConvertTo-Json -Depth 4
+Set-Content -Path (Join-Path $RepoRoot "public\version.json") -Value $VersionMetaJson -Encoding UTF8
+Set-Content -Path (Join-Path $StageDir "public\version.json") -Value $VersionMetaJson -Encoding UTF8
+Write-Host "    Stamped deps_fingerprint=$DepsHash8 into public\version.json (layout=$RuntimeLayoutTag)" -ForegroundColor Gray
+
 Write-Host "==> [4/6] Verifying Native CLI Pre-Install Machine ID & License Engine (Isolated {tmp} Simulation)..." -ForegroundColor Cyan
 if ($IsWindows -or $env:OS -eq "Windows_NT") {
     $IsolatedTmp = Join-Path $CacheDir "isolated-tmp-verify"
@@ -389,16 +404,8 @@ $PatchSizeMB = [Math]::Round($PatchSize / 1MB, 2)
 $PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
 $InstallerExePath = Join-Path $InstallerOutDir "Karobar-Native-Setup.exe"
 $InstallerSha256 = if (Test-Path $InstallerExePath) { (Get-FileHash -Path $InstallerExePath -Algorithm SHA256).Hash.ToLower() } else { "" }
+$InstallerSize   = if (Test-Path $InstallerExePath) { [int64](Get-Item $InstallerExePath).Length } else { 0 }
 
-# Compute deterministic third-party DLL fingerprint so any NuGet dependency change automatically forces a full installer upgrade
-$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
-$Sha = [System.Security.Cryptography.SHA256]::Create()
-$DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ThirdPartyDllList))
-$DepsHash8 = ([System.BitConverter]::ToString($DepsHashBytes) -replace "-", "").ToLower().Substring(0, 8)
-$RuntimeLayoutTag = "split-v2-$DepsHash8"
-$Sha.Dispose()
-
-# Stamp runtime_layout into staged public/version.json? (already built into patch, so keep split-v2 compatible unless bumped)
 Write-Host "    Differential OTA Patch packaged: Karobar-Native-Patch.zip ($PatchSizeMB MB, SHA256=$PatchSha256, layout=$RuntimeLayoutTag)" -ForegroundColor Green
 
 $LatestReleaseManifest = [ordered]@{
@@ -412,6 +419,7 @@ $LatestReleaseManifest = [ordered]@{
     runtime_layout    = "split-v2"
     deps_fingerprint  = $DepsHash8
     download_url      = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup.exe"
+    installer_size    = $InstallerSize
     installer_sha256  = $InstallerSha256
     bundle_url        = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip"
     patch_url         = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Patch.zip"

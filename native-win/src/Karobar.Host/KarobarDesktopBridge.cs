@@ -81,6 +81,9 @@ public sealed class LocalVersionMeta
 
     [JsonPropertyName("runtime_layout")]
     public string RuntimeLayout { get; set; } = "";
+
+    [JsonPropertyName("deps_fingerprint")]
+    public string DepsFingerprint { get; set; } = "";
 }
 
 /// <summary>
@@ -1224,7 +1227,10 @@ public sealed class KarobarDesktopBridge
                     Repository = root.TryGetProperty("repository", out var rp) && rp.ValueKind == JsonValueKind.String
                         ? rp.GetString() ?? defaults.Repository
                         : defaults.Repository,
-                    RuntimeLayout = runtimeLayout
+                    RuntimeLayout = runtimeLayout,
+                    DepsFingerprint = root.TryGetProperty("deps_fingerprint", out var df) && df.ValueKind == JsonValueKind.String
+                        ? df.GetString() ?? ""
+                        : ""
                 };
             }
             if (File.Exists(Path.Combine(_networkConfig.AppRoot, "Karobar.Core.dll")))
@@ -1333,8 +1339,16 @@ public sealed class KarobarDesktopBridge
                     var layoutCompatible = string.IsNullOrEmpty(remoteLayout) ||
                                            string.Equals(remoteLayout, local.RuntimeLayout, StringComparison.OrdinalIgnoreCase);
 
+                    var remoteDeps = remote.TryGetProperty("deps_fingerprint", out var rdProp) && rdProp.ValueKind == JsonValueKind.String
+                        ? rdProp.GetString() ?? ""
+                        : "";
+                    var depsCompatible = string.IsNullOrEmpty(remoteDeps) ||
+                                         string.IsNullOrEmpty(local.DepsFingerprint) ||
+                                         string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase);
+
                     var canPatch = !string.IsNullOrWhiteSpace(patchUrl) &&
                                    layoutCompatible &&
+                                   depsCompatible &&
                                    !CompareSemverNewer(minPatchVer, local.Version);
 
                     return new
@@ -1359,6 +1373,7 @@ public sealed class KarobarDesktopBridge
                         download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
                             ? du.GetString()
                             : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe",
+                        installer_size = remote.TryGetProperty("installer_size", out var isz) && isz.TryGetInt64(out var iSize) ? (long?)iSize : null,
                         bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
                             ? bu.GetString()
                             : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
@@ -1370,6 +1385,7 @@ public sealed class KarobarDesktopBridge
                         installer_sha256 = remote.TryGetProperty("installer_sha256", out var iSha) && iSha.ValueKind == JsonValueKind.String
                             ? iSha.GetString()
                             : null,
+                        deps_fingerprint = remoteDeps,
                         min_patch_version = minPatchVer,
                         release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
                             ? ru.GetString()
@@ -1405,6 +1421,7 @@ public sealed class KarobarDesktopBridge
                 var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
                 string? patchUrl = null;
                 long? patchSize = null;
+                long? installerSize = null;
 
                 if (apiData.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
                 {
@@ -1413,7 +1430,11 @@ public sealed class KarobarDesktopBridge
                         var name = asset.TryGetProperty("name", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() ?? "" : "";
                         var url = asset.TryGetProperty("browser_download_url", out var uProp) && uProp.ValueKind == JsonValueKind.String ? uProp.GetString() ?? "" : "";
                         if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup.exe")
+                        {
                             downloadUrl = url;
+                            if (asset.TryGetProperty("size", out var isProp) && isProp.TryGetInt64(out var iSz))
+                                installerSize = iSz;
+                        }
                         if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip")
                             bundleUrl = url;
                         if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Patch.zip")
@@ -1445,14 +1466,16 @@ public sealed class KarobarDesktopBridge
                         ? bd.GetString()
                         : "New Karobar-App Native release available.",
                     download_url = downloadUrl,
+                    installer_size = installerSize,
                     bundle_url = bundleUrl,
                     patch_url = patchUrl,
                     patch_size = patchSize,
                     patch_sha256 = (string?)null,
+                    installer_sha256 = (string?)null,
                     min_patch_version = "2.0.0",
                     release_url = apiData.TryGetProperty("html_url", out var hu) && hu.ValueKind == JsonValueKind.String
                         ? hu.GetString()
-                        : $"https://github.com/{repo}/releases/latest",
+                        : $"https://github.com/{repo}/releases/tag/native-latest",
                     zero_data_loss = true
                 };
             }
