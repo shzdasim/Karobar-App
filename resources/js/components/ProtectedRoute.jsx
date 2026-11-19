@@ -79,6 +79,13 @@ const ROUTE_PERMISSION_MAP = {
   ],
   "/reports/outstanding-aging": ["report.outstanding-aging.view"],
   "/reports/reorder": ["report.reorder.view"],
+  "/reports/tax-return": [
+    "report.tax-return.view",
+    "report.net-profit.view",
+    "report.sale-detail.view",
+    "report.purchase-detail.view",
+    "account.view",
+  ],
   "/settings": ["settings.view"],
   "/backups": ["backup.view"],
   "/users": ["user.view", "user.manage"],

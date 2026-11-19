@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Karobar.Api.Controllers;
 
 [Route("api/sale-invoices")]
+[Authorize]
 public class SaleInvoiceController : ApiControllerBase
 {
     private readonly DocumentSequenceService _sequenceService;

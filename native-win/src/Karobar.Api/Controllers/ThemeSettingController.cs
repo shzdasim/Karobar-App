@@ -21,6 +21,7 @@ public class ThemeSettingController : ApiControllerBase
     }
 
     [HttpGet("active")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetActive()
     {
         var active = await GetOrCreateActiveThemeAsync();

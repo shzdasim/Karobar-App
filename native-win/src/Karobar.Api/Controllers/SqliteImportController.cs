@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -13,6 +15,7 @@ using Microsoft.Data.Sqlite;
 namespace Karobar.Api.Controllers;
 
 [Route("api/settings/sqlite-import")]
+[Authorize]
 public class SqliteImportController : ApiControllerBase
 {
     private static readonly HashSet<string> ProtectedTables = new(StringComparer.OrdinalIgnoreCase)
@@ -522,16 +525,42 @@ public class SqliteImportController : ApiControllerBase
             });
         }
 
-        if (mode == "replace" && password.Trim().Length < 4)
+        var conflictPolicy = (GetString(body, "conflict_policy") ?? "skip").Trim().ToLowerInvariant();
+        if (body.TryGetValue("options", out var optElConflict) && optElConflict.ValueKind == JsonValueKind.Object &&
+            optElConflict.TryGetProperty("conflict_policy", out var cpEl) && cpEl.ValueKind == JsonValueKind.String)
         {
-            return StatusCode(422, new Dictionary<string, object?>
+            conflictPolicy = (cpEl.GetString() ?? conflictPolicy).Trim().ToLowerInvariant();
+        }
+
+        if (mode == "replace")
+        {
+            if (string.IsNullOrWhiteSpace(password))
             {
-                ["message"] = "Please enter your current account password to confirm Replace mode import.",
-                ["errors"] = new Dictionary<string, string[]>
+                return StatusCode(422, new Dictionary<string, object?>
                 {
-                    ["password"] = new[] { "Please enter your current account password." }
-                }
-            });
+                    ["message"] = "Please enter your current account password to confirm Replace mode import.",
+                    ["errors"] = new Dictionary<string, string[]>
+                    {
+                        ["password"] = new[] { "Please enter your current account password." }
+                    }
+                });
+            }
+
+            var userRow = CurrentUserId.HasValue
+                ? await Db.QuerySingleOrDefaultAsync("SELECT password FROM users WHERE id = @id", new { id = CurrentUserId.Value })
+                : null;
+            var hash = userRow?.GetValueOrDefault("password")?.ToString() ?? "";
+            if (string.IsNullOrEmpty(hash) || !SanctumAuthenticationHandler.VerifyLaravelBcryptPassword(password, hash))
+            {
+                return StatusCode(422, new Dictionary<string, object?>
+                {
+                    ["message"] = "Invalid account password. Replace mode import aborted.",
+                    ["errors"] = new Dictionary<string, string[]>
+                    {
+                        ["password"] = new[] { "The provided password is incorrect." }
+                    }
+                });
+            }
         }
 
         try
@@ -811,7 +840,8 @@ public class SqliteImportController : ApiControllerBase
                                 dynParams.Add($"p{i}", filtered[cols[i]]);
                             }
 
-                            var verb = isReplaceMode ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
+                            var useReplaceVerb = isReplaceMode || conflictPolicy == "upsert";
+                            var verb = useReplaceVerb ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
                             var insertSql = $"{verb} INTO \"{escapedDst}\" ({colList}) VALUES ({paramList});";
                             var affected = await dstConn.ExecuteAsync(insertSql, dynParams, tx);
                             if (affected > 0)
@@ -821,8 +851,8 @@ public class SqliteImportController : ApiControllerBase
                             }
                             else
                             {
-                                updatedForTable++;
-                                totalUpdated++;
+                                skippedForTable++;
+                                totalSkipped++;
                             }
                         }
                         catch (Exception rowEx)
@@ -958,6 +988,8 @@ public class SqliteImportController : ApiControllerBase
         var metaPath = Path.Combine(dir, $"{token}.json");
 
         try { if (System.IO.File.Exists(sqlitePath)) System.IO.File.Delete(sqlitePath); } catch { }
+        try { if (System.IO.File.Exists(sqlitePath + "-wal")) System.IO.File.Delete(sqlitePath + "-wal"); } catch { }
+        try { if (System.IO.File.Exists(sqlitePath + "-shm")) System.IO.File.Delete(sqlitePath + "-shm"); } catch { }
         try { if (System.IO.File.Exists(metaPath)) System.IO.File.Delete(metaPath); } catch { }
     }
 
@@ -1232,10 +1264,15 @@ public class SqliteImportController : ApiControllerBase
                 matchedCount++;
             }
 
+            var isNotNull = tCol.GetValueOrDefault("notnull") is true or 1 or 1L;
+            var hasDefault = tCol.GetValueOrDefault("dflt_value") != null;
+            var isPk = tCol.GetValueOrDefault("pk") is true or 1 or 1L;
+
             mappings.Add(new Dictionary<string, object?>
             {
                 ["target_column"] = tName,
                 ["target_type"] = tCol["type"],
+                ["required"] = isNotNull && !hasDefault && !isPk,
                 ["source_column"] = matchedSrc,
                 ["match_type"] = matchType,
                 ["strategy"] = matchType,

@@ -3,11 +3,13 @@ using System.Text;
 using System.Text.Json;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/fbr")]
+[Authorize]
 public class FbrController : ApiControllerBase
 {
     public const string DefaultDiSandboxUrl = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb";
@@ -57,6 +59,9 @@ public class FbrController : ApiControllerBase
     [HttpGet("status-summary")]
     public async Task<IActionResult> StatusSummary()
     {
+        if (!await CanAsync("settings.view", "settings.update", "sale-invoice.view", "sale-invoice.create"))
+            return Forbidden();
+
         var setting = await GetSettingAsync();
         var hasCols = await Db.HasColumnAsync("sale_invoices", "fbr_sync_status");
 
@@ -272,6 +277,9 @@ public class FbrController : ApiControllerBase
     [HttpPost("sale-invoices/{id:long}/sync")]
     public async Task<IActionResult> SyncSaleInvoice(long id)
     {
+        if (!await CanAsync("settings.update", "sale-invoice.update", "sale-invoice.create"))
+            return Forbidden();
+
         var invoice = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id });
         if (invoice == null)
         {
@@ -289,6 +297,9 @@ public class FbrController : ApiControllerBase
     [HttpPost("sale-returns/{id:long}/sync")]
     public async Task<IActionResult> SyncSaleReturn(long id)
     {
+        if (!await CanAsync("settings.update", "sale-return.update", "sale-return.create"))
+            return Forbidden();
+
         var saleReturn = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id });
         if (saleReturn == null)
         {
@@ -306,6 +317,9 @@ public class FbrController : ApiControllerBase
     [HttpPost("retry-queue")]
     public async Task<IActionResult> RetryQueue()
     {
+        if (!await CanAsync("settings.update", "sale-invoice.update"))
+            return Forbidden();
+
         if (!await Db.HasColumnAsync("sale_invoices", "fbr_sync_status"))
         {
             return Ok(new Dictionary<string, object?>

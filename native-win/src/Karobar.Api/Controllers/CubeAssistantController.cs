@@ -2,11 +2,13 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/cube")]
+[Authorize]
 public class CubeAssistantController : ApiControllerBase
 {
     private const string DefaultProductVersion = "2026.10";
@@ -259,7 +261,8 @@ public class CubeAssistantController : ApiControllerBase
         var batchSize = Math.Max(1, Math.Min(30, GetInt(body, "batch_size", 20)));
         var afterId = Math.Max(0, GetInt(body, "after_id", 0));
         var filterQuery = (GetString(body, "filter_query") ?? "").Trim();
-        var userConfirmed = GetBool(body, "user_confirmed", true);
+        var previewOnly = GetBool(body, "preview_only", false);
+        var userConfirmed = !previewOnly && GetBool(body, "user_confirmed", true);
 
         var whereFilter = !string.IsNullOrEmpty(filterQuery) ? "AND p.name LIKE @likeFilter" : "";
         var likeFilter = $"%{filterQuery}%";
@@ -277,6 +280,7 @@ public class CubeAssistantController : ApiControllerBase
         int updatedCount = 0;
         long lastId = afterId;
         var updatedItems = new List<Dictionary<string, object?>>();
+        var skippedItems = new List<Dictionary<string, object?>>();
 
         foreach (var prod in candidates)
         {
@@ -285,12 +289,15 @@ public class CubeAssistantController : ApiControllerBase
             var pName = prod["name"]?.ToString() ?? "";
             var matchedSalt = MatchPharmacySalt(pName);
 
-            if (!string.IsNullOrEmpty(matchedSalt) && userConfirmed)
+            if (!string.IsNullOrEmpty(matchedSalt))
             {
-                await Db.UpdateAsync("products", pid, new Dictionary<string, object?>
+                if (userConfirmed)
                 {
-                    ["formulation"] = matchedSalt
-                });
+                    await Db.UpdateAsync("products", pid, new Dictionary<string, object?>
+                    {
+                        ["formulation"] = matchedSalt
+                    });
+                }
                 updatedCount++;
                 updatedItems.Add(new Dictionary<string, object?>
                 {
@@ -298,6 +305,16 @@ public class CubeAssistantController : ApiControllerBase
                     ["product_code"] = prod["product_code"],
                     ["name"] = pName,
                     ["formulation"] = matchedSalt
+                });
+            }
+            else
+            {
+                skippedItems.Add(new Dictionary<string, object?>
+                {
+                    ["id"] = pid,
+                    ["product_code"] = prod["product_code"],
+                    ["name"] = pName,
+                    ["reason"] = "No verified salt match found in dictionary"
                 });
             }
         }
@@ -310,33 +327,61 @@ public class CubeAssistantController : ApiControllerBase
               {whereFilter}",
             new { lastId, likeFilter });
 
-        var hasMore = candidates.Count == batchSize && remaining > 0;
+        var hasMore = !previewOnly && candidates.Count == batchSize && remaining > 0;
 
         var taskMeta = new Dictionary<string, object?>
         {
             ["action"] = "bulk_autofill_missing_formulations",
-            ["status"] = hasMore ? "in_progress" : "completed",
+            ["status"] = previewOnly ? "preview" : (hasMore ? "in_progress" : "completed"),
+            ["preview_only"] = previewOnly,
             ["updated_count"] = updatedCount,
             ["updated_items"] = updatedItems,
-            ["refresh_products"] = updatedCount > 0,
+            ["updated_products"] = updatedItems,
+            ["skipped_products"] = skippedItems,
+            ["refresh_products"] = !previewOnly && updatedCount > 0,
             ["background_task"] = new Dictionary<string, object?>
             {
                 ["task_type"] = "bulk_autofill_missing_formulations",
                 ["has_more"] = hasMore,
                 ["next_after_id"] = lastId,
+                ["last_processed_id"] = lastId,
                 ["batch_size"] = batchSize,
                 ["filter_query"] = filterQuery,
                 ["processed_in_batch"] = candidates.Count,
                 ["updated_in_batch"] = updatedCount,
-                ["remaining_estimate"] = remaining
+                ["remaining_estimate"] = remaining,
+                ["remaining_count"] = remaining
             }
         };
 
+        if (previewOnly)
+        {
+            var totalMissing = await Db.ExecuteScalarAsync<int>($@"
+                SELECT COUNT(*)
+                FROM products p
+                WHERE (p.formulation IS NULL OR TRIM(p.formulation) = '')
+                  {whereFilter}",
+                new { likeFilter });
+
+            taskMeta["preview_result"] = new Dictionary<string, object?>
+            {
+                ["total_missing"] = totalMissing,
+                ["sample_matches"] = updatedItems,
+                ["sample_skipped"] = skippedItems,
+                ["matched_in_sample"] = updatedItems.Count,
+                ["skipped_in_sample"] = skippedItems.Count
+            };
+        }
+
         return FormatTaskResponse(
-            titleEn: $"Auto-Filled Formulations ({updatedCount} Updated)",
-            titleUr: $"خودکار فارمولیشن اپڈیٹ ({updatedCount} پروڈکٹس)",
-            answerEn: $"Processed {candidates.Count} product(s) and updated **{updatedCount}** formulation(s) from verified DRAP salt dictionary.",
-            answerUr: $"{candidates.Count} پروڈکٹس چیک کی گئیں اور **{updatedCount}** پروڈکٹس کی فارمولیشن اپڈیٹ کر دی گئی۔",
+            titleEn: previewOnly ? $"Preview: Auto-Fill Formulations ({updatedCount} Match(es) in Sample)" : $"Auto-Filled Formulations ({updatedCount} Updated)",
+            titleUr: previewOnly ? $"پیش نظارہ: خودکار فارمولیشن ({updatedCount} میچ)" : $"خودکار فارمولیشن اپڈیٹ ({updatedCount} پروڈکٹس)",
+            answerEn: previewOnly
+                ? $"Preview checked {candidates.Count} product(s): **{updatedCount}** matched verified DRAP salts (no database changes made yet)."
+                : $"Processed {candidates.Count} product(s) and updated **{updatedCount}** formulation(s) from verified DRAP salt dictionary.",
+            answerUr: previewOnly
+                ? $"پیش نظارہ میں {candidates.Count} پروڈکٹس چیک ہوئیں: **{updatedCount}** میچ ملے (ابھی ڈیٹا بیس میں تبدیلی نہیں کی گئی)۔"
+                : $"{candidates.Count} پروڈکٹس چیک کی گئیں اور **{updatedCount}** پروڈکٹس کی فارمولیشن اپڈیٹ کر دی گئی۔",
             links: new List<Dictionary<string, string>>
             {
                 new() { ["path"] = "/products", ["en"] = "Open Products Catalog", ["ur"] = "پروڈکٹس لسٹ کھولیں" }
@@ -397,6 +442,31 @@ public class CubeAssistantController : ApiControllerBase
 
     private async Task<Dictionary<string, object?>> ExecuteCreateMasterEntityAsync(string taskType, Dictionary<string, JsonElement> body)
     {
+        var requiredPerms = taskType switch
+        {
+            "create_brands" => new[] { "brand.create" },
+            "create_categories" => new[] { "category.create" },
+            "create_suppliers" => new[] { "supplier.create" },
+            "create_customers" => new[] { "customer.create" },
+            "create_storage_locations" => new[] { "storage-location.manage", "product.create", "product.update" },
+            "create_expense_categories" => new[] { "expense-category.manage", "expense.create" },
+            "create_user_demands" => new[] { "user-demands.create" },
+            _ => new[] { "settings.update" }
+        };
+
+        if (!await IsAdminAsync() && !await CanAsync(requiredPerms))
+        {
+            return FormatTaskResponse(
+                "Permission Denied",
+                "اجازت نہیں ہے",
+                $"You lack the required permission ({string.Join(" / ", requiredPerms)}) to execute {taskType}.",
+                "اس عمل کے لیے مطلوبہ اجازت موجود نہیں ہے۔",
+                new List<Dictionary<string, string>>(),
+                new Dictionary<string, object?> { ["action"] = taskType, ["status"] = "permission_denied" },
+                "cube_task_permission_denied"
+            );
+        }
+
         var name = (GetString(body, "name") ?? "").Trim();
         var userConfirmed = GetBool(body, "user_confirmed", false);
 
@@ -467,11 +537,33 @@ public class CubeAssistantController : ApiControllerBase
                 });
                 break;
             case "create_user_demands":
+                var demandProductId = GetNullableLong(body, "product_id");
+                if (!demandProductId.HasValue || demandProductId.Value <= 0)
+                {
+                    demandProductId = await Db.ExecuteScalarAsync<long?>(
+                        "SELECT id FROM products WHERE LOWER(name) = LOWER(@name) OR LOWER(name) LIKE LOWER(@like) ORDER BY CASE WHEN LOWER(name) = LOWER(@name) THEN 0 ELSE 1 END, id ASC LIMIT 1",
+                        new { name, like = $"%{name}%" });
+                }
+                if (!demandProductId.HasValue || demandProductId.Value <= 0)
+                {
+                    return FormatTaskResponse(
+                        "Product Not Found for Demand",
+                        "ڈیمانڈ کے لیے پروڈکٹ نہیں ملی",
+                        $"No matching product found for **{name}**. Please specify a valid `product_id` or create the product first.",
+                        $"**{name}** سے ملتی جلتی کوئی پروڈکٹ نہیں ملی۔ پہلے پروڈکٹ منتخب کریں۔",
+                        new List<Dictionary<string, string>> { new() { ["path"] = "/user-demands/create", ["en"] = "Open User Demands", ["ur"] = "یوزر ڈیمانڈز کھولیں" } },
+                        new Dictionary<string, object?> { ["action"] = taskType, ["status"] = "product_not_found" },
+                        "cube_task_needs_input"
+                    );
+                }
                 id = await Db.InsertAsync("user_demands", new Dictionary<string, object?>
                 {
+                    ["product_id"] = demandProductId.Value,
+                    ["user_id"] = CurrentUserId,
                     ["requested_by"] = CurrentUserId,
                     ["requested_name"] = name,
-                    ["requested_quantity"] = Math.Max(1, GetInt(body, "requested_quantity", 1)),
+                    ["quantity"] = Math.Max(1, GetInt(body, "requested_quantity", GetInt(body, "quantity", 1))),
+                    ["requested_quantity"] = Math.Max(1, GetInt(body, "requested_quantity", GetInt(body, "quantity", 1))),
                     ["status"] = "pending",
                     ["notes"] = GetString(body, "notes") ?? "Logged via Cube AI Assistant"
                 });
@@ -523,7 +615,7 @@ public class CubeAssistantController : ApiControllerBase
                 "سیل انوائس بنانے کے لیے **Sale Invoices** کھولیں، بارکوڈ اسکین کریں یا پروڈکٹ/فارمولیشن تلاش کریں، مقدار درج کریں اور **Save & Print** دبائیں۔",
                 new List<Dictionary<string, string>>
                 {
-                    new() { ["path"] = "/sale-invoices/create", ["en"] = "Create Sale Invoice", ["ur"] = "نئی سیل انوائس بنائیں" },
+                    new() { ["path"] = "/sale-invoices/create/retail", ["en"] = "Create Sale Invoice", ["ur"] = "نئی سیل انوائس بنائیں" },
                     new() { ["path"] = "/sale-invoices", ["en"] = "Sale Invoices List", ["ur"] = "سیل انوائسز کی فہرست" }
                 }
             );

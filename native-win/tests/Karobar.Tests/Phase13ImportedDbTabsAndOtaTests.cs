@@ -208,7 +208,7 @@ public class Phase13ImportedDbTabsAndOtaTests
             {
                 token = uploadedToken,
                 mode = "replace",
-                password = "password123",
+                password = "password",
                 software_admin_token = swToken
             });
 

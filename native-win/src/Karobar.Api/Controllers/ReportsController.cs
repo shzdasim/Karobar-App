@@ -2,16 +2,76 @@ using System.Globalization;
 using System.Text;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Printing;
+using Karobar.Services;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/reports")]
+[Authorize]
 public class ReportsController : ApiControllerBase
 {
-    public ReportsController(KarobarDb db) : base(db)
+    private readonly PdfDocumentGenerator _pdfGenerator;
+
+    public ReportsController(KarobarDb db, PdfDocumentGenerator? pdfGenerator = null) : base(db)
     {
+        _pdfGenerator = pdfGenerator ?? new PdfDocumentGenerator();
+    }
+
+    private async Task<PrintSettingViewModel> LoadPrintSettingAsync()
+    {
+        var s = await Db.HasTableAsync("settings")
+            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
+            : null;
+
+        return new PrintSettingViewModel
+        {
+            StoreName = GetNullableStr(s, "store_name") is { Length: > 0 } sn ? sn : "KAROBAR PHARMACY & STORE",
+            PhoneNumber = GetNullableStr(s, "phone_number") ?? "",
+            Address = GetNullableStr(s, "address") ?? "",
+            LicenseNumber = GetNullableStr(s, "license_number") ?? "",
+            FbrSellerNtn = GetNullableStr(s, "fbr_seller_ntn") ?? "",
+            FbrSellerStrn = GetNullableStr(s, "fbr_seller_strn") ?? ""
+        };
+    }
+
+    private (IActionResult? err, string from, string to) ValidateStrictDateRange()
+    {
+        var now = DateTime.Now;
+        var rawFrom = Request.Query["from"].FirstOrDefault();
+        var rawTo = Request.Query["to"].FirstOrDefault();
+
+        DateTime fromDt;
+        if (string.IsNullOrWhiteSpace(rawFrom))
+        {
+            fromDt = new DateTime(now.Year, now.Month, 1);
+        }
+        else if (!DateTime.TryParseExact(rawFrom.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out fromDt) &&
+                 !DateTime.TryParse(rawFrom.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out fromDt))
+        {
+            return (Unprocessable("The from date must be a valid YYYY-MM-DD date.", new Dictionary<string, string[]> { ["from"] = new[] { "Invalid date format." } }), "", "");
+        }
+
+        DateTime toDt;
+        if (string.IsNullOrWhiteSpace(rawTo))
+        {
+            toDt = now.Date;
+        }
+        else if (!DateTime.TryParseExact(rawTo.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out toDt) &&
+                 !DateTime.TryParse(rawTo.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out toDt))
+        {
+            return (Unprocessable("The to date must be a valid YYYY-MM-DD date.", new Dictionary<string, string[]> { ["to"] = new[] { "Invalid date format." } }), "", "");
+        }
+
+        if (fromDt.Date > toDt.Date)
+        {
+            return (Unprocessable("The from date must be on or before the to date."), "", "");
+        }
+
+        return (null, fromDt.ToString("yyyy-MM-dd"), toDt.ToString("yyyy-MM-dd"));
     }
 
     private async Task<IActionResult?> AuthorizeReportActionAsync(params string[] permissions)
@@ -36,7 +96,7 @@ public class ReportsController : ApiControllerBase
 
     private static (string fromStr, string toStr) ResolveDateRange(string? rawFrom, string? rawTo, bool swapIfReversed = true)
     {
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         var defaultFrom = new DateTime(now.Year, now.Month, 1);
         var defaultTo = now;
 
@@ -91,18 +151,59 @@ public class ReportsController : ApiControllerBase
         var totalCogs = rows.Sum(r => ToDouble(r, "cost_of_sales"));
         var netSale = totalSales - totalReturns;
         var gp = netSale - totalCogs;
+        var gpPct = netSale > 0 ? (gp / netSale) * 100.0 : 0.0;
 
-        var lines = new List<string>
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Days: {rows.Count} | Total Sales: {totalSales:N2} | Returns: {totalReturns:N2}",
-            $"Net Sales: {netSale:N2} | Cost of Sales: {totalCogs:N2} | Gross Profit: {gp:N2}"
-        };
-        foreach (var r in rows.Take(25))
-        {
-            lines.Add($"{GetStr(r, "sale_date")}: Sales={ToDouble(r, "total_sales"):N2}, Return={ToDouble(r, "sale_return"):N2}, COGS={ToDouble(r, "cost_of_sales"):N2}");
-        }
-
-        var pdf = BuildReportPdf("Cost of Sale Report", lines);
+            ReportType = "cost-of-sale",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Days", rows.Count.ToString()),
+                new("Total Sales", $"Rs. {totalSales:N2}"),
+                new("Returns", $"Rs. {totalReturns:N2}"),
+                new("Net Sales", $"Rs. {netSale:N2}"),
+                new("COGS", $"Rs. {totalCogs:N2}"),
+                new("Gross Profit", $"Rs. {gp:N2} ({gpPct:N1}%)")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.4f },
+                new() { Header = "Gross Sale", RelativeWidth = 1.4f, AlignRight = true },
+                new() { Header = "Discounts", RelativeWidth = 1.2f, AlignRight = true },
+                new() { Header = "Total Sales", RelativeWidth = 1.4f, AlignRight = true },
+                new() { Header = "Returns", RelativeWidth = 1.2f, AlignRight = true },
+                new() { Header = "Net Sales", RelativeWidth = 1.4f, AlignRight = true },
+                new() { Header = "COGS", RelativeWidth = 1.4f, AlignRight = true },
+                new() { Header = "Gross Profit", RelativeWidth = 1.4f, AlignRight = true }
+            ],
+            Rows = rows.Select(r =>
+            {
+                var ts = ToDouble(r, "total_sales");
+                var sr = ToDouble(r, "sale_return");
+                var cs = ToDouble(r, "cost_of_sales");
+                var ns = ts - sr;
+                return new List<string>
+                {
+                    GetStr(r, "sale_date"),
+                    $"{ToDouble(r, "gross_sale"):N2}",
+                    $"{ToDouble(r, "item_discount") + ToDouble(r, "discount_amount"):N2}",
+                    $"{ts:N2}",
+                    $"{sr:N2}",
+                    $"{ns:N2}",
+                    $"{cs:N2}",
+                    $"{ns - cs:N2}"
+                };
+            }).ToList(),
+            FooterTotals =
+            [
+                new("Net Sales", $"Rs. {netSale:N2}"),
+                new("Total COGS", $"Rs. {totalCogs:N2}"),
+                new("Gross Profit", $"Rs. {gp:N2} ({gpPct:N1}%)", isGrandTotal: true)
+            ]
+        });
         return DeliverPdf(pdf, "cost-of-sale-report.pdf");
     }
 
@@ -253,12 +354,68 @@ public class ReportsController : ApiControllerBase
 
         var data = await BuildCostOfSaleDetailDataAsync();
         var summary = (Dictionary<string, object?>)data["summary"]!;
+        var invoices = data.GetValueOrDefault("invoices") as List<Dictionary<string, object?>> ?? new();
         var invoiceId = Request.Query["invoice_id"].FirstOrDefault();
 
-        var pdf = BuildReportPdf("Cost of Sale Detail Report", new[]
+        var tableRows = new List<List<string>>();
+        foreach (var inv in invoices)
         {
-            $"Total Invoices: {summary["total_invoices"]}",
-            $"Total Sales: {summary["total_sales"]} | Total Cost: {summary["total_cost"]} | Total Profit: {summary["total_profit"]}"
+            var invNo = GetStr(inv, "posted_number");
+            var dt = GetStr(inv, "date");
+            var cust = GetStr(inv, "customer_name");
+            var items = inv.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+            foreach (var it in items)
+            {
+                tableRows.Add(
+                [
+                    dt,
+                    invNo,
+                    cust,
+                    GetStr(it, "product_name"),
+                    $"{ToDouble(it, "quantity"):N0}",
+                    $"{ToDouble(it, "cost_price"):N2}",
+                    $"{ToDouble(it, "total_cost"):N2}",
+                    $"{ToDouble(it, "total_sale"):N2}",
+                    $"{ToDouble(it, "profit"):N2}"
+                ]);
+            }
+        }
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "cost-of-sale-detail",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Landscape = true,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Invoices", GetStr(summary, "total_invoices")),
+                new("Items", GetStr(summary, "total_items")),
+                new("Total Sales", $"Rs. {ToDouble(summary, "total_sales"):N2}"),
+                new("Total Cost", $"Rs. {ToDouble(summary, "total_cost"):N2}"),
+                new("Total Profit", $"Rs. {ToDouble(summary, "total_profit"):N2}"),
+                new("Margin", $"{ToDouble(summary, "profit_margin"):N1}%")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Invoice #", RelativeWidth = 1.3f },
+                new() { Header = "Customer", RelativeWidth = 1.8f },
+                new() { Header = "Product", RelativeWidth = 2.4f },
+                new() { Header = "Qty", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Unit Cost", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Total Cost", RelativeWidth = 1.2f, AlignRight = true },
+                new() { Header = "Sale", RelativeWidth = 1.2f, AlignRight = true },
+                new() { Header = "Profit", RelativeWidth = 1.2f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Total Sales", $"Rs. {ToDouble(summary, "total_sales"):N2}"),
+                new("Total Cost", $"Rs. {ToDouble(summary, "total_cost"):N2}"),
+                new("Gross Profit", $"Rs. {ToDouble(summary, "total_profit"):N2}", isGrandTotal: true)
+            ]
         });
 
         var filename = $"cost-of-sale-detail-{(string.IsNullOrEmpty(invoiceId) ? "report" : $"invoice-{invoiceId}")}.pdf";
@@ -430,11 +587,60 @@ public class ReportsController : ApiControllerBase
         var rows = await BuildPurchaseDetailRowsAsync();
         var from = Request.Query["from"].FirstOrDefault() ?? "start";
         var to = Request.Query["to"].FirstOrDefault() ?? "today";
+        var totalAmt = rows.Sum(r => ToDouble(r, "total_amount"));
 
-        var pdf = BuildReportPdf("Purchase Detail Report", new[]
+        var tableRows = new List<List<string>>();
+        foreach (var inv in rows)
         {
-            $"Period: {from} to {to}",
-            $"Invoices: {rows.Count} | Total Amount: {rows.Sum(r => ToDouble(r, "total_amount")):N2}"
+            var invDate = GetStr(inv, "invoice_date");
+            var posted = GetStr(inv, "posted_number");
+            var sup = GetStr(inv, "supplier_name");
+            var items = inv.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+            foreach (var it in items)
+            {
+                tableRows.Add(
+                [
+                    invDate,
+                    posted,
+                    sup,
+                    GetStr(it, "product_name"),
+                    GetStr(it, "batch"),
+                    $"{ToLong(it, "quantity")}",
+                    $"{ToDouble(it, "unit_purchase_price"):N2}",
+                    $"{ToDouble(it, "sub_total"):N2}"
+                ]);
+            }
+        }
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "purchase-detail",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Landscape = true,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Invoices", rows.Count.ToString()),
+                new("Line Items", tableRows.Count.ToString()),
+                new("Total Amount", $"Rs. {totalAmt:N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "GRN #", RelativeWidth = 1.3f },
+                new() { Header = "Supplier", RelativeWidth = 2.0f },
+                new() { Header = "Product", RelativeWidth = 2.5f },
+                new() { Header = "Batch", RelativeWidth = 1.2f },
+                new() { Header = "Qty", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Unit Cost", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Sub Total", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Total Purchases", $"Rs. {totalAmt:N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, $"purchase-detail-{from}-to-{to}.pdf");
     }
@@ -504,12 +710,14 @@ public class ReportsController : ApiControllerBase
                 ["unit_sale_price"] = ToDouble(it, "unit_sale_price"),
                 ["pack_bonus"] = (int)ToLong(it, "pack_bonus"),
                 ["unit_bonus"] = (int)ToLong(it, "unit_bonus"),
+                ["bonus"] = (int)ToLong(it, "unit_bonus") + (int)ToLong(it, "pack_bonus"),
                 ["item_discount_percentage"] = ToDouble(it, "item_discount_percentage"),
                 ["margin"] = ToDouble(it, "margin"),
                 ["sub_total"] = ToDouble(it, "sub_total"),
                 ["quantity"] = (int)ToLong(it, "quantity")
             }).ToList();
 
+            var invDateStr = FormatDateOnly(GetNullableStr(inv, "posted_date"));
             rows.Add(new Dictionary<string, object?>
             {
                 ["id"] = invId,
@@ -517,7 +725,8 @@ public class ReportsController : ApiControllerBase
                 ["supplier_name"] = GetNullableStr(inv, "supplier_name"),
                 ["posted_number"] = GetNullableStr(inv, "posted_number"),
                 ["invoice_number"] = GetNullableStr(inv, "invoice_number"),
-                ["invoice_date"] = FormatDateOnly(GetNullableStr(inv, "posted_date")),
+                ["invoice_date"] = invDateStr,
+                ["date"] = invDateStr,
                 ["tax_percentage"] = ToDouble(inv, "tax_percentage"),
                 ["tax_amount"] = ToDouble(inv, "tax_amount"),
                 ["discount_percentage"] = ToDouble(inv, "discount_percentage"),
@@ -553,11 +762,60 @@ public class ReportsController : ApiControllerBase
         var rows = await BuildSaleDetailRowsAsync();
         var from = Request.Query["from"].FirstOrDefault() ?? "start";
         var to = Request.Query["to"].FirstOrDefault() ?? "today";
+        var totalSales = rows.Sum(r => ToDouble(r, "total"));
 
-        var pdf = BuildReportPdf("Sale Detail Report", new[]
+        var tableRows = new List<List<string>>();
+        foreach (var inv in rows)
         {
-            $"Period: {from} to {to}",
-            $"Invoices: {rows.Count} | Total Sales: {rows.Sum(r => ToDouble(r, "total")):N2}"
+            var dt = GetStr(inv, "invoice_date");
+            var invNo = GetStr(inv, "posted_number");
+            var cust = GetNullableStr(inv, "customer_name") ?? "Walk-in";
+            var items = inv.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+            foreach (var it in items)
+            {
+                tableRows.Add(
+                [
+                    dt,
+                    invNo,
+                    cust,
+                    GetStr(it, "product_name"),
+                    GetStr(it, "batch_number"),
+                    $"{ToLong(it, "quantity")}",
+                    $"{ToDouble(it, "price"):N2}",
+                    $"{ToDouble(it, "sub_total"):N2}"
+                ]);
+            }
+        }
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "sale-detail",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Landscape = true,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Invoices", rows.Count.ToString()),
+                new("Line Items", tableRows.Count.ToString()),
+                new("Total Sales", $"Rs. {totalSales:N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Invoice #", RelativeWidth = 1.3f },
+                new() { Header = "Customer", RelativeWidth = 2.0f },
+                new() { Header = "Product", RelativeWidth = 2.5f },
+                new() { Header = "Batch", RelativeWidth = 1.2f },
+                new() { Header = "Qty", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Price", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Sub Total", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Total Sales", $"Rs. {totalSales:N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, $"sale-detail-{from}-to-{to}.pdf");
     }
@@ -630,11 +888,13 @@ public class ReportsController : ApiControllerBase
                 ["sub_total"] = ToDouble(it, "sub_total")
             }).ToList();
 
+            var saleDateStr = FormatDateOnly(GetNullableStr(inv, "date"));
             rows.Add(new Dictionary<string, object?>
             {
                 ["id"] = invId,
                 ["posted_number"] = GetNullableStr(inv, "posted_number"),
-                ["invoice_date"] = FormatDateOnly(GetNullableStr(inv, "date")),
+                ["invoice_date"] = saleDateStr,
+                ["date"] = saleDateStr,
                 ["customer_name"] = GetNullableStr(inv, "customer_name"),
                 ["user_name"] = GetNullableStr(inv, "user_name"),
                 ["doctor_name"] = GetNullableStr(inv, "doctor_name"),
@@ -676,11 +936,45 @@ public class ReportsController : ApiControllerBase
 
         var data = await BuildCurrentStockDataAsync();
         var summary = (Dictionary<string, object?>)data["summary"]!;
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
 
-        var pdf = BuildReportPdf("Current Stock Report", new[]
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Total Items: {summary["total_items"]} | Total Quantity: {summary["total_quantity"]}",
-            $"Total Purchase Value: {summary["total_purchase_value"]} | Total Sale Value: {summary["total_sale_value"]}"
+            ReportType = "current-stock",
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Total Items", GetStr(summary, "total_items")),
+                new("Total Units", GetStr(summary, "total_quantity")),
+                new("Purchase Value", $"Rs. {ToDouble(summary, "total_purchase_value"):N2}"),
+                new("Sale Value", $"Rs. {ToDouble(summary, "total_sale_value"):N2}"),
+                new("Potential Profit", $"Rs. {ToDouble(summary, "potential_profit"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Code", RelativeWidth = 1.2f },
+                new() { Header = "Product Name", RelativeWidth = 2.8f },
+                new() { Header = "Brand", RelativeWidth = 1.4f },
+                new() { Header = "Qty", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Unit Cost", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Cost Value", RelativeWidth = 1.3f, AlignRight = true },
+                new() { Header = "Sale Value", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = rows.Take(500).Select(r => new List<string>
+            {
+                GetStr(r, "product_code"),
+                GetStr(r, "name"),
+                GetStr(r, "brand_name"),
+                $"{ToLong(r, "quantity")}",
+                $"{ToDouble(r, "unit_purchase_price"):N2}",
+                $"{ToDouble(r, "total_purchase_value"):N2}",
+                $"{ToDouble(r, "total_sale_value"):N2}"
+            }).ToList(),
+            FooterTotals =
+            [
+                new("Total Purchase Value", $"Rs. {ToDouble(summary, "total_purchase_value"):N2}"),
+                new("Total Sale Value", $"Rs. {ToDouble(summary, "total_sale_value"):N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, "current-stock-report.pdf");
     }
@@ -812,13 +1106,62 @@ public class ReportsController : ApiControllerBase
 
         var data = await BuildStockAdjustmentDataAsync();
         var summary = (Dictionary<string, object?>)data["summary"]!;
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
         var from = Request.Query["from"].FirstOrDefault() ?? "start";
         var to = Request.Query["to"].FirstOrDefault() ?? "today";
 
-        var pdf = BuildReportPdf("Stock Adjustment Report", new[]
+        var tableRows = new List<List<string>>();
+        foreach (var adj in rows)
         {
-            $"Total Adjustments: {summary["total_adjustments"]} | Total Items: {summary["total_items"]}",
-            $"Total Worth Adjusted: {summary["total_worth_adjusted"]}"
+            var dt = GetStr(adj, "posted_date");
+            var no = GetStr(adj, "posted_number");
+            var items = adj.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+            foreach (var it in items)
+            {
+                tableRows.Add(
+                [
+                    dt,
+                    no,
+                    GetStr(it, "product_name"),
+                    GetStr(it, "batch_number"),
+                    $"{ToDouble(it, "previous_qty"):N0}",
+                    $"{ToDouble(it, "actual_qty"):N0}",
+                    $"{ToDouble(it, "diff_qty"):+0;-0;0}",
+                    $"{ToDouble(it, "worth_adjusted"):N2}"
+                ]);
+            }
+        }
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "stock-adjustment",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Adjustments", GetStr(summary, "total_adjustments")),
+                new("Items", GetStr(summary, "total_items")),
+                new("Positive", $"+{ToDouble(summary, "positive_adjustments"):N0}"),
+                new("Negative", $"-{ToDouble(summary, "negative_adjustments"):N0}"),
+                new("Total Worth", $"Rs. {ToDouble(summary, "total_worth_adjusted"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Voucher #", RelativeWidth = 1.4f },
+                new() { Header = "Product", RelativeWidth = 2.4f },
+                new() { Header = "Batch", RelativeWidth = 1.1f },
+                new() { Header = "Prev", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Actual", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Diff", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Worth", RelativeWidth = 1.2f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Total Worth Adjusted", $"Rs. {ToDouble(summary, "total_worth_adjusted"):N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, $"stock-adjustment-{from}-to-{to}.pdf");
     }
@@ -940,14 +1283,63 @@ public class ReportsController : ApiControllerBase
         var authErr = await AuthorizeReportActionAsync("report.product-comprehensive.export", "report.product-comprehensive.view");
         if (authErr != null) return authErr;
 
-        long.TryParse(Request.Query["product_id"].FirstOrDefault(), out var productId);
-        var data = productId > 0 ? await BuildProductComprehensiveDataAsync(productId) : null;
-        var prod = data != null && data.TryGetValue("product", out var pObj) ? pObj as Dictionary<string, object?> : null;
-        var code = GetNullableStr(prod, "product_code") ?? "product";
-
-        var pdf = BuildReportPdf($"Product Comprehensive Report ({code})", new[]
+        var productIdStr = Request.Query["product_id"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(productIdStr) || !long.TryParse(productIdStr, out var productId) || productId <= 0)
         {
-            $"Product: {GetNullableStr(prod, "name") ?? "-"} ({code})"
+            return BadRequest(new { message = "Product ID is required" });
+        }
+
+        var data = await BuildProductComprehensiveDataAsync(productId);
+        if (data == null)
+        {
+            return NotFound(new { message = "Product not found" });
+        }
+
+        var prod = data.GetValueOrDefault("product") as Dictionary<string, object?>;
+        var summary = data.GetValueOrDefault("summary") as Dictionary<string, object?> ?? new();
+        var txns = data.GetValueOrDefault("transactions") as List<Dictionary<string, object?>> ?? new();
+        var code = GetNullableStr(prod, "product_code") ?? "product";
+        var prodName = GetNullableStr(prod, "name") ?? "-";
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "product-comprehensive",
+            ReportTitle = $"Product Comprehensive Report — {prodName}",
+            Subtitle = $"Code: {code} | On Hand: {ToLong(prod, "quantity")} units",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Landscape = true,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Purchases", GetStr(summary, "total_purchased_qty")),
+                new("Sales", GetStr(summary, "total_sold_qty")),
+                new("Sale Returns", GetStr(summary, "total_sale_return_qty")),
+                new("Purchase Returns", GetStr(summary, "total_purchase_return_qty")),
+                new("Current Stock", $"{ToLong(prod, "quantity")}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Type", RelativeWidth = 1.3f },
+                new() { Header = "Document #", RelativeWidth = 1.4f },
+                new() { Header = "Party", RelativeWidth = 2.0f },
+                new() { Header = "Batch", RelativeWidth = 1.2f },
+                new() { Header = "Qty", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Rate", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Amount", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = txns.Select(t => new List<string>
+            {
+                GetStr(t, "date"),
+                GetStr(t, "type").ToUpperInvariant(),
+                GetStr(t, "posted_number"),
+                GetStr(t, "party_name"),
+                GetStr(t, "batch_number"),
+                $"{ToDouble(t, "quantity"):N0}",
+                $"{ToDouble(t, "unit_price"):N2}",
+                $"{ToDouble(t, "total"):N2}"
+            }).ToList()
         });
         return DeliverPdf(pdf, $"product-comprehensive-{code}.pdf");
     }
@@ -1239,17 +1631,50 @@ public class ReportsController : ApiControllerBase
 
         var data = await BuildNearExpiryProductDataAsync();
         var summary = (Dictionary<string, object?>)data["summary"]!;
-        var pdf = BuildReportPdf("Near Expiry Product Report", new[]
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
+        var filters = data.GetValueOrDefault("filters") as Dictionary<string, object?>;
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Total Batches: {summary["total_batches"]} | Total Quantity: {summary["total_quantity"]}"
+            ReportType = "near-expiry-product",
+            FromDate = GetNullableStr(filters, "from"),
+            ToDate = GetNullableStr(filters, "to"),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Near-Expiry Batches", GetStr(summary, "total_batches")),
+                new("Total Units", GetStr(summary, "total_quantity")),
+                new("At-Risk Value", $"Rs. {rows.Sum(r => ToDouble(r, "purchase_value")):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Code", RelativeWidth = 1.1f },
+                new() { Header = "Product", RelativeWidth = 2.4f },
+                new() { Header = "Batch", RelativeWidth = 1.2f },
+                new() { Header = "Expiry", RelativeWidth = 1.1f },
+                new() { Header = "Days", RelativeWidth = 0.7f, AlignRight = true },
+                new() { Header = "Qty", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Cost Value", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = rows.Select(r => new List<string>
+            {
+                GetStr(r, "product_code"),
+                GetStr(r, "product_name"),
+                GetStr(r, "batch_number"),
+                FormatDateOnly(GetNullableStr(r, "expiry_date")) ?? "",
+                GetStr(r, "days_remaining"),
+                $"{ToLong(r, "quantity")}",
+                $"{ToDouble(r, "purchase_value"):N2}"
+            }).ToList()
         });
         return DeliverPdf(pdf, "near-expiry-product-report.pdf");
     }
 
     private async Task<Dictionary<string, object?>> BuildNearExpiryProductDataAsync()
     {
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var threeMonths = DateTime.UtcNow.AddMonths(3).ToString("yyyy-MM-dd");
+        var todayDt = DateTime.Now.Date;
+        var today = todayDt.ToString("yyyy-MM-dd");
+        var threeMonths = todayDt.AddMonths(3).ToString("yyyy-MM-dd");
 
         var rawFrom = Request.Query["from"].FirstOrDefault();
         var rawTo = Request.Query["to"].FirstOrDefault();
@@ -1280,6 +1705,7 @@ public class ReportsController : ApiControllerBase
                    b.expiry_date,
                    b.quantity,
                    b.storage_location_id,
+                   COALESCE(b.unit_purchase_price, p.unit_purchase_price, 0) AS unit_purchase_price,
                    p.id AS product_id,
                    p.product_code,
                    p.name AS product_name,
@@ -1321,6 +1747,14 @@ public class ReportsController : ApiControllerBase
 
         sql += " ORDER BY b.expiry_date ASC, p.name ASC LIMIT 2000";
         var rows = await Db.QueryListAsync(sql, dyn);
+        foreach (var r in rows)
+        {
+            var qty = ToDouble(r, "quantity");
+            var unitCost = ToDouble(r, "unit_purchase_price");
+            r["purchase_value"] = Math.Round(qty * unitCost, 2);
+            var expStr = FormatDateOnly(GetNullableStr(r, "expiry_date"));
+            r["days_remaining"] = DateTime.TryParse(expStr, out var expDt) ? (int?)(expDt.Date - todayDt).Days : null;
+        }
         var totalQuantity = rows.Sum(r => (int)ToLong(r, "quantity"));
 
         return new Dictionary<string, object?>
@@ -1367,23 +1801,45 @@ public class ReportsController : ApiControllerBase
         if (err != null) return err;
 
         var summary = (Dictionary<string, object?>)data!["summary"]!;
-        var pdf = BuildReportPdf("Purchase Returns Report", new[]
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Returns: {summary["return_count"]} | Items: {summary["item_count"]} | Total: {summary["total"]}"
+            ReportType = "purchase-returns",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Returns", GetStr(summary, "return_count")),
+                new("Items", GetStr(summary, "item_count")),
+                new("Quantity", GetStr(summary, "quantity")),
+                new("Total Value", $"Rs. {ToDouble(summary, "total"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Return #", RelativeWidth = 1.4f },
+                new() { Header = "Supplier", RelativeWidth = 2.4f },
+                new() { Header = "Orig Inv #", RelativeWidth = 1.4f },
+                new() { Header = "Total", RelativeWidth = 1.4f, AlignRight = true }
+            ],
+            Rows = rows.Select(r => new List<string>
+            {
+                GetStr(r, "date"),
+                GetStr(r, "posted_number"),
+                GetStr(r, "supplier_name"),
+                GetStr(r, "invoice_number"),
+                $"{ToDouble(r, "total"):N2}"
+            }).ToList(),
+            FooterTotals = [new("Total Returns", $"Rs. {ToDouble(summary, "total"):N2}", isGrandTotal: true)]
         });
         return DeliverPdf(pdf, "purchase-returns-report.pdf");
     }
 
     private async Task<(IActionResult? err, Dictionary<string, object?>? data)> BuildPurchaseReturnsDataAsync()
     {
-        var now = DateTime.UtcNow;
-        var from = Request.Query["from"].FirstOrDefault() ?? new DateTime(now.Year, now.Month, 1).ToString("yyyy-MM-dd");
-        var to = Request.Query["to"].FirstOrDefault() ?? now.ToString("yyyy-MM-dd");
-
-        if (string.CompareOrdinal(from, to) > 0)
-        {
-            return (Unprocessable("The from date must be on or before the to date."), null);
-        }
+        var (dateErr, from, to) = ValidateStrictDateRange();
+        if (dateErr != null) return (dateErr, null);
 
         var supplierId = Request.Query["supplier_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
@@ -1514,23 +1970,45 @@ public class ReportsController : ApiControllerBase
         if (err != null) return err;
 
         var summary = (Dictionary<string, object?>)data!["summary"]!;
-        var pdf = BuildReportPdf("Sale Returns Report", new[]
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Returns: {summary["return_count"]} | Items: {summary["item_count"]} | Total: {summary["total"]}"
+            ReportType = "sale-returns",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Returns", GetStr(summary, "return_count")),
+                new("Items", GetStr(summary, "item_count")),
+                new("Quantity", GetStr(summary, "quantity")),
+                new("Total Value", $"Rs. {ToDouble(summary, "total"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "Return #", RelativeWidth = 1.4f },
+                new() { Header = "Customer", RelativeWidth = 2.4f },
+                new() { Header = "Orig Inv #", RelativeWidth = 1.4f },
+                new() { Header = "Total", RelativeWidth = 1.4f, AlignRight = true }
+            ],
+            Rows = rows.Select(r => new List<string>
+            {
+                GetStr(r, "date"),
+                GetStr(r, "posted_number"),
+                GetNullableStr(r, "customer_name") ?? "Walk-in",
+                GetStr(r, "invoice_number"),
+                $"{ToDouble(r, "total"):N2}"
+            }).ToList(),
+            FooterTotals = [new("Total Returns", $"Rs. {ToDouble(summary, "total"):N2}", isGrandTotal: true)]
         });
         return DeliverPdf(pdf, "sale-returns-report.pdf");
     }
 
     private async Task<(IActionResult? err, Dictionary<string, object?>? data)> BuildSaleReturnsDataAsync()
     {
-        var now = DateTime.UtcNow;
-        var from = Request.Query["from"].FirstOrDefault() ?? new DateTime(now.Year, now.Month, 1).ToString("yyyy-MM-dd");
-        var to = Request.Query["to"].FirstOrDefault() ?? now.ToString("yyyy-MM-dd");
-
-        if (string.CompareOrdinal(from, to) > 0)
-        {
-            return (Unprocessable("The from date must be on or before the to date."), null);
-        }
+        var (dateErr, from, to) = ValidateStrictDateRange();
+        if (dateErr != null) return (dateErr, null);
 
         var customerId = Request.Query["customer_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
@@ -1660,23 +2138,54 @@ public class ReportsController : ApiControllerBase
         if (err != null) return err;
 
         var summary = (Dictionary<string, object?>)data!["summary"]!;
-        var pdf = BuildReportPdf("Purchase Summary Report", new[]
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Invoices: {summary["invoice_count"]} | Total: {summary["invoice_total"]} | Paid: {summary["total_paid"]}"
+            ReportType = "purchase-summary",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Invoices", GetStr(summary, "invoice_count")),
+                new("Items", GetStr(summary, "item_count")),
+                new("Qty", GetStr(summary, "quantity")),
+                new("Total", $"Rs. {ToDouble(summary, "invoice_total"):N2}"),
+                new("Paid", $"Rs. {ToDouble(summary, "total_paid"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Date", RelativeWidth = 1.2f },
+                new() { Header = "GRN #", RelativeWidth = 1.3f },
+                new() { Header = "Supplier", RelativeWidth = 2.2f },
+                new() { Header = "Items", RelativeWidth = 0.7f, AlignRight = true },
+                new() { Header = "Qty", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Total", RelativeWidth = 1.3f, AlignRight = true },
+                new() { Header = "Paid", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = rows.Select(r => new List<string>
+            {
+                GetStr(r, "date"),
+                GetStr(r, "posted_number"),
+                GetStr(r, "supplier_name"),
+                $"{ToLong(r, "item_count")}",
+                $"{ToLong(r, "quantity")}",
+                $"{ToDouble(r, "invoice_total"):N2}",
+                $"{ToDouble(r, "total_paid"):N2}"
+            }).ToList(),
+            FooterTotals =
+            [
+                new("Total Invoiced", $"Rs. {ToDouble(summary, "invoice_total"):N2}"),
+                new("Total Paid", $"Rs. {ToDouble(summary, "total_paid"):N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, "purchase-summary-report.pdf");
     }
 
     private async Task<(IActionResult? err, Dictionary<string, object?>? data)> BuildPurchaseSummaryDataAsync()
     {
-        var now = DateTime.UtcNow;
-        var from = Request.Query["from"].FirstOrDefault() ?? new DateTime(now.Year, now.Month, 1).ToString("yyyy-MM-dd");
-        var to = Request.Query["to"].FirstOrDefault() ?? now.ToString("yyyy-MM-dd");
-
-        if (string.CompareOrdinal(from, to) > 0)
-        {
-            return (Unprocessable("The from date must be on or before the to date."), null);
-        }
+        var (dateErr, from, to) = ValidateStrictDateRange();
+        if (dateErr != null) return (dateErr, null);
 
         var supplierId = Request.Query["supplier_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
@@ -1714,7 +2223,7 @@ public class ReportsController : ApiControllerBase
         {
             var invId = ToLong(inv, "id");
             var itemSql = @"
-                SELECT pii.*, p.name AS product_name
+                SELECT pii.*, p.name AS product_name, p.product_code
                 FROM purchase_invoice_items pii
                 LEFT JOIN products p ON pii.product_id = p.id
                 WHERE pii.purchase_invoice_id = @invId";
@@ -1738,7 +2247,10 @@ public class ReportsController : ApiControllerBase
                 invItemsVal += st;
                 mappedItems.Add(new Dictionary<string, object?>
                 {
+                    ["id"] = ToLong(it, "id"),
+                    ["product_code"] = GetNullableStr(it, "product_code"),
                     ["product_name"] = GetNullableStr(it, "product_name"),
+                    ["batch"] = GetNullableStr(it, "batch"),
                     ["quantity"] = q,
                     ["unit_purchase_price"] = ToDouble(it, "unit_purchase_price"),
                     ["sub_total"] = st
@@ -1807,9 +2319,49 @@ public class ReportsController : ApiControllerBase
         if (authErr != null) return authErr;
 
         var data = await BuildOutstandingAgingDataAsync();
-        var pdf = BuildReportPdf("Outstanding Aging Report", new[]
+        var custRows = data.GetValueOrDefault("customers") as List<Dictionary<string, object?>> ?? new();
+        var supRows = data.GetValueOrDefault("suppliers") as List<Dictionary<string, object?>> ?? new();
+
+        var tableRows = new List<List<string>>();
+        foreach (var c in custRows)
         {
-            $"As Of: {data["as_of"]} | Aging By: {data["aging_by"]}"
+            tableRows.Add(["Customer", GetStr(c, "name"), $"{ToDouble(c, "b_0_30"):N2}", $"{ToDouble(c, "b_31_60"):N2}", $"{ToDouble(c, "b_61_90"):N2}", $"{ToDouble(c, "b_90_plus"):N2}", $"{ToDouble(c, "total_due"):N2}"]);
+        }
+        foreach (var s in supRows)
+        {
+            tableRows.Add(["Supplier", GetStr(s, "name"), $"{ToDouble(s, "b_0_30"):N2}", $"{ToDouble(s, "b_31_60"):N2}", $"{ToDouble(s, "b_61_90"):N2}", $"{ToDouble(s, "b_90_plus"):N2}", $"{ToDouble(s, "total_due"):N2}"]);
+        }
+
+        var custTotal = custRows.Sum(r => ToDouble(r, "total_due"));
+        var supTotal = supRows.Sum(r => ToDouble(r, "total_due"));
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "outstanding-aging",
+            ToDate = GetNullableStr(data, "as_of"),
+            Subtitle = $"Aging By: {GetStr(data, "aging_by")}",
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Receivables (Customers)", $"Rs. {custTotal:N2}"),
+                new("Payables (Suppliers)", $"Rs. {supTotal:N2}"),
+                new("Parties Listed", tableRows.Count.ToString())
+            ],
+            Columns =
+            [
+                new() { Header = "Type", RelativeWidth = 1.0f },
+                new() { Header = "Party Name", RelativeWidth = 2.4f },
+                new() { Header = "0–30d", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "31–60d", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "61–90d", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "90+d", RelativeWidth = 1.1f, AlignRight = true },
+                new() { Header = "Total Due", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Total Receivables", $"Rs. {custTotal:N2}"),
+                new("Total Payables", $"Rs. {supTotal:N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, "outstanding-aging-report.pdf");
     }
@@ -1834,10 +2386,35 @@ public class ReportsController : ApiControllerBase
         var (err, data) = await BuildOverdueWorkQueueDataAsync();
         if (err != null) return err;
 
-        var pdf = BuildReportPdf("Overdue Work Queue Report", new[]
+        var items = data!.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"As Of: {data!["as_of"]} | Party Type: {data["party_type"]}",
-            $"Total Parties: {data["total_parties"]} | Total Overdue: {data["total_overdue_sum"]}"
+            ReportType = "overdue-work-queue",
+            ToDate = GetNullableStr(data, "as_of"),
+            Subtitle = $"Party Type: {GetStr(data, "party_type")}",
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Overdue Parties", GetStr(data, "total_parties")),
+                new("Total Overdue", $"Rs. {ToDouble(data, "total_overdue_sum"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Party", RelativeWidth = 2.6f },
+                new() { Header = "Phone", RelativeWidth = 1.5f },
+                new() { Header = "Invoices", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Max Days", RelativeWidth = 1.0f, AlignRight = true },
+                new() { Header = "Overdue Amount", RelativeWidth = 1.5f, AlignRight = true }
+            ],
+            Rows = items.Select(it => new List<string>
+            {
+                GetStr(it, "party_name"),
+                GetStr(it, "phone"),
+                $"{ToLong(it, "overdue_invoices_count")}",
+                $"{ToLong(it, "max_days_overdue")}",
+                $"{ToDouble(it, "overdue_amount"):N2}"
+            }).ToList(),
+            FooterTotals = [new("Total Overdue", $"Rs. {ToDouble(data, "total_overdue_sum"):N2}", isGrandTotal: true)]
         });
         return DeliverPdf(pdf, "overdue-work-queue-report.pdf");
     }
@@ -1847,7 +2424,7 @@ public class ReportsController : ApiControllerBase
         var rawAsOf = Request.Query["as_of"].FirstOrDefault();
         var asOfDt = !string.IsNullOrWhiteSpace(rawAsOf) && DateTime.TryParse(rawAsOf, out var parsed)
             ? parsed.Date
-            : DateTime.UtcNow.Date;
+            : DateTime.Now.Date;
         var asOfStr = asOfDt.ToString("yyyy-MM-dd");
 
         var agingBy = forceAgingBy ?? Request.Query["aging_by"].FirstOrDefault() ?? "due_date";
@@ -2160,9 +2737,39 @@ public class ReportsController : ApiControllerBase
         if (err != null) return err;
 
         var summary = (Dictionary<string, object?>)data!["summary"]!;
-        var pdf = BuildReportPdf("Reorder Report", new[]
+        var rows = data.GetValueOrDefault("rows") as List<Dictionary<string, object?>> ?? new();
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Products: {summary["product_count"]} | Suggested Quantity: {summary["suggested_quantity"]} | Value: {summary["estimated_reorder_value"]}"
+            ReportType = "reorder",
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Low-Stock Products", GetStr(summary, "product_count")),
+                new("Current Units", GetStr(summary, "total_quantity")),
+                new("Suggested Order", GetStr(summary, "suggested_quantity")),
+                new("Est. Cost", $"Rs. {ToDouble(summary, "estimated_reorder_value"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Code", RelativeWidth = 1.2f },
+                new() { Header = "Product Name", RelativeWidth = 2.8f },
+                new() { Header = "Brand", RelativeWidth = 1.4f },
+                new() { Header = "On Hand", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Pack Size", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Suggested", RelativeWidth = 1.0f, AlignRight = true },
+                new() { Header = "Est. Cost", RelativeWidth = 1.3f, AlignRight = true }
+            ],
+            Rows = rows.Select(r => new List<string>
+            {
+                GetStr(r, "product_code"),
+                GetStr(r, "name"),
+                GetStr(r, "brand_name"),
+                $"{ToLong(r, "quantity")}",
+                $"{ToLong(r, "pack_size")}",
+                $"{ToLong(r, "suggested_reorder_quantity")}",
+                $"{ToDouble(r, "estimated_reorder_value"):N2}"
+            }).ToList(),
+            FooterTotals = [new("Estimated Reorder Cost", $"Rs. {ToDouble(summary, "estimated_reorder_value"):N2}", isGrandTotal: true)]
         });
         return DeliverPdf(pdf, "reorder-report.pdf");
     }
@@ -2290,24 +2897,55 @@ public class ReportsController : ApiControllerBase
         if (err != null) return err;
 
         var kpis = (Dictionary<string, object?>)data!["kpis"]!;
-        var pdf = BuildReportPdf("Net Profit (Profit & Loss) Report", new[]
+        var expRows = data.GetValueOrDefault("expenses_by_category") as List<Dictionary<string, object?>> ?? new();
+        var tableRows = new List<List<string>>
         {
-            $"Net Sales: {kpis["net_sales"]} | COGS: {kpis["cost_of_goods_sold"]} | Gross Profit: {kpis["gross_profit"]}",
-            $"Total Expenses: {kpis["total_expenses"]} | Net Profit: {kpis["net_profit"]}"
+            new() { "Revenue", "Net Sales", $"Rs. {ToDouble(kpis, "net_sales"):N2}" },
+            new() { "Direct Cost", "Cost of Goods Sold (COGS)", $"Rs. {ToDouble(kpis, "cost_of_goods_sold"):N2}" },
+            new() { "Profit", "Gross Profit", $"Rs. {ToDouble(kpis, "gross_profit"):N2}" }
+        };
+        foreach (var ex in expRows)
+        {
+            tableRows.Add(["Operating Expense", GetStr(ex, "category_name"), $"Rs. {ToDouble(ex, "total"):N2}"]);
+        }
+        tableRows.Add(["Summary", "Total Operating Expenses", $"Rs. {ToDouble(kpis, "total_expenses"):N2}"]);
+        tableRows.Add(["Bottom Line", "NET PROFIT", $"Rs. {ToDouble(kpis, "net_profit"):N2}"]);
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "net-profit",
+            FromDate = Request.Query["from"].FirstOrDefault(),
+            ToDate = Request.Query["to"].FirstOrDefault(),
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Net Sales", $"Rs. {ToDouble(kpis, "net_sales"):N2}"),
+                new("COGS", $"Rs. {ToDouble(kpis, "cost_of_goods_sold"):N2}"),
+                new("Gross Profit", $"Rs. {ToDouble(kpis, "gross_profit"):N2}"),
+                new("Operating Expenses", $"Rs. {ToDouble(kpis, "total_expenses"):N2}"),
+                new("Net Profit", $"Rs. {ToDouble(kpis, "net_profit"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Section", RelativeWidth = 1.6f },
+                new() { Header = "Particular", RelativeWidth = 3.4f },
+                new() { Header = "Amount", RelativeWidth = 1.8f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Gross Profit", $"Rs. {ToDouble(kpis, "gross_profit"):N2}"),
+                new("Total Expenses", $"Rs. {ToDouble(kpis, "total_expenses"):N2}"),
+                new("Net Profit", $"Rs. {ToDouble(kpis, "net_profit"):N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, "net-profit-report.pdf");
     }
 
     private async Task<(IActionResult? err, Dictionary<string, object?>? data)> BuildNetProfitDataAsync()
     {
-        var now = DateTime.UtcNow;
-        var from = Request.Query["from"].FirstOrDefault() ?? new DateTime(now.Year, now.Month, 1).ToString("yyyy-MM-dd");
-        var to = Request.Query["to"].FirstOrDefault() ?? now.ToString("yyyy-MM-dd");
-
-        if (string.CompareOrdinal(from, to) > 0)
-        {
-            return (Unprocessable("The from date must be on or before the to date."), null);
-        }
+        var (dateErr, from, to) = ValidateStrictDateRange();
+        if (dateErr != null) return (dateErr, null);
 
         var salesData = await Db.QuerySingleOrDefaultAsync(@"
             SELECT COUNT(si.id) AS total_invoices,
@@ -2445,6 +3083,7 @@ public class ReportsController : ApiControllerBase
     public async Task<IActionResult> TaxReturn()
     {
         var authErr = await AuthorizeReportActionAsync(
+            "report.tax-return.view",
             "report.net-profit.view",
             "report.sale-detail.view",
             "report.purchase-detail.view",
@@ -2459,6 +3098,8 @@ public class ReportsController : ApiControllerBase
     public async Task<IActionResult> TaxReturnPdf()
     {
         var authErr = await AuthorizeReportActionAsync(
+            "report.tax-return.export",
+            "report.tax-return.view",
             "report.net-profit.export",
             "report.net-profit.view",
             "report.sale-detail.view",
@@ -2466,15 +3107,55 @@ public class ReportsController : ApiControllerBase
         if (authErr != null) return authErr;
 
         var data = await BuildTaxReturnDataAsync();
-        var period = (Dictionary<string, string>)data["period"]!;
-        var summary = (Dictionary<string, object?>)data["summary"]!;
-        var from = period["from"];
-        var to = period["to"];
+        var period = data.GetValueOrDefault("period") as Dictionary<string, object?>;
+        var summary = data.GetValueOrDefault("summary") as Dictionary<string, object?> ?? new();
+        var from = GetStr(period, "from");
+        var to = GetStr(period, "to");
 
-        var pdf = BuildReportPdf("Statutory Tax Return Report", new[]
+        var outputReg = data.GetValueOrDefault("output_register") as List<Dictionary<string, object?>> ?? new();
+        var inputReg = data.GetValueOrDefault("input_register") as List<Dictionary<string, object?>> ?? new();
+
+        var tableRows = new List<List<string>>();
+        foreach (var r in outputReg.Take(250))
         {
-            $"Period: {from} to {to}",
-            $"Net Output Tax: {summary["net_output_tax"]} | Net Input Tax: {summary["net_input_tax"]} | Net Payable: {summary["net_tax_payable"]}"
+            tableRows.Add(["OUTPUT", GetStr(r, "date"), GetStr(r, "posted_number"), GetStr(r, "party_name"), $"{ToDouble(r, "taxable_amount"):N2}", $"{ToDouble(r, "tax_percentage"):N1}%", $"{ToDouble(r, "tax_amount"):N2}"]);
+        }
+        foreach (var r in inputReg.Take(250))
+        {
+            tableRows.Add(["INPUT", GetStr(r, "date"), GetStr(r, "posted_number"), GetStr(r, "party_name"), $"{ToDouble(r, "taxable_amount"):N2}", $"{ToDouble(r, "tax_percentage"):N1}%", $"{ToDouble(r, "tax_amount"):N2}"]);
+        }
+
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "tax-return",
+            FromDate = from,
+            ToDate = to,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Net Output Tax", $"Rs. {ToDouble(summary, "net_output_tax"):N2}"),
+                new("Net Input Tax", $"Rs. {ToDouble(summary, "net_input_tax"):N2}"),
+                new("Challans Paid", $"Rs. {ToDouble(summary, "tax_challans_paid"):N2}"),
+                new("Net Payable", $"Rs. {ToDouble(summary, "net_tax_payable"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Side", RelativeWidth = 0.9f },
+                new() { Header = "Date", RelativeWidth = 1.1f },
+                new() { Header = "Doc #", RelativeWidth = 1.3f },
+                new() { Header = "Party", RelativeWidth = 2.2f },
+                new() { Header = "Taxable Base", RelativeWidth = 1.3f, AlignRight = true },
+                new() { Header = "Rate", RelativeWidth = 0.8f, AlignRight = true },
+                new() { Header = "Tax Amt", RelativeWidth = 1.2f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Net Output Tax", $"Rs. {ToDouble(summary, "net_output_tax"):N2}"),
+                new("Net Input Tax", $"Rs. {ToDouble(summary, "net_input_tax"):N2}"),
+                new("Tax Challans Paid", $"Rs. {ToDouble(summary, "tax_challans_paid"):N2}"),
+                new("Net Tax Payable", $"Rs. {ToDouble(summary, "net_tax_payable"):N2}", isGrandTotal: true)
+            ]
         });
         return DeliverPdf(pdf, $"statutory-tax-return-{from}-to-{to}.pdf");
     }
@@ -2487,266 +3168,11 @@ public class ReportsController : ApiControllerBase
             true);
 
         var taxScope = Request.Query["tax_scope"].FirstOrDefault() ?? "all";
-        var hasCustTax = await Db.HasColumnAsync("customers", "tax_number");
-        var hasSupTax = await Db.HasColumnAsync("suppliers", "tax_number");
-
-        var custTaxSel = hasCustTax
-            ? "COALESCE(c.tax_number, '') AS party_tax_number, COALESCE(c.tax_status, 'unregistered') AS party_tax_status"
-            : "'' AS party_tax_number, 'unregistered' AS party_tax_status";
-
-        var sales = await Db.QueryListAsync($@"
-            SELECT si.id, si.posted_number, si.date, si.sale_type, si.invoice_type,
-                   si.gross_amount, si.discount_amount, si.tax_percentage, si.tax_amount, si.total, si.customer_id,
-                   COALESCE(c.name, 'Walk-in Customer') AS party_name,
-                   {custTaxSel}
-            FROM sale_invoices si
-            LEFT JOIN customers c ON c.id = si.customer_id
-            WHERE DATE(si.date) BETWEEN @from AND @to
-              AND (si.status IS NULL OR si.status != 'reversed')
-            ORDER BY si.date ASC, si.id ASC",
-            new { from, to });
-
-        var saleReturns = await Db.QueryListAsync($@"
-            SELECT sr.id, sr.posted_number, sr.date, sr.gross_total, sr.discount_amount,
-                   sr.tax_percentage, sr.tax_amount, sr.total, sr.customer_id,
-                   COALESCE(c.name, 'Walk-in Customer') AS party_name,
-                   {custTaxSel}
-            FROM sale_returns sr
-            LEFT JOIN customers c ON c.id = sr.customer_id
-            WHERE DATE(sr.date) BETWEEN @from AND @to
-            ORDER BY sr.date ASC, sr.id ASC",
-            new { from, to });
-
-        var outputRegister = new List<Dictionary<string, object?>>();
-        double taxableSalesBase = 0;
-        double exemptSalesBase = 0;
-        double outputTaxCollected = 0;
-        int taxableSalesCount = 0;
-        int exemptSalesCount = 0;
-
-        foreach (var s in sales)
+        var accountingService = new AccountingService(Db);
+        return await accountingService.GetTaxReportAsync(from, to, new Dictionary<string, string?>
         {
-            var taxAmt = Math.Round(ToDouble(s, "tax_amount"), 2);
-            var taxPct = Math.Round(ToDouble(s, "tax_percentage"), 2);
-            var total = Math.Round(ToDouble(s, "total"), 2);
-            var taxableVal = Math.Round(Math.Max(0.0, total - taxAmt), 2);
-
-            if (taxAmt > 0 || taxPct > 0)
-            {
-                taxableSalesBase = Math.Round(taxableSalesBase + taxableVal, 2);
-                outputTaxCollected = Math.Round(outputTaxCollected + taxAmt, 2);
-                taxableSalesCount++;
-            }
-            else
-            {
-                exemptSalesBase = Math.Round(exemptSalesBase + taxableVal, 2);
-                exemptSalesCount++;
-            }
-
-            if (taxScope == "taxable_only" && taxAmt <= 0 && taxPct <= 0) continue;
-
-            outputRegister.Add(new Dictionary<string, object?>
-            {
-                ["id"] = $"SI-{ToLong(s, "id")}",
-                ["doc_type"] = "sale_invoice",
-                ["doc_type_label"] = "Sale Invoice",
-                ["posted_number"] = GetNullableStr(s, "posted_number"),
-                ["date"] = FormatDateOnly(GetNullableStr(s, "date")),
-                ["sale_type"] = GetNullableStr(s, "sale_type") ?? "retail",
-                ["party_id"] = ToNullableLong(s, "customer_id"),
-                ["party_name"] = GetStr(s, "party_name"),
-                ["party_tax_number"] = string.IsNullOrEmpty(GetStr(s, "party_tax_number")) ? "—" : GetStr(s, "party_tax_number"),
-                ["party_tax_status"] = GetStr(s, "party_tax_status"),
-                ["taxable_amount"] = taxableVal,
-                ["tax_percentage"] = taxPct,
-                ["tax_amount"] = taxAmt,
-                ["invoice_total"] = total
-            });
-        }
-
-        double saleReturnsBase = 0;
-        double saleReturnsTaxReversed = 0;
-
-        foreach (var sr in saleReturns)
-        {
-            var taxAmt = Math.Round(ToDouble(sr, "tax_amount"), 2);
-            var taxPct = Math.Round(ToDouble(sr, "tax_percentage"), 2);
-            var total = Math.Round(ToDouble(sr, "total"), 2);
-            var baseVal = Math.Round(Math.Max(0.0, total - taxAmt), 2);
-
-            saleReturnsBase = Math.Round(saleReturnsBase + baseVal, 2);
-            saleReturnsTaxReversed = Math.Round(saleReturnsTaxReversed + taxAmt, 2);
-
-            if (taxScope == "taxable_only" && taxAmt <= 0 && taxPct <= 0) continue;
-
-            outputRegister.Add(new Dictionary<string, object?>
-            {
-                ["id"] = $"SR-{ToLong(sr, "id")}",
-                ["doc_type"] = "sale_return",
-                ["doc_type_label"] = "Sale Return (Credit Note)",
-                ["posted_number"] = GetNullableStr(sr, "posted_number"),
-                ["date"] = FormatDateOnly(GetNullableStr(sr, "date")),
-                ["sale_type"] = "return",
-                ["party_id"] = ToNullableLong(sr, "customer_id"),
-                ["party_name"] = GetStr(sr, "party_name"),
-                ["party_tax_number"] = string.IsNullOrEmpty(GetStr(sr, "party_tax_number")) ? "—" : GetStr(sr, "party_tax_number"),
-                ["party_tax_status"] = GetStr(sr, "party_tax_status"),
-                ["taxable_amount"] = -baseVal,
-                ["tax_percentage"] = taxPct,
-                ["tax_amount"] = -taxAmt,
-                ["invoice_total"] = -total
-            });
-        }
-
-        var supTaxSel = hasSupTax
-            ? "COALESCE(s.tax_number, '') AS party_tax_number, COALESCE(s.tax_status, 'registered') AS party_tax_status"
-            : "'' AS party_tax_number, 'registered' AS party_tax_status";
-
-        var purchases = await Db.QueryListAsync($@"
-            SELECT pi.id, pi.posted_number, pi.invoice_number, pi.posted_date, pi.invoice_amount,
-                   pi.discount_amount, pi.tax_percentage, pi.tax_amount, pi.total_amount, pi.supplier_id,
-                   COALESCE(s.name, 'Supplier') AS party_name,
-                   {supTaxSel}
-            FROM purchase_invoices pi
-            LEFT JOIN suppliers s ON s.id = pi.supplier_id
-            WHERE DATE(pi.posted_date) BETWEEN @from AND @to
-              AND (pi.status IS NULL OR pi.status != 'reversed')
-            ORDER BY pi.posted_date ASC, pi.id ASC",
-            new { from, to });
-
-        var purchaseReturns = await Db.QueryListAsync($@"
-            SELECT pr.id, pr.posted_number, pr.date, pr.gross_total, pr.discount_amount,
-                   pr.tax_percentage, pr.tax_amount, pr.total, pr.supplier_id,
-                   COALESCE(s.name, 'Supplier') AS party_name,
-                   {supTaxSel}
-            FROM purchase_returns pr
-            LEFT JOIN suppliers s ON s.id = pr.supplier_id
-            WHERE DATE(pr.date) BETWEEN @from AND @to
-            ORDER BY pr.date ASC, pr.id ASC",
-            new { from, to });
-
-        var inputRegister = new List<Dictionary<string, object?>>();
-        double taxablePurchasesBase = 0;
-        double exemptPurchasesBase = 0;
-        double inputTaxPaid = 0;
-        int taxablePurchasesCount = 0;
-        int exemptPurchasesCount = 0;
-
-        foreach (var p in purchases)
-        {
-            var taxAmt = Math.Round(ToDouble(p, "tax_amount"), 2);
-            var taxPct = Math.Round(ToDouble(p, "tax_percentage"), 2);
-            var total = Math.Round(ToDouble(p, "total_amount"), 2);
-            var taxableVal = Math.Round(Math.Max(0.0, total - taxAmt), 2);
-
-            if (taxAmt > 0 || taxPct > 0)
-            {
-                taxablePurchasesBase = Math.Round(taxablePurchasesBase + taxableVal, 2);
-                inputTaxPaid = Math.Round(inputTaxPaid + taxAmt, 2);
-                taxablePurchasesCount++;
-            }
-            else
-            {
-                exemptPurchasesBase = Math.Round(exemptPurchasesBase + taxableVal, 2);
-                exemptPurchasesCount++;
-            }
-
-            if (taxScope == "taxable_only" && taxAmt <= 0 && taxPct <= 0) continue;
-
-            inputRegister.Add(new Dictionary<string, object?>
-            {
-                ["id"] = $"PI-{ToLong(p, "id")}",
-                ["doc_type"] = "purchase_invoice",
-                ["doc_type_label"] = "Purchase Invoice",
-                ["posted_number"] = GetNullableStr(p, "posted_number"),
-                ["supplier_inv_no"] = string.IsNullOrEmpty(GetStr(p, "invoice_number")) ? "—" : GetStr(p, "invoice_number"),
-                ["date"] = FormatDateOnly(GetNullableStr(p, "posted_date")),
-                ["party_id"] = ToNullableLong(p, "supplier_id"),
-                ["party_name"] = GetStr(p, "party_name"),
-                ["party_tax_number"] = string.IsNullOrEmpty(GetStr(p, "party_tax_number")) ? "—" : GetStr(p, "party_tax_number"),
-                ["party_tax_status"] = GetStr(p, "party_tax_status"),
-                ["taxable_amount"] = taxableVal,
-                ["tax_percentage"] = taxPct,
-                ["tax_amount"] = taxAmt,
-                ["invoice_total"] = total
-            });
-        }
-
-        double purchaseReturnsBase = 0;
-        double purchaseReturnsTaxReversed = 0;
-
-        foreach (var pr in purchaseReturns)
-        {
-            var taxAmt = Math.Round(ToDouble(pr, "tax_amount"), 2);
-            var taxPct = Math.Round(ToDouble(pr, "tax_percentage"), 2);
-            var total = Math.Round(ToDouble(pr, "total"), 2);
-            var baseVal = Math.Round(Math.Max(0.0, total - taxAmt), 2);
-
-            purchaseReturnsBase = Math.Round(purchaseReturnsBase + baseVal, 2);
-            purchaseReturnsTaxReversed = Math.Round(purchaseReturnsTaxReversed + taxAmt, 2);
-
-            if (taxScope == "taxable_only" && taxAmt <= 0 && taxPct <= 0) continue;
-
-            inputRegister.Add(new Dictionary<string, object?>
-            {
-                ["id"] = $"PR-{ToLong(pr, "id")}",
-                ["doc_type"] = "purchase_return",
-                ["doc_type_label"] = "Purchase Return (Debit Note)",
-                ["posted_number"] = GetNullableStr(pr, "posted_number"),
-                ["supplier_inv_no"] = "—",
-                ["date"] = FormatDateOnly(GetNullableStr(pr, "date")),
-                ["party_id"] = ToNullableLong(pr, "supplier_id"),
-                ["party_name"] = GetStr(pr, "party_name"),
-                ["party_tax_number"] = string.IsNullOrEmpty(GetStr(pr, "party_tax_number")) ? "—" : GetStr(pr, "party_tax_number"),
-                ["party_tax_status"] = GetStr(pr, "party_tax_status"),
-                ["taxable_amount"] = -baseVal,
-                ["tax_percentage"] = taxPct,
-                ["tax_amount"] = -taxAmt,
-                ["invoice_total"] = -total
-            });
-        }
-
-        var netOutputTax = Math.Round(outputTaxCollected - saleReturnsTaxReversed, 2);
-        var netInputTax = Math.Round(inputTaxPaid - purchaseReturnsTaxReversed, 2);
-        var netTaxPayable = Math.Round(netOutputTax - netInputTax, 2);
-
-        var taxRates = await Db.HasTableAsync("tax_rates")
-            ? await Db.QueryListAsync("SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY is_default DESC, rate DESC")
-            : new List<Dictionary<string, object?>>();
-
-        return new Dictionary<string, object?>
-        {
-            ["period"] = new Dictionary<string, string> { ["from"] = from, ["to"] = to },
-            ["summary"] = new Dictionary<string, object?>
-            {
-                ["taxable_sales_count"] = taxableSalesCount,
-                ["exempt_sales_count"] = exemptSalesCount,
-                ["taxable_sales_base"] = taxableSalesBase,
-                ["exempt_sales_base"] = exemptSalesBase,
-                ["output_tax_collected"] = outputTaxCollected,
-                ["sale_returns_base"] = saleReturnsBase,
-                ["sale_returns_tax_reversed"] = saleReturnsTaxReversed,
-                ["net_output_tax"] = netOutputTax,
-                ["taxable_purchases_count"] = taxablePurchasesCount,
-                ["exempt_purchases_count"] = exemptPurchasesCount,
-                ["taxable_purchases_base"] = taxablePurchasesBase,
-                ["exempt_purchases_base"] = exemptPurchasesBase,
-                ["input_tax_paid"] = inputTaxPaid,
-                ["purchase_returns_base"] = purchaseReturnsBase,
-                ["purchase_returns_tax_reversed"] = purchaseReturnsTaxReversed,
-                ["net_input_tax"] = netInputTax,
-                ["tax_challans_paid"] = 0.0,
-                ["net_tax_before_challan"] = netTaxPayable,
-                ["net_tax_payable"] = netTaxPayable,
-                ["status"] = netTaxPayable > 0 ? "payable" : (netTaxPayable < 0 ? "refundable_credit" : "settled")
-            },
-            ["output_register"] = outputRegister,
-            ["input_register"] = inputRegister,
-            ["customer_annexure"] = Array.Empty<object>(),
-            ["supplier_annexure"] = Array.Empty<object>(),
-            ["rate_breakdown"] = Array.Empty<object>(),
-            ["tax_rates"] = taxRates
-        };
+            ["tax_scope"] = taxScope
+        });
     }
 
     // =========================================================================
@@ -2778,15 +3204,71 @@ public class ReportsController : ApiControllerBase
         if (authErr != null) return authErr;
 
         var data = await BuildNarcoticsReportDataAsync();
-        var period = (Dictionary<string, string>)data["period"]!;
-        var from = period["from"];
-        var to = period["to"];
+        var period = data.GetValueOrDefault("period") as Dictionary<string, string>;
+        var summary = data.GetValueOrDefault("summary") as Dictionary<string, object?> ?? new();
+        var chrono = data.GetValueOrDefault("chronological_register") as List<Dictionary<string, object?>> ?? new();
+        var from = period?.GetValueOrDefault("from") ?? "";
+        var to = period?.GetValueOrDefault("to") ?? "";
 
-        var pdf = BuildReportPdf("Pakistani Statutory Narcotics Register", new[]
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
-            $"Period: {from} to {to}"
+            ReportType = "narcotics",
+            ReportTitle = "Pakistani Statutory Narcotics & Controlled Drugs Register",
+            Subtitle = "Drugs Act 1976 / Rule 13 & Schedule G — Mandatory 3-Year Retention",
+            FromDate = from,
+            ToDate = to,
+            Landscape = true,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Controlled Products", GetStr(summary, "total_narcotic_products")),
+                new("Opening Units", GetStr(summary, "opening_units_total")),
+                new("Units Purchased", GetStr(summary, "units_purchased")),
+                new("Units Dispensed", GetStr(summary, "units_dispensed")),
+                new("Closing On Hand", GetStr(summary, "total_units_on_hand")),
+                new("Rx Compliance", $"{ToDouble(summary, "compliance_rate"):N1}%")
+            ],
+            Columns =
+            [
+                new() { Header = "#", RelativeWidth = 0.5f, AlignCenter = true },
+                new() { Header = "Date", RelativeWidth = 1.1f },
+                new() { Header = "Drug / Product", RelativeWidth = 2.0f },
+                new() { Header = "Event / Voucher", RelativeWidth = 1.6f },
+                new() { Header = "Patient / Supplier", RelativeWidth = 1.8f },
+                new() { Header = "Doctor / RMP", RelativeWidth = 1.5f },
+                new() { Header = "Batch", RelativeWidth = 1.1f },
+                new() { Header = "In", RelativeWidth = 0.7f, AlignRight = true },
+                new() { Header = "Out", RelativeWidth = 0.7f, AlignRight = true },
+                new() { Header = "Balance", RelativeWidth = 0.8f, AlignRight = true }
+            ],
+            Rows = chrono.Select(r => new List<string>
+            {
+                GetStr(r, "serial_no"),
+                GetStr(r, "date"),
+                GetStr(r, "product_name"),
+                $"{GetStr(r, "event_label")} ({GetStr(r, "voucher_number")})",
+                GetStr(r, "party_name"),
+                GetStr(r, "doctor_name"),
+                GetStr(r, "batch_number"),
+                $"{ToLong(r, "qty_in")}",
+                $"{ToLong(r, "qty_out")}",
+                $"{ToLong(r, "running_balance")}"
+            }).ToList()
         });
         return DeliverPdf(pdf, $"pakistani-statutory-narcotics-register-{from}-to-{to}.pdf");
+    }
+
+    private static string FormatNarcoticPackBreakdown(int units, int packSize)
+    {
+        var ps = Math.Max(1, packSize);
+        if (ps <= 1) return $"{units} Units";
+        var sign = units < 0 ? "-" : "";
+        var abs = Math.Abs(units);
+        var packs = abs / ps;
+        var rem = abs % ps;
+        if (packs > 0 && rem > 0) return $"{sign}{packs} Packs + {rem} Units";
+        if (packs > 0) return $"{sign}{packs} Packs";
+        return $"{sign}{rem} Units";
     }
 
     private async Task<Dictionary<string, object?>> BuildNarcoticsReportDataAsync()
@@ -2797,6 +3279,7 @@ public class ReportsController : ApiControllerBase
             true);
 
         long? filterProductId = long.TryParse(Request.Query["product_id"].FirstOrDefault(), out var pidVal) ? pidVal : null;
+        var todayDt = DateTime.Now.Date;
 
         var setting = await Db.HasTableAsync("settings")
             ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
@@ -2816,7 +3299,7 @@ public class ReportsController : ApiControllerBase
             FROM products p
             LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN suppliers s ON s.id = p.supplier_id
-            WHERE p.narcotic = 'yes'
+            WHERE LOWER(COALESCE(p.narcotic, '')) = 'yes'
             ORDER BY p.name ASC");
 
         var narcoticOptions = allNarcoticProducts.Select(p => new Dictionary<string, object?>
@@ -2861,47 +3344,1005 @@ public class ReportsController : ApiControllerBase
                     ["disposal_vouchers_count"] = 0,
                     ["witnessed_disposals_count"] = 0
                 },
-                ["chronological_register"] = Array.Empty<object>(),
-                ["product_registers"] = Array.Empty<object>(),
-                ["stock_ledger"] = Array.Empty<object>(),
-                ["dispensing_register"] = Array.Empty<object>(),
-                ["procurement_register"] = Array.Empty<object>(),
-                ["destruction_and_returns"] = Array.Empty<object>(),
-                ["batch_inventory"] = Array.Empty<object>(),
+                ["chronological_register"] = new List<Dictionary<string, object?>>(),
+                ["product_registers"] = new List<Dictionary<string, object?>>(),
+                ["stock_ledger"] = new List<Dictionary<string, object?>>(),
+                ["dispensing_register"] = new List<Dictionary<string, object?>>(),
+                ["procurement_register"] = new List<Dictionary<string, object?>>(),
+                ["destruction_and_returns"] = new List<Dictionary<string, object?>>(),
+                ["batch_inventory"] = new List<Dictionary<string, object?>>(),
                 ["narcotic_products"] = narcoticOptions
             };
         }
 
-        var stockLedger = targetProducts.Select(p =>
+        // 1. Preload all batches for target narcotic products
+        var allBatches = await Db.HasTableAsync("batches")
+            ? await Db.QueryListAsync(@"
+                SELECT b.*, p.name AS product_name, p.product_code, p.formulation, p.pack_size, p.rack AS product_rack, br.name AS brand_name
+                FROM batches b
+                INNER JOIN products p ON p.id = b.product_id
+                LEFT JOIN brands br ON br.id = p.brand_id
+                WHERE b.product_id IN @targetIds
+                ORDER BY CASE WHEN b.expiry_date IS NULL THEN 1 ELSE 0 END ASC, b.expiry_date ASC",
+                new { targetIds })
+            : new List<Dictionary<string, object?>>();
+
+        var batchExpiryLookup = new Dictionary<long, Dictionary<string, string>>();
+        var productBatchesMap = new Dictionary<long, Dictionary<string, Dictionary<string, object?>>>();
+        foreach (var pid in targetIds)
         {
-            var qty = (int)ToLong(p, "quantity");
-            return new Dictionary<string, object?>
+            batchExpiryLookup[pid] = new(StringComparer.OrdinalIgnoreCase);
+            productBatchesMap[pid] = new(StringComparer.OrdinalIgnoreCase);
+        }
+
+        foreach (var b in allBatches)
+        {
+            var pid = ToLong(b, "product_id");
+            var bNum = (GetNullableStr(b, "batch_number") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(b, "expiry_date"));
+            var bQty = (int)ToLong(b, "quantity");
+            if (!string.IsNullOrEmpty(bNum))
             {
-                ["product_id"] = ToLong(p, "id"),
+                if (!string.IsNullOrEmpty(expStr) && !batchExpiryLookup[pid].ContainsKey(bNum))
+                    batchExpiryLookup[pid][bNum] = expStr;
+                if (bQty > 0)
+                {
+                    productBatchesMap[pid][bNum] = new Dictionary<string, object?>
+                    {
+                        ["batch_number"] = bNum,
+                        ["expiry_date"] = expStr,
+                        ["quantity"] = bQty
+                    };
+                }
+            }
+        }
+        foreach (var b in allBatches)
+        {
+            var pid = ToLong(b, "product_id");
+            var bNum = (GetNullableStr(b, "batch_number") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(b, "expiry_date"));
+            if (!string.IsNullOrEmpty(bNum) && productBatchesMap[pid].Count == 0)
+            {
+                productBatchesMap[pid][bNum] = new Dictionary<string, object?>
+                {
+                    ["batch_number"] = bNum,
+                    ["expiry_date"] = expStr,
+                    ["quantity"] = (int)ToLong(b, "quantity")
+                };
+            }
+        }
+
+        void RegisterBatchSeen(long pid, string bNum, ref string? expStr)
+        {
+            if (string.IsNullOrWhiteSpace(bNum)) return;
+            if (string.IsNullOrWhiteSpace(expStr) && batchExpiryLookup[pid].TryGetValue(bNum, out var knownExp))
+                expStr = knownExp;
+            else if (!string.IsNullOrWhiteSpace(expStr) && !batchExpiryLookup[pid].ContainsKey(bNum))
+                batchExpiryLookup[pid][bNum] = expStr;
+
+            if (!productBatchesMap[pid].ContainsKey(bNum))
+            {
+                productBatchesMap[pid][bNum] = new Dictionary<string, object?>
+                {
+                    ["batch_number"] = bNum,
+                    ["expiry_date"] = expStr,
+                    ["quantity"] = 0
+                };
+            }
+            else if (!string.IsNullOrWhiteSpace(expStr) && string.IsNullOrWhiteSpace(GetNullableStr(productBatchesMap[pid][bNum], "expiry_date")))
+            {
+                productBatchesMap[pid][bNum]["expiry_date"] = expStr;
+            }
+        }
+
+        // 2. Dispensing Register (SaleInvoiceItem)
+        var hasDoctorsTable = await Db.HasTableAsync("doctors") && await Db.HasColumnAsync("sale_invoices", "doctor_id");
+        var hasDoctorPmdc = await Db.HasColumnAsync("sale_invoices", "doctor_pmdc");
+        var hasDoctorHosp = await Db.HasColumnAsync("sale_invoices", "doctor_hospital");
+        var hasPatientCnic = await Db.HasColumnAsync("sale_invoices", "patient_cnic");
+        var hasPatientAddr = await Db.HasColumnAsync("sale_invoices", "patient_address");
+        var hasRxNo = await Db.HasColumnAsync("sale_invoices", "prescription_no");
+        var hasPharmName = await Db.HasColumnAsync("sale_invoices", "pharmacist_name");
+        var hasCustCnic = await Db.HasColumnAsync("customers", "cnic");
+        var hasCustTax = await Db.HasColumnAsync("customers", "tax_number");
+
+        var saleSql = $@"
+            SELECT sii.id, sii.sale_invoice_id, sii.product_id, sii.batch_number, sii.expiry, sii.pack_size,
+                   sii.quantity, sii.bonus,
+                   p.name AS product_name, p.product_code, p.formulation, p.pack_size AS prod_pack_size, br.name AS brand_name,
+                   si.posted_number, si.date, si.sale_type, si.doctor_name, si.patient_name,
+                   {(hasDoctorPmdc ? "si.doctor_pmdc" : "NULL")} AS doctor_pmdc,
+                   {(hasDoctorHosp ? "si.doctor_hospital" : "NULL")} AS doctor_hospital,
+                   {(hasPatientCnic ? "si.patient_cnic" : "NULL")} AS patient_cnic,
+                   {(hasPatientAddr ? "si.patient_address" : "NULL")} AS patient_address,
+                   {(hasRxNo ? "si.prescription_no" : "NULL")} AS prescription_no,
+                   {(hasPharmName ? "si.pharmacist_name" : "NULL")} AS pharmacist_name,
+                   c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address,
+                   {(hasCustCnic ? "c.cnic" : "NULL")} AS customer_cnic,
+                   {(hasCustTax ? "c.tax_number" : "NULL")} AS customer_tax_number,
+                   u.name AS user_name
+                   {(hasDoctorsTable ? ", doc.name AS doc_rel_name, doc.pmdc_number AS doc_rel_pmdc, doc.hospital_clinic AS doc_rel_hospital" : ", NULL AS doc_rel_name, NULL AS doc_rel_pmdc, NULL AS doc_rel_hospital")}
+            FROM sale_invoice_items sii
+            INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id
+            INNER JOIN products p ON p.id = sii.product_id
+            LEFT JOIN brands br ON br.id = p.brand_id
+            LEFT JOIN customers c ON c.id = si.customer_id
+            LEFT JOIN users u ON u.id = si.user_id
+            {(hasDoctorsTable ? "LEFT JOIN doctors doc ON doc.id = si.doctor_id" : "")}
+            WHERE sii.product_id IN @targetIds
+              AND DATE(si.date) BETWEEN @fromStr AND @toStr
+              AND (si.status IS NULL OR si.status != 'reversed')
+            ORDER BY p.name ASC, DATE(si.date) ASC, si.id ASC, sii.id ASC";
+
+        var saleItems = await Db.QueryListAsync(saleSql, new { targetIds, fromStr, toStr });
+        var dispensingRegister = new List<Dictionary<string, object?>>();
+
+        foreach (var it in saleItems)
+        {
+            var pid = ToLong(it, "product_id");
+            var packSize = Math.Max(1, (int)(ToLong(it, "pack_size") > 0 ? ToLong(it, "pack_size") : ToLong(it, "prod_pack_size", 1)));
+            var doctorName = (GetNullableStr(it, "doctor_name") ?? "").Trim();
+            if (string.IsNullOrEmpty(doctorName)) doctorName = (GetNullableStr(it, "doc_rel_name") ?? "").Trim();
+            var doctorPmdc = (GetNullableStr(it, "doctor_pmdc") ?? "").Trim();
+            if (string.IsNullOrEmpty(doctorPmdc)) doctorPmdc = (GetNullableStr(it, "doc_rel_pmdc") ?? "").Trim();
+            var doctorHospital = (GetNullableStr(it, "doctor_hospital") ?? "").Trim();
+            if (string.IsNullOrEmpty(doctorHospital)) doctorHospital = (GetNullableStr(it, "doc_rel_hospital") ?? "").Trim();
+
+            var patientName = (GetNullableStr(it, "patient_name") ?? "").Trim();
+            var patientCnic = (GetNullableStr(it, "patient_cnic") ?? "").Trim();
+            var patientAddress = (GetNullableStr(it, "patient_address") ?? "").Trim();
+            var rxNo = (GetNullableStr(it, "prescription_no") ?? "").Trim();
+            var pharmName = (GetNullableStr(it, "pharmacist_name") ?? "").Trim();
+            var custName = (GetNullableStr(it, "customer_name") ?? "").Trim();
+            var custCnic = (GetNullableStr(it, "customer_cnic") ?? "").Trim();
+            var custPhone = (GetNullableStr(it, "customer_phone") ?? "").Trim();
+            var custAddr = (GetNullableStr(it, "customer_address") ?? "").Trim();
+            var custLic = (GetNullableStr(it, "customer_tax_number") ?? "").Trim();
+            var saleType = (GetNullableStr(it, "sale_type") ?? "retail").Trim().ToLowerInvariant();
+
+            var isWalkIn = string.IsNullOrEmpty(custName) || CustomerLedgerController.IsWalkInName(custName);
+            var effPatient = !string.IsNullOrEmpty(patientName) ? patientName : (!isWalkIn ? custName : "");
+            var effCnic = !string.IsNullOrEmpty(patientCnic) ? patientCnic : custCnic;
+            var effContact = !string.IsNullOrEmpty(effCnic)
+                ? (!string.IsNullOrEmpty(custPhone) && effCnic != custPhone ? $"{effCnic} / {custPhone}" : effCnic)
+                : custPhone;
+            var effAddr = !string.IsNullOrEmpty(patientAddress) ? patientAddress : custAddr;
+            var effPharm = !string.IsNullOrEmpty(pharmName) ? pharmName : (GetNullableStr(it, "user_name") ?? "Qualified Pharmacist");
+
+            var isRxCompliant = saleType == "wholesale" ? !isWalkIn : (!string.IsNullOrEmpty(doctorName) && !string.IsNullOrEmpty(effPatient));
+            var hasFullCnsa = saleType == "wholesale"
+                ? (!isWalkIn && (!string.IsNullOrEmpty(effAddr) || !string.IsNullOrEmpty(custLic)))
+                : (isRxCompliant && !string.IsNullOrEmpty(doctorPmdc) && !string.IsNullOrEmpty(effContact));
+
+            var bNum = (GetNullableStr(it, "batch_number") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(it, "expiry"));
+            RegisterBatchSeen(pid, bNum, ref expStr);
+
+            var qty = (int)ToLong(it, "quantity");
+            var bonus = (int)ToLong(it, "bonus");
+            var totalOut = qty + bonus;
+            var postedNo = GetNullableStr(it, "posted_number") ?? "-";
+
+            dispensingRegister.Add(new Dictionary<string, object?>
+            {
+                ["id"] = ToLong(it, "id"),
+                ["sale_invoice_id"] = ToLong(it, "sale_invoice_id"),
+                ["posted_number"] = postedNo,
+                ["prescription_no"] = !string.IsNullOrEmpty(rxNo) ? rxNo : postedNo,
+                ["raw_prescription_no"] = !string.IsNullOrEmpty(rxNo) ? rxNo : null,
+                ["date"] = FormatDateOnly(GetNullableStr(it, "date")),
+                ["sale_type"] = saleType,
+                ["doctor_name"] = !string.IsNullOrEmpty(doctorName) ? doctorName : null,
+                ["doctor_pmdc"] = !string.IsNullOrEmpty(doctorPmdc) ? doctorPmdc : null,
+                ["doctor_hospital"] = !string.IsNullOrEmpty(doctorHospital) ? doctorHospital : null,
+                ["patient_name"] = !string.IsNullOrEmpty(effPatient) ? effPatient : null,
+                ["raw_patient_name"] = !string.IsNullOrEmpty(patientName) ? patientName : null,
+                ["patient_cnic"] = !string.IsNullOrEmpty(effCnic) ? effCnic : null,
+                ["patient_contact"] = !string.IsNullOrEmpty(effContact) ? effContact : null,
+                ["patient_address"] = !string.IsNullOrEmpty(effAddr) ? effAddr : null,
+                ["raw_patient_address"] = !string.IsNullOrEmpty(patientAddress) ? patientAddress : null,
+                ["customer_name"] = !string.IsNullOrEmpty(custName) ? custName : "Walk-in Patient",
+                ["customer_phone"] = !string.IsNullOrEmpty(custPhone) ? custPhone : null,
+                ["dispensed_by"] = effPharm,
+                ["raw_pharmacist_name"] = !string.IsNullOrEmpty(pharmName) ? pharmName : null,
+                ["is_rx_compliant"] = isRxCompliant,
+                ["has_full_cnsa_particulars"] = hasFullCnsa,
+                ["product_id"] = pid,
+                ["product_name"] = GetNullableStr(it, "product_name") ?? "-",
+                ["product_code"] = GetNullableStr(it, "product_code") ?? "-",
+                ["formulation"] = GetNullableStr(it, "formulation"),
+                ["brand_name"] = GetNullableStr(it, "brand_name") ?? "-",
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = expStr,
+                ["pack_size"] = packSize,
+                ["quantity"] = qty,
+                ["bonus"] = bonus,
+                ["total_units_out"] = totalOut,
+                ["pack_breakdown"] = FormatNarcoticPackBreakdown(totalOut, packSize)
+            });
+        }
+
+        // 3. Procurement Register (PurchaseInvoiceItem)
+        var hasSupTax = await Db.HasColumnAsync("suppliers", "tax_number");
+        var purchaseItems = await Db.QueryListAsync($@"
+            SELECT pii.id, pii.purchase_invoice_id, pii.product_id, pii.batch, pii.expiry, pii.pack_size,
+                   pii.pack_quantity, pii.quantity, pii.unit_bonus,
+                   p.name AS product_name, p.product_code, p.formulation, p.pack_size AS prod_pack_size, br.name AS brand_name,
+                   pi.posted_number, pi.invoice_number, pi.posted_date,
+                   s.name AS supplier_name, s.phone AS supplier_phone, s.address AS supplier_address,
+                   {(hasSupTax ? "s.tax_number" : "NULL")} AS supplier_tax_number
+            FROM purchase_invoice_items pii
+            INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+            INNER JOIN products p ON p.id = pii.product_id
+            LEFT JOIN brands br ON br.id = p.brand_id
+            LEFT JOIN suppliers s ON s.id = pi.supplier_id
+            WHERE pii.product_id IN @targetIds
+              AND DATE(pi.posted_date) BETWEEN @fromStr AND @toStr
+              AND (pi.status IS NULL OR pi.status != 'reversed')
+            ORDER BY p.name ASC, DATE(pi.posted_date) ASC, pi.id ASC, pii.id ASC",
+            new { targetIds, fromStr, toStr });
+
+        var procurementRegister = new List<Dictionary<string, object?>>();
+        foreach (var it in purchaseItems)
+        {
+            var pid = ToLong(it, "product_id");
+            var packSize = Math.Max(1, (int)(ToLong(it, "pack_size") > 0 ? ToLong(it, "pack_size") : ToLong(it, "prod_pack_size", 1)));
+            var bNum = (GetNullableStr(it, "batch") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(it, "expiry"));
+            RegisterBatchSeen(pid, bNum, ref expStr);
+            var qty = (int)ToLong(it, "quantity");
+
+            procurementRegister.Add(new Dictionary<string, object?>
+            {
+                ["id"] = ToLong(it, "id"),
+                ["purchase_invoice_id"] = ToLong(it, "purchase_invoice_id"),
+                ["posted_number"] = GetNullableStr(it, "posted_number") ?? "-",
+                ["invoice_number"] = GetNullableStr(it, "invoice_number") is { Length: > 0 } invNo ? invNo : "-",
+                ["date"] = FormatDateOnly(GetNullableStr(it, "posted_date")),
+                ["supplier_name"] = GetNullableStr(it, "supplier_name") ?? "-",
+                ["supplier_phone"] = GetNullableStr(it, "supplier_phone"),
+                ["supplier_address"] = GetNullableStr(it, "supplier_address"),
+                ["supplier_license_or_tax"] = GetNullableStr(it, "supplier_tax_number"),
+                ["product_id"] = pid,
+                ["product_name"] = GetNullableStr(it, "product_name") ?? "-",
+                ["product_code"] = GetNullableStr(it, "product_code") ?? "-",
+                ["formulation"] = GetNullableStr(it, "formulation"),
+                ["brand_name"] = GetNullableStr(it, "brand_name") ?? "-",
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = expStr,
+                ["pack_size"] = packSize,
+                ["pack_quantity"] = (int)ToLong(it, "pack_quantity"),
+                ["quantity"] = qty,
+                ["unit_bonus"] = (int)ToLong(it, "unit_bonus"),
+                ["total_units_in"] = qty,
+                ["pack_breakdown"] = FormatNarcoticPackBreakdown(qty, packSize)
+            });
+        }
+
+        // 4. Disposals, Sale Returns, Purchase Returns & Standalone Stock Adjustments
+        var disposalItems = await Db.HasTableAsync("stock_disposal_items")
+            ? await Db.QueryListAsync(@"
+                SELECT sdi.id, sdi.product_id, sdi.batch_number, sdi.expiry_date, sdi.dispose_qty,
+                       p.name AS product_name, p.product_code, p.formulation, p.pack_size,
+                       sd.id AS disposal_id, sd.disposal_number, sd.disposal_date, sd.status, sd.cause, sd.disposal_method,
+                       sd.reference_no, sd.witness_name, sd.witness_designation,
+                       uc.name AS creator_name, ud.name AS disposer_name
+                FROM stock_disposal_items sdi
+                INNER JOIN stock_disposals sd ON sd.id = sdi.stock_disposal_id
+                INNER JOIN products p ON p.id = sdi.product_id
+                LEFT JOIN users uc ON uc.id = sd.created_by
+                LEFT JOIN users ud ON ud.id = sd.disposed_by
+                WHERE sdi.product_id IN @targetIds
+                  AND DATE(sd.disposal_date) BETWEEN @fromStr AND @toStr
+                  AND sd.status IN ('quarantined', 'disposed')
+                ORDER BY sdi.id ASC",
+                new { targetIds, fromStr, toStr })
+            : new List<Dictionary<string, object?>>();
+
+        var saleReturnItems = await Db.QueryListAsync(@"
+            SELECT sri.id, sri.product_id, sri.batch_number, sri.expiry, sri.unit_return_quantity,
+                   p.name AS product_name, p.product_code, p.formulation, p.pack_size,
+                   sr.id AS return_id, sr.posted_number, sr.date,
+                   c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address,
+                   si.posted_number AS orig_inv_no, si.doctor_name, si.patient_name
+            FROM sale_return_items sri
+            INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id
+            INNER JOIN products p ON p.id = sri.product_id
+            LEFT JOIN customers c ON c.id = sr.customer_id
+            LEFT JOIN sale_invoices si ON si.id = sr.sale_invoice_id
+            WHERE sri.product_id IN @targetIds
+              AND DATE(sr.date) BETWEEN @fromStr AND @toStr
+            ORDER BY sri.id ASC",
+            new { targetIds, fromStr, toStr });
+
+        var purchaseReturnItems = await Db.QueryListAsync(@"
+            SELECT pri.id, pri.product_id, pri.batch, pri.expiry, pri.return_unit_quantity,
+                   p.name AS product_name, p.product_code, p.formulation, p.pack_size,
+                   pr.id AS return_id, pr.posted_number, pr.date,
+                   s.name AS supplier_name, s.phone AS supplier_phone, s.address AS supplier_address,
+                   pi.posted_number AS orig_grn_no
+            FROM purchase_return_items pri
+            INNER JOIN purchase_returns pr ON pr.id = pri.purchase_return_id
+            INNER JOIN products p ON p.id = pri.product_id
+            LEFT JOIN suppliers s ON s.id = pr.supplier_id
+            LEFT JOIN purchase_invoices pi ON pi.id = pr.purchase_invoice_id
+            WHERE pri.product_id IN @targetIds
+              AND DATE(pr.date) BETWEEN @fromStr AND @toStr
+            ORDER BY pri.id ASC",
+            new { targetIds, fromStr, toStr });
+
+        var dispAdjIds = await Db.HasTableAsync("stock_disposals")
+            ? (await Db.QueryListAsync("SELECT DISTINCT stock_adjustment_id FROM stock_disposals WHERE stock_adjustment_id IS NOT NULL"))
+                .Select(r => ToLong(r, "stock_adjustment_id")).Where(x => x > 0).ToHashSet()
+            : new HashSet<long>();
+
+        var adjustmentItems = (await Db.QueryListAsync(@"
+            SELECT sai.id, sai.product_id, sai.diff_qty, sai.stock_adjustment_id,
+                   p.name AS product_name, p.product_code, p.formulation, p.pack_size,
+                   sa.posted_number, sa.posted_date, sa.note
+            FROM stock_adjustment_items sai
+            INNER JOIN stock_adjustments sa ON sa.id = sai.stock_adjustment_id
+            INNER JOIN products p ON p.id = sai.product_id
+            WHERE sai.product_id IN @targetIds
+              AND DATE(sa.posted_date) BETWEEN @fromStr AND @toStr
+            ORDER BY sai.id ASC",
+            new { targetIds, fromStr, toStr }))
+            .Where(ai => !dispAdjIds.Contains(ToLong(ai, "stock_adjustment_id")))
+            .ToList();
+
+        var destructionAndReturns = new List<Dictionary<string, object?>>();
+        foreach (var di in disposalItems)
+        {
+            var pid = ToLong(di, "product_id");
+            var packSize = Math.Max(1, (int)ToLong(di, "pack_size", 1));
+            var witnessName = (GetNullableStr(di, "witness_name") ?? "").Trim();
+            var witnessDesig = (GetNullableStr(di, "witness_designation") ?? "").Trim();
+            var qty = (int)ToLong(di, "dispose_qty");
+            var bNum = (GetNullableStr(di, "batch_number") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(di, "expiry_date"));
+            RegisterBatchSeen(pid, bNum, ref expStr);
+            var status = GetStr(di, "status");
+            var cause = GetStr(di, "cause");
+            var method = GetStr(di, "disposal_method");
+            var causeLabel = StockDisposalService.Causes.TryGetValue(cause, out var cl) ? cl : (string.IsNullOrEmpty(cause) ? "Controlled Destruction" : cause);
+            var methodLabel = StockDisposalService.Methods.TryGetValue(method, out var ml) ? ml : method;
+
+            destructionAndReturns.Add(new Dictionary<string, object?>
+            {
+                ["row_key"] = $"DISP-{ToLong(di, "id")}",
+                ["event_type"] = status == "quarantined" ? "QUARANTINE" : "DESTRUCTION",
+                ["direction"] = "OUT",
+                ["document_id"] = ToLong(di, "disposal_id"),
+                ["document_number"] = GetNullableStr(di, "disposal_number") ?? "-",
+                ["date"] = FormatDateOnly(GetNullableStr(di, "disposal_date")),
+                ["product_id"] = pid,
+                ["product_name"] = GetNullableStr(di, "product_name") ?? "-",
+                ["product_code"] = GetNullableStr(di, "product_code") ?? "-",
+                ["formulation"] = GetNullableStr(di, "formulation") ?? "-",
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = expStr,
+                ["quantity"] = qty,
+                ["pack_breakdown"] = FormatNarcoticPackBreakdown(qty, packSize),
+                ["party_or_authority"] = string.IsNullOrEmpty(methodLabel) ? causeLabel : $"{causeLabel} • {methodLabel}",
+                ["witness_name"] = !string.IsNullOrEmpty(witnessName) ? witnessName : null,
+                ["witness_designation"] = !string.IsNullOrEmpty(witnessDesig) ? witnessDesig : null,
+                ["reference_no"] = GetNullableStr(di, "reference_no"),
+                ["status"] = string.IsNullOrEmpty(status) ? "disposed" : status,
+                ["is_witness_compliant"] = !string.IsNullOrEmpty(witnessName),
+                ["handled_by"] = GetNullableStr(di, "disposer_name") ?? GetNullableStr(di, "creator_name") ?? "Qualified Pharmacist"
+            });
+        }
+
+        foreach (var sri in saleReturnItems)
+        {
+            var pid = ToLong(sri, "product_id");
+            var packSize = Math.Max(1, (int)ToLong(sri, "pack_size", 1));
+            var qty = (int)ToLong(sri, "unit_return_quantity");
+            var bNum = (GetNullableStr(sri, "batch_number") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(sri, "expiry"));
+            RegisterBatchSeen(pid, bNum, ref expStr);
+            var origInv = GetNullableStr(sri, "orig_inv_no");
+            var custName = GetNullableStr(sri, "customer_name") ?? "Patient Return";
+            var patName = GetNullableStr(sri, "patient_name");
+
+            destructionAndReturns.Add(new Dictionary<string, object?>
+            {
+                ["row_key"] = $"SR-{ToLong(sri, "id")}",
+                ["event_type"] = "PATIENT_RETURN",
+                ["direction"] = "IN",
+                ["document_id"] = ToLong(sri, "return_id"),
+                ["document_number"] = GetNullableStr(sri, "posted_number") ?? "-",
+                ["date"] = FormatDateOnly(GetNullableStr(sri, "date")),
+                ["product_id"] = pid,
+                ["product_name"] = GetNullableStr(sri, "product_name") ?? "-",
+                ["product_code"] = GetNullableStr(sri, "product_code") ?? "-",
+                ["formulation"] = GetNullableStr(sri, "formulation") ?? "-",
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = expStr,
+                ["quantity"] = qty,
+                ["pack_breakdown"] = FormatNarcoticPackBreakdown(qty, packSize),
+                ["party_or_authority"] = !string.IsNullOrEmpty(origInv) ? $"{custName} (Against Inv: {origInv})" : custName,
+                ["witness_name"] = GetNullableStr(sri, "doctor_name"),
+                ["witness_designation"] = !string.IsNullOrEmpty(patName) ? $"Patient: {patName}" : null,
+                ["reference_no"] = origInv,
+                ["status"] = "completed",
+                ["is_witness_compliant"] = true,
+                ["handled_by"] = "Pharmacy Counter"
+            });
+        }
+
+        foreach (var pri in purchaseReturnItems)
+        {
+            var pid = ToLong(pri, "product_id");
+            var packSize = Math.Max(1, (int)ToLong(pri, "pack_size", 1));
+            var qty = (int)ToLong(pri, "return_unit_quantity");
+            var bNum = (GetNullableStr(pri, "batch") ?? "").Trim();
+            var expStr = FormatDateOnly(GetNullableStr(pri, "expiry"));
+            RegisterBatchSeen(pid, bNum, ref expStr);
+            var origGrn = GetNullableStr(pri, "orig_grn_no");
+            var supName = GetNullableStr(pri, "supplier_name") ?? "Authorized Distributor";
+
+            destructionAndReturns.Add(new Dictionary<string, object?>
+            {
+                ["row_key"] = $"PR-{ToLong(pri, "id")}",
+                ["event_type"] = "SUPPLIER_RETURN",
+                ["direction"] = "OUT",
+                ["document_id"] = ToLong(pri, "return_id"),
+                ["document_number"] = GetNullableStr(pri, "posted_number") ?? "-",
+                ["date"] = FormatDateOnly(GetNullableStr(pri, "date")),
+                ["product_id"] = pid,
+                ["product_name"] = GetNullableStr(pri, "product_name") ?? "-",
+                ["product_code"] = GetNullableStr(pri, "product_code") ?? "-",
+                ["formulation"] = GetNullableStr(pri, "formulation") ?? "-",
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = expStr,
+                ["quantity"] = qty,
+                ["pack_breakdown"] = FormatNarcoticPackBreakdown(qty, packSize),
+                ["party_or_authority"] = !string.IsNullOrEmpty(origGrn) ? $"{supName} (Ref GRN: {origGrn})" : supName,
+                ["witness_name"] = null,
+                ["witness_designation"] = null,
+                ["reference_no"] = origGrn,
+                ["status"] = "completed",
+                ["is_witness_compliant"] = true,
+                ["handled_by"] = "Procurement Pharmacist"
+            });
+        }
+
+        destructionAndReturns = destructionAndReturns
+            .OrderBy(r => GetStr(r, "product_name"), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => GetStr(r, "date"), StringComparer.Ordinal)
+            .ToList();
+
+        // 5. Stock Ledger (Opening -> Inward -> Outward -> Closing)
+        async Task<Dictionary<long, int>> QueryQtyMapAsync(string sql, object param)
+        {
+            var rows = await Db.QueryListAsync(sql, param);
+            var map = new Dictionary<long, int>();
+            foreach (var r in rows) map[ToLong(r, "product_id")] = (int)ToLong(r, "qty");
+            return map;
+        }
+
+        var purchInPeriod = await QueryQtyMapAsync(@"SELECT pii.product_id, COALESCE(SUM(pii.quantity), 0) AS qty FROM purchase_invoice_items pii INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id WHERE pii.product_id IN @targetIds AND DATE(pi.posted_date) BETWEEN @fromStr AND @toStr AND (pi.status IS NULL OR pi.status != 'reversed') GROUP BY pii.product_id", new { targetIds, fromStr, toStr });
+        var purchAfterPeriod = await QueryQtyMapAsync(@"SELECT pii.product_id, COALESCE(SUM(pii.quantity), 0) AS qty FROM purchase_invoice_items pii INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id WHERE pii.product_id IN @targetIds AND DATE(pi.posted_date) > @toStr AND (pi.status IS NULL OR pi.status != 'reversed') GROUP BY pii.product_id", new { targetIds, toStr });
+        var salesInPeriod = await QueryQtyMapAsync(@"SELECT sii.product_id, COALESCE(SUM(sii.quantity), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) BETWEEN @fromStr AND @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, fromStr, toStr });
+        var salesAfterPeriod = await QueryQtyMapAsync(@"SELECT sii.product_id, COALESCE(SUM(sii.quantity), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) > @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, toStr });
+        var saleRetInPeriod = await QueryQtyMapAsync(@"SELECT sri.product_id, COALESCE(SUM(sri.unit_return_quantity), 0) AS qty FROM sale_return_items sri INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id WHERE sri.product_id IN @targetIds AND DATE(sr.date) BETWEEN @fromStr AND @toStr GROUP BY sri.product_id", new { targetIds, fromStr, toStr });
+        var saleRetAfterPeriod = await QueryQtyMapAsync(@"SELECT sri.product_id, COALESCE(SUM(sri.unit_return_quantity), 0) AS qty FROM sale_return_items sri INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id WHERE sri.product_id IN @targetIds AND DATE(sr.date) > @toStr GROUP BY sri.product_id", new { targetIds, toStr });
+        var purchRetInPeriod = await QueryQtyMapAsync(@"SELECT pri.product_id, COALESCE(SUM(pri.return_unit_quantity), 0) AS qty FROM purchase_return_items pri INNER JOIN purchase_returns pr ON pr.id = pri.purchase_return_id WHERE pri.product_id IN @targetIds AND DATE(pr.date) BETWEEN @fromStr AND @toStr GROUP BY pri.product_id", new { targetIds, fromStr, toStr });
+        var purchRetAfterPeriod = await QueryQtyMapAsync(@"SELECT pri.product_id, COALESCE(SUM(pri.return_unit_quantity), 0) AS qty FROM purchase_return_items pri INNER JOIN purchase_returns pr ON pr.id = pri.purchase_return_id WHERE pri.product_id IN @targetIds AND DATE(pr.date) > @toStr GROUP BY pri.product_id", new { targetIds, toStr });
+        var dispInPeriod = await Db.HasTableAsync("stock_disposal_items")
+            ? await QueryQtyMapAsync(@"SELECT sdi.product_id, COALESCE(SUM(sdi.dispose_qty), 0) AS qty FROM stock_disposal_items sdi INNER JOIN stock_disposals sd ON sd.id = sdi.stock_disposal_id WHERE sdi.product_id IN @targetIds AND DATE(sd.disposal_date) BETWEEN @fromStr AND @toStr AND sd.status IN ('quarantined', 'disposed') GROUP BY sdi.product_id", new { targetIds, fromStr, toStr })
+            : new Dictionary<long, int>();
+        var dispAfterPeriod = await Db.HasTableAsync("stock_disposal_items")
+            ? await QueryQtyMapAsync(@"SELECT sdi.product_id, COALESCE(SUM(sdi.dispose_qty), 0) AS qty FROM stock_disposal_items sdi INNER JOIN stock_disposals sd ON sd.id = sdi.stock_disposal_id WHERE sdi.product_id IN @targetIds AND DATE(sd.disposal_date) > @toStr AND sd.status IN ('quarantined', 'disposed') GROUP BY sdi.product_id", new { targetIds, toStr })
+            : new Dictionary<long, int>();
+
+        var adjInPeriod = adjustmentItems.GroupBy(a => ToLong(a, "product_id")).ToDictionary(g => g.Key, g => g.Sum(x => (int)ToLong(x, "diff_qty")));
+        var adjAfterRaw = (await Db.QueryListAsync(@"SELECT sai.product_id, sai.diff_qty, sai.stock_adjustment_id FROM stock_adjustment_items sai INNER JOIN stock_adjustments sa ON sa.id = sai.stock_adjustment_id WHERE sai.product_id IN @targetIds AND DATE(sa.posted_date) > @toStr", new { targetIds, toStr }))
+            .Where(a => !dispAdjIds.Contains(ToLong(a, "stock_adjustment_id")));
+        var adjAfterPeriod = adjAfterRaw.GroupBy(a => ToLong(a, "product_id")).ToDictionary(g => g.Key, g => g.Sum(x => (int)ToLong(x, "diff_qty")));
+
+        var stockLedger = new List<Dictionary<string, object?>>();
+        var productMetaMap = new Dictionary<long, Dictionary<string, object?>>();
+
+        foreach (var p in targetProducts)
+        {
+            var pid = ToLong(p, "id");
+            var packSize = Math.Max(1, (int)ToLong(p, "pack_size", 1));
+            var currentQty = (int)ToLong(p, "quantity");
+            var afterNet = purchAfterPeriod.GetValueOrDefault(pid)
+                + saleRetAfterPeriod.GetValueOrDefault(pid)
+                - salesAfterPeriod.GetValueOrDefault(pid)
+                - purchRetAfterPeriod.GetValueOrDefault(pid)
+                - dispAfterPeriod.GetValueOrDefault(pid)
+                + adjAfterPeriod.GetValueOrDefault(pid);
+            var closingQty = currentQty - afterNet;
+
+            var purchasedQty = purchInPeriod.GetValueOrDefault(pid);
+            var saleReturnQty = saleRetInPeriod.GetValueOrDefault(pid);
+            var dispensedQty = salesInPeriod.GetValueOrDefault(pid);
+            var purchReturnQty = purchRetInPeriod.GetValueOrDefault(pid);
+            var disposedQty = dispInPeriod.GetValueOrDefault(pid);
+            var adjustedQty = adjInPeriod.GetValueOrDefault(pid);
+
+            var periodNet = purchasedQty + saleReturnQty - dispensedQty - purchReturnQty - disposedQty + adjustedQty;
+            var openingQty = closingQty - periodNet;
+
+            var batchesList = productBatchesMap[pid].Values.Select(b =>
+            {
+                var bNum = GetStr(b, "batch_number");
+                var exp = GetNullableStr(b, "expiry_date") ?? (batchExpiryLookup[pid].TryGetValue(bNum, out var kExp) ? kExp : null);
+                var bq = (int)ToLong(b, "quantity");
+                return new Dictionary<string, object?>
+                {
+                    ["batch_number"] = bNum,
+                    ["expiry_date"] = exp,
+                    ["quantity"] = bq,
+                    ["pack_breakdown"] = bq > 0 ? FormatNarcoticPackBreakdown(bq, packSize) : null
+                };
+            }).ToList();
+
+            var batchesSummary = batchesList.Count > 0
+                ? string.Join(" | ", batchesList.Select(b => GetStr(b, "batch_number") + (!string.IsNullOrEmpty(GetNullableStr(b, "expiry_date")) ? $" (Exp: {GetStr(b, "expiry_date")})" : "")))
+                : "—";
+
+            var row = new Dictionary<string, object?>
+            {
+                ["product_id"] = pid,
                 ["product_code"] = GetNullableStr(p, "product_code") ?? "-",
                 ["product_name"] = GetNullableStr(p, "name"),
                 ["formulation"] = GetNullableStr(p, "formulation") ?? "-",
                 ["brand_name"] = GetNullableStr(p, "brand_name") ?? "-",
                 ["supplier_name"] = GetNullableStr(p, "supplier_name") ?? "-",
-                ["rack"] = GetNullableStr(p, "rack") ?? "Double-Lock Vault",
-                ["pack_size"] = Math.Max(1, (int)ToLong(p, "pack_size", 1)),
-                ["batches_list"] = Array.Empty<object>(),
-                ["batches_summary"] = "—",
-                ["opening_qty"] = qty,
-                ["opening_pack_breakdown"] = $"{qty} Units",
-                ["purchased_qty"] = 0,
-                ["sale_return_qty"] = 0,
-                ["dispensed_qty"] = 0,
-                ["purchase_return_qty"] = 0,
-                ["disposed_qty"] = 0,
-                ["adjusted_qty"] = 0,
-                ["closing_qty"] = qty,
-                ["closing_pack_breakdown"] = $"{qty} Units",
-                ["current_on_hand"] = qty
+                ["rack"] = !string.IsNullOrWhiteSpace(GetNullableStr(p, "rack")) ? GetStr(p, "rack") : "Double-Lock Vault",
+                ["pack_size"] = packSize,
+                ["batches_list"] = batchesList,
+                ["batches_summary"] = batchesSummary,
+                ["opening_qty"] = openingQty,
+                ["opening_pack_breakdown"] = FormatNarcoticPackBreakdown(openingQty, packSize),
+                ["purchased_qty"] = purchasedQty,
+                ["sale_return_qty"] = saleReturnQty,
+                ["dispensed_qty"] = dispensedQty,
+                ["purchase_return_qty"] = purchReturnQty,
+                ["disposed_qty"] = disposedQty,
+                ["adjusted_qty"] = adjustedQty,
+                ["closing_qty"] = closingQty,
+                ["closing_pack_breakdown"] = FormatNarcoticPackBreakdown(closingQty, packSize),
+                ["current_on_hand"] = currentQty
             };
-        }).ToList();
+            stockLedger.Add(row);
+            productMetaMap[pid] = row;
+        }
 
-        var totalOnHand = stockLedger.Sum(s => (int)ToLong(s, "closing_qty"));
+        // 6. Chronological Running Register & Per-Product Registers
+        var rawEventsByProduct = targetIds.ToDictionary(id => id, _ => new List<Dictionary<string, object?>>());
+
+        foreach (var prRow in procurementRegister)
+        {
+            var pid = ToLong(prRow, "product_id");
+            var invNo = GetStr(prRow, "invoice_number");
+            var lic = GetNullableStr(prRow, "supplier_license_or_tax");
+            var bonus = (int)ToLong(prRow, "unit_bonus");
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = GetNullableStr(prRow, "date") ?? fromStr,
+                ["sort_order"] = 10,
+                ["sort_id"] = ToLong(prRow, "id"),
+                ["event_type"] = "PURCHASE_IN",
+                ["event_label"] = "INWARD PURCHASE (GRN)",
+                ["date"] = GetNullableStr(prRow, "date"),
+                ["voucher_number"] = GetStr(prRow, "posted_number"),
+                ["reference_no"] = invNo != "-" ? $"Bill: {invNo}" : null,
+                ["document_path"] = ToLong(prRow, "purchase_invoice_id") > 0 ? $"/purchase-invoices/{ToLong(prRow, "purchase_invoice_id")}" : null,
+                ["sale_invoice_id"] = null,
+                ["party_type"] = "SUPPLIER",
+                ["party_name"] = GetStr(prRow, "supplier_name"),
+                ["party_cnic_or_phone"] = GetNullableStr(prRow, "supplier_phone"),
+                ["party_address"] = GetNullableStr(prRow, "supplier_address"),
+                ["party_license"] = lic,
+                ["doctor_name"] = "Authorized Distributor Supply",
+                ["doctor_pmdc"] = !string.IsNullOrEmpty(lic) ? $"Lic/NTN: {lic}" : null,
+                ["doctor_hospital"] = null,
+                ["batch_number"] = GetStr(prRow, "batch_number"),
+                ["expiry"] = GetNullableStr(prRow, "expiry"),
+                ["qty_in"] = (int)ToLong(prRow, "total_units_in"),
+                ["qty_out"] = 0,
+                ["pharmacist_name"] = "Store / Receiving Pharmacist",
+                ["is_rx_compliant"] = true,
+                ["remarks"] = bonus > 0 ? $"Includes {bonus} bonus units" : "Verified against Supplier Invoice"
+            });
+        }
+
+        foreach (var sri in saleReturnItems)
+        {
+            var pid = ToLong(sri, "product_id");
+            var dt = FormatDateOnly(GetNullableStr(sri, "date")) ?? fromStr;
+            var bNum = (GetNullableStr(sri, "batch_number") ?? "").Trim();
+            var exp = FormatDateOnly(GetNullableStr(sri, "expiry"));
+            if (string.IsNullOrEmpty(exp) && !string.IsNullOrEmpty(bNum)) batchExpiryLookup[pid].TryGetValue(bNum, out exp);
+            var origInv = GetNullableStr(sri, "orig_inv_no");
+
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = dt,
+                ["sort_order"] = 20,
+                ["sort_id"] = ToLong(sri, "id"),
+                ["event_type"] = "PATIENT_RETURN_IN",
+                ["event_label"] = "PATIENT RETURN (IN)",
+                ["date"] = dt,
+                ["voucher_number"] = GetNullableStr(sri, "posted_number") ?? "-",
+                ["reference_no"] = !string.IsNullOrEmpty(origInv) ? $"Orig Inv: {origInv}" : null,
+                ["document_path"] = $"/sale-returns/{ToLong(sri, "return_id")}",
+                ["sale_invoice_id"] = null,
+                ["party_type"] = "PATIENT_RETURN",
+                ["party_name"] = GetNullableStr(sri, "patient_name") ?? GetNullableStr(sri, "customer_name") ?? "Patient Return",
+                ["party_cnic_or_phone"] = GetNullableStr(sri, "customer_phone"),
+                ["party_address"] = GetNullableStr(sri, "customer_address"),
+                ["party_license"] = null,
+                ["doctor_name"] = GetNullableStr(sri, "doctor_name") ?? "Return against Rx",
+                ["doctor_pmdc"] = null,
+                ["doctor_hospital"] = null,
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = exp,
+                ["qty_in"] = (int)ToLong(sri, "unit_return_quantity"),
+                ["qty_out"] = 0,
+                ["pharmacist_name"] = "Dispensing Pharmacist",
+                ["is_rx_compliant"] = true,
+                ["remarks"] = "Returned to Narcotics Cabinet"
+            });
+        }
+
+        foreach (var drRow in dispensingRegister)
+        {
+            var pid = ToLong(drRow, "product_id");
+            var rawRx = GetNullableStr(drRow, "raw_prescription_no");
+            var isRx = drRow.GetValueOrDefault("is_rx_compliant") is true;
+            var sType = GetStr(drRow, "sale_type");
+
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = GetNullableStr(drRow, "date") ?? fromStr,
+                ["sort_order"] = 30,
+                ["sort_id"] = ToLong(drRow, "id"),
+                ["event_type"] = "DISPENSED_OUT",
+                ["event_label"] = sType == "wholesale" ? "WHOLESALE SUPPLY (OUT)" : "PATIENT DISPENSING (OUT)",
+                ["date"] = GetNullableStr(drRow, "date"),
+                ["voucher_number"] = GetStr(drRow, "posted_number"),
+                ["reference_no"] = !string.IsNullOrEmpty(rawRx) ? $"Rx #: {rawRx}" : $"Inv: {GetStr(drRow, "posted_number")}",
+                ["raw_prescription_no"] = rawRx,
+                ["document_path"] = ToLong(drRow, "sale_invoice_id") > 0 ? $"/sale-invoices/{ToLong(drRow, "sale_invoice_id")}" : null,
+                ["sale_invoice_id"] = drRow.GetValueOrDefault("sale_invoice_id"),
+                ["sale_type"] = sType,
+                ["party_type"] = "PATIENT",
+                ["party_name"] = GetNullableStr(drRow, "patient_name") ?? GetStr(drRow, "customer_name"),
+                ["raw_patient_name"] = drRow.GetValueOrDefault("raw_patient_name"),
+                ["party_cnic_or_phone"] = drRow.GetValueOrDefault("patient_contact"),
+                ["raw_patient_cnic"] = drRow.GetValueOrDefault("patient_cnic"),
+                ["party_address"] = drRow.GetValueOrDefault("patient_address"),
+                ["raw_patient_address"] = drRow.GetValueOrDefault("raw_patient_address"),
+                ["party_license"] = null,
+                ["doctor_name"] = drRow.GetValueOrDefault("doctor_name"),
+                ["doctor_pmdc"] = drRow.GetValueOrDefault("doctor_pmdc"),
+                ["doctor_hospital"] = drRow.GetValueOrDefault("doctor_hospital"),
+                ["batch_number"] = GetStr(drRow, "batch_number"),
+                ["expiry"] = drRow.GetValueOrDefault("expiry"),
+                ["qty_in"] = 0,
+                ["qty_out"] = (int)ToLong(drRow, "total_units_out"),
+                ["pharmacist_name"] = GetStr(drRow, "dispensed_by"),
+                ["raw_pharmacist_name"] = drRow.GetValueOrDefault("raw_pharmacist_name"),
+                ["is_rx_compliant"] = isRx,
+                ["has_full_cnsa_particulars"] = drRow.GetValueOrDefault("has_full_cnsa_particulars") is true,
+                ["remarks"] = isRx ? "Dispensed on RMP Prescription" : "MISSING DOCTOR / PATIENT RX DETAILS"
+            });
+        }
+
+        foreach (var pri in purchaseReturnItems)
+        {
+            var pid = ToLong(pri, "product_id");
+            var dt = FormatDateOnly(GetNullableStr(pri, "date")) ?? fromStr;
+            var bNum = (GetNullableStr(pri, "batch") ?? "").Trim();
+            var exp = FormatDateOnly(GetNullableStr(pri, "expiry"));
+            if (string.IsNullOrEmpty(exp) && !string.IsNullOrEmpty(bNum)) batchExpiryLookup[pid].TryGetValue(bNum, out exp);
+            var origGrn = GetNullableStr(pri, "orig_grn_no");
+
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = dt,
+                ["sort_order"] = 40,
+                ["sort_id"] = ToLong(pri, "id"),
+                ["event_type"] = "SUPPLIER_RETURN_OUT",
+                ["event_label"] = "RETURN TO SUPPLIER (OUT)",
+                ["date"] = dt,
+                ["voucher_number"] = GetNullableStr(pri, "posted_number") ?? "-",
+                ["reference_no"] = !string.IsNullOrEmpty(origGrn) ? $"GRN: {origGrn}" : null,
+                ["document_path"] = $"/purchase-returns/{ToLong(pri, "return_id")}",
+                ["sale_invoice_id"] = null,
+                ["party_type"] = "SUPPLIER_RETURN",
+                ["party_name"] = GetNullableStr(pri, "supplier_name") ?? "Authorized Supplier",
+                ["party_cnic_or_phone"] = GetNullableStr(pri, "supplier_phone"),
+                ["party_address"] = GetNullableStr(pri, "supplier_address"),
+                ["party_license"] = null,
+                ["doctor_name"] = "Returned to Distributor",
+                ["doctor_pmdc"] = null,
+                ["doctor_hospital"] = null,
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = exp,
+                ["qty_in"] = 0,
+                ["qty_out"] = (int)ToLong(pri, "return_unit_quantity"),
+                ["pharmacist_name"] = "Procurement Pharmacist",
+                ["is_rx_compliant"] = true,
+                ["remarks"] = "Returned to Authorized Distributor"
+            });
+        }
+
+        foreach (var di in disposalItems)
+        {
+            var pid = ToLong(di, "product_id");
+            var dt = FormatDateOnly(GetNullableStr(di, "disposal_date")) ?? fromStr;
+            var witnessName = (GetNullableStr(di, "witness_name") ?? "").Trim();
+            var witnessDesig = (GetNullableStr(di, "witness_designation") ?? "").Trim();
+            var bNum = (GetNullableStr(di, "batch_number") ?? "").Trim();
+            var exp = FormatDateOnly(GetNullableStr(di, "expiry_date"));
+            if (string.IsNullOrEmpty(exp) && !string.IsNullOrEmpty(bNum)) batchExpiryLookup[pid].TryGetValue(bNum, out exp);
+            var status = GetStr(di, "status");
+            var refNo = GetNullableStr(di, "reference_no");
+
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = dt,
+                ["sort_order"] = 50,
+                ["sort_id"] = ToLong(di, "id"),
+                ["event_type"] = status == "quarantined" ? "QUARANTINE_OUT" : "DESTRUCTION_OUT",
+                ["event_label"] = status == "quarantined" ? "QUARANTINE LOCK (OUT)" : "WITNESSED DESTRUCTION (OUT)",
+                ["date"] = dt,
+                ["voucher_number"] = GetNullableStr(di, "disposal_number") ?? "-",
+                ["reference_no"] = !string.IsNullOrEmpty(refNo) ? $"Ref: {refNo}" : null,
+                ["document_path"] = $"/stock-disposals/{ToLong(di, "disposal_id")}",
+                ["sale_invoice_id"] = null,
+                ["party_type"] = "DESTRUCTION",
+                ["party_name"] = GetStr(di, "cause"),
+                ["party_cnic_or_phone"] = null,
+                ["party_address"] = null,
+                ["party_license"] = null,
+                ["doctor_name"] = !string.IsNullOrEmpty(witnessName) ? $"Witness: {witnessName}" : "Witness Pending",
+                ["doctor_pmdc"] = !string.IsNullOrEmpty(witnessDesig) ? witnessDesig : null,
+                ["doctor_hospital"] = null,
+                ["batch_number"] = !string.IsNullOrEmpty(bNum) ? bNum : "-",
+                ["expiry"] = exp,
+                ["qty_in"] = 0,
+                ["qty_out"] = (int)ToLong(di, "dispose_qty"),
+                ["pharmacist_name"] = GetNullableStr(di, "disposer_name") ?? GetNullableStr(di, "creator_name") ?? "Qualified Pharmacist",
+                ["is_rx_compliant"] = !string.IsNullOrEmpty(witnessName),
+                ["remarks"] = !string.IsNullOrEmpty(witnessName) ? $"Witnessed by {witnessName}" : "Witness signature required"
+            });
+        }
+
+        foreach (var ai in adjustmentItems)
+        {
+            var pid = ToLong(ai, "product_id");
+            var diff = (int)ToLong(ai, "diff_qty");
+            if (diff == 0) continue;
+            var dt = FormatDateOnly(GetNullableStr(ai, "posted_date")) ?? fromStr;
+            var meta = productMetaMap[pid];
+            var prodBatches = meta.GetValueOrDefault("batches_list") as List<Dictionary<string, object?>> ?? new();
+            var adjBatchNo = prodBatches.Count == 1 ? GetStr(prodBatches[0], "batch_number") : (prodBatches.Count > 0 ? GetStr(meta, "batches_summary") : "-");
+            var adjExpiry = prodBatches.Count == 1 ? GetNullableStr(prodBatches[0], "expiry_date") : null;
+
+            rawEventsByProduct[pid].Add(new Dictionary<string, object?>
+            {
+                ["sort_date"] = dt,
+                ["sort_order"] = diff > 0 ? 25 : 55,
+                ["sort_id"] = ToLong(ai, "id"),
+                ["event_type"] = "ADJUSTMENT",
+                ["event_label"] = diff > 0 ? "AUDIT GAIN (IN)" : "AUDIT SHORTAGE (OUT)",
+                ["date"] = dt,
+                ["voucher_number"] = GetNullableStr(ai, "posted_number") ?? "-",
+                ["reference_no"] = null,
+                ["document_path"] = $"/stock-adjustments/{ToLong(ai, "stock_adjustment_id")}",
+                ["sale_invoice_id"] = null,
+                ["party_type"] = "ADJUSTMENT",
+                ["party_name"] = "Physical Stock Verification",
+                ["party_cnic_or_phone"] = null,
+                ["party_address"] = GetNullableStr(ai, "note"),
+                ["party_license"] = null,
+                ["doctor_name"] = "Internal Pharmacy Audit",
+                ["doctor_pmdc"] = null,
+                ["doctor_hospital"] = null,
+                ["batches_list"] = prodBatches,
+                ["batch_number"] = adjBatchNo,
+                ["expiry"] = adjExpiry,
+                ["qty_in"] = diff > 0 ? diff : 0,
+                ["qty_out"] = diff < 0 ? Math.Abs(diff) : 0,
+                ["pharmacist_name"] = "Supervising Pharmacist",
+                ["is_rx_compliant"] = true,
+                ["remarks"] = GetNullableStr(ai, "note") ?? "Physical stock adjustment"
+            });
+        }
+
+        var chronologicalRegister = new List<Dictionary<string, object?>>();
+        var productRegisters = new List<Dictionary<string, object?>>();
+        int serialNo = 1;
+        int productSectionNo = 1;
+
+        foreach (var prod in targetProducts)
+        {
+            var pid = ToLong(prod, "id");
+            var meta = productMetaMap[pid];
+            var packSize = Math.Max(1, (int)ToLong(prod, "pack_size", 1));
+            var openingQty = (int)ToLong(meta, "opening_qty");
+            var closingQty = (int)ToLong(meta, "closing_qty");
+            var prodBatches = meta.GetValueOrDefault("batches_list") as List<Dictionary<string, object?>> ?? new();
+            var prodBatchesSummary = GetStr(meta, "batches_summary");
+
+            var events = rawEventsByProduct[pid]
+                .OrderBy(e => GetStr(e, "sort_date"), StringComparer.Ordinal)
+                .ThenBy(e => ToLong(e, "sort_order"))
+                .ThenBy(e => ToLong(e, "sort_id"))
+                .ToList();
+
+            var runningBalance = openingQty;
+            var productEntries = new List<Dictionary<string, object?>>();
+            int productSerialNo = 1;
+
+            var openBatchNo = prodBatches.Count == 1 ? GetStr(prodBatches[0], "batch_number") : (prodBatches.Count > 0 ? prodBatchesSummary : "—");
+            var openExpiry = prodBatches.Count == 1 ? GetNullableStr(prodBatches[0], "expiry_date") : null;
+
+            if (openingQty != 0 || events.Count > 0 || filterProductId.HasValue || closingQty != 0)
+            {
+                var openRow = new Dictionary<string, object?>
+                {
+                    ["row_key"] = $"OPEN-{pid}",
+                    ["serial_no"] = serialNo++,
+                    ["product_serial_no"] = productSerialNo++,
+                    ["is_opening_row"] = true,
+                    ["date"] = fromStr,
+                    ["event_type"] = "OPENING_BF",
+                    ["event_label"] = "OPENING BALANCE B/F",
+                    ["voucher_number"] = "B/F",
+                    ["reference_no"] = "Opening Stock in Vault",
+                    ["document_path"] = null,
+                    ["sale_invoice_id"] = null,
+                    ["product_id"] = pid,
+                    ["product_name"] = GetNullableStr(prod, "name"),
+                    ["product_code"] = GetNullableStr(prod, "product_code") ?? "-",
+                    ["formulation"] = GetNullableStr(prod, "formulation") ?? "-",
+                    ["brand_name"] = GetNullableStr(prod, "brand_name") ?? "-",
+                    ["pack_size"] = packSize,
+                    ["party_type"] = "OPENING",
+                    ["party_name"] = "Brought Forward Physical Balance",
+                    ["party_cnic_or_phone"] = null,
+                    ["party_address"] = GetStr(meta, "rack"),
+                    ["doctor_name"] = "—",
+                    ["doctor_pmdc"] = null,
+                    ["doctor_hospital"] = null,
+                    ["batches_list"] = prodBatches,
+                    ["batch_number"] = openBatchNo,
+                    ["expiry"] = openExpiry,
+                    ["qty_in"] = 0,
+                    ["qty_out"] = 0,
+                    ["running_balance"] = runningBalance,
+                    ["running_pack_breakdown"] = FormatNarcoticPackBreakdown(runningBalance, packSize),
+                    ["pharmacist_name"] = "Verified B/F",
+                    ["is_rx_compliant"] = true,
+                    ["remarks"] = "Opening Balance Brought Forward"
+                };
+                chronologicalRegister.Add(openRow);
+                productEntries.Add(openRow);
+            }
+
+            foreach (var ev in events)
+            {
+                var qIn = (int)ToLong(ev, "qty_in");
+                var qOut = (int)ToLong(ev, "qty_out");
+                runningBalance += qIn - qOut;
+                var evBatchNo = GetStr(ev, "batch_number");
+                var evExpiry = GetNullableStr(ev, "expiry");
+                if (evBatchNo != "-" && string.IsNullOrEmpty(evExpiry))
+                    batchExpiryLookup[pid].TryGetValue(evBatchNo, out evExpiry);
+
+                var entryRow = new Dictionary<string, object?>(ev)
+                {
+                    ["row_key"] = $"{GetStr(ev, "event_type")}-{pid}-{ToLong(ev, "sort_id")}",
+                    ["serial_no"] = serialNo++,
+                    ["product_serial_no"] = productSerialNo++,
+                    ["is_opening_row"] = false,
+                    ["product_id"] = pid,
+                    ["product_name"] = GetNullableStr(prod, "name"),
+                    ["product_code"] = GetNullableStr(prod, "product_code") ?? "-",
+                    ["formulation"] = GetNullableStr(prod, "formulation") ?? "-",
+                    ["brand_name"] = GetNullableStr(prod, "brand_name") ?? "-",
+                    ["pack_size"] = packSize,
+                    ["batch_number"] = evBatchNo,
+                    ["expiry"] = evExpiry,
+                    ["qty_in_breakdown"] = qIn > 0 ? FormatNarcoticPackBreakdown(qIn, packSize) : null,
+                    ["qty_out_breakdown"] = qOut > 0 ? FormatNarcoticPackBreakdown(qOut, packSize) : null,
+                    ["running_balance"] = runningBalance,
+                    ["running_pack_breakdown"] = FormatNarcoticPackBreakdown(runningBalance, packSize)
+                };
+                chronologicalRegister.Add(entryRow);
+                productEntries.Add(entryRow);
+            }
+
+            var adjQ = (int)ToLong(meta, "adjusted_qty");
+            var totalInForProd = (int)ToLong(meta, "purchased_qty") + (int)ToLong(meta, "sale_return_qty") + Math.Max(0, adjQ);
+            var totalOutForProd = (int)ToLong(meta, "dispensed_qty") + (int)ToLong(meta, "purchase_return_qty") + (int)ToLong(meta, "disposed_qty") + Math.Abs(Math.Min(0, adjQ));
+
+            productRegisters.Add(new Dictionary<string, object?>
+            {
+                ["product_section_no"] = productSectionNo++,
+                ["product_id"] = pid,
+                ["product_code"] = GetNullableStr(prod, "product_code") ?? "-",
+                ["product_name"] = GetNullableStr(prod, "name"),
+                ["formulation"] = GetNullableStr(prod, "formulation") ?? "-",
+                ["brand_name"] = GetNullableStr(prod, "brand_name") ?? "-",
+                ["supplier_name"] = GetNullableStr(prod, "supplier_name") ?? "-",
+                ["rack"] = GetStr(meta, "rack"),
+                ["pack_size"] = packSize,
+                ["batches_list"] = prodBatches,
+                ["batches_summary"] = prodBatchesSummary,
+                ["opening_qty"] = openingQty,
+                ["opening_pack_breakdown"] = FormatNarcoticPackBreakdown(openingQty, packSize),
+                ["purchased_qty"] = (int)ToLong(meta, "purchased_qty"),
+                ["sale_return_qty"] = (int)ToLong(meta, "sale_return_qty"),
+                ["dispensed_qty"] = (int)ToLong(meta, "dispensed_qty"),
+                ["purchase_return_qty"] = (int)ToLong(meta, "purchase_return_qty"),
+                ["disposed_qty"] = (int)ToLong(meta, "disposed_qty"),
+                ["adjusted_qty"] = adjQ,
+                ["total_in_qty"] = totalInForProd,
+                ["total_out_qty"] = totalOutForProd,
+                ["closing_qty"] = runningBalance,
+                ["closing_pack_breakdown"] = FormatNarcoticPackBreakdown(runningBalance, packSize),
+                ["entries_count"] = productEntries.Count,
+                ["entries"] = productEntries
+            });
+        }
+
+        // 7. Active Batch Inventory
+        var batchInventory = allBatches
+            .Where(b => ToLong(b, "quantity") > 0)
+            .Select(b =>
+            {
+                var packSize = Math.Max(1, (int)ToLong(b, "pack_size", 1));
+                var expStr = FormatDateOnly(GetNullableStr(b, "expiry_date"));
+                int? daysRem = DateTime.TryParse(expStr, out var expDt) ? (int?)(expDt.Date - todayDt).Days : null;
+                var status = daysRem.HasValue
+                    ? (daysRem.Value < 0 ? "expired" : daysRem.Value <= 90 ? "critical" : daysRem.Value <= 180 ? "near_expiry" : "healthy")
+                    : "healthy";
+                var qty = (int)ToLong(b, "quantity");
+                var rack = !string.IsNullOrWhiteSpace(GetNullableStr(b, "rack"))
+                    ? GetStr(b, "rack")
+                    : (!string.IsNullOrWhiteSpace(GetNullableStr(b, "product_rack")) ? GetStr(b, "product_rack") : "Double-Lock Vault");
+
+                return new Dictionary<string, object?>
+                {
+                    ["id"] = ToLong(b, "id"),
+                    ["product_id"] = ToLong(b, "product_id"),
+                    ["product_name"] = GetNullableStr(b, "product_name") ?? "-",
+                    ["product_code"] = GetNullableStr(b, "product_code") ?? "-",
+                    ["formulation"] = GetNullableStr(b, "formulation") ?? "-",
+                    ["brand_name"] = GetNullableStr(b, "brand_name") ?? "-",
+                    ["pack_size"] = packSize,
+                    ["batch_number"] = !string.IsNullOrWhiteSpace(GetNullableStr(b, "batch_number")) ? GetStr(b, "batch_number") : "-",
+                    ["expiry_date"] = expStr,
+                    ["days_remaining"] = daysRem,
+                    ["expiry_status"] = status,
+                    ["quantity"] = qty,
+                    ["pack_breakdown"] = FormatNarcoticPackBreakdown(qty, packSize),
+                    ["rack"] = rack
+                };
+            })
+            .OrderBy(b => GetStr(b, "product_name"), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(b => GetStr(b, "expiry_date"), StringComparer.Ordinal)
+            .ToList();
+
+        // 8. Summary KPIs
+        var totalDispRows = dispensingRegister.Count;
+        var compliantRows = dispensingRegister.Count(r => r.GetValueOrDefault("is_rx_compliant") is true);
+        var fullCnsaRows = dispensingRegister.Count(r => r.GetValueOrDefault("has_full_cnsa_particulars") is true);
+        var missingRxRows = totalDispRows - compliantRows;
+        var complianceRate = totalDispRows > 0 ? Math.Round((compliantRows / (double)totalDispRows) * 100.0, 1) : 100.0;
+        var uniqueDispVouchers = disposalItems.Select(d => ToLong(d, "disposal_id")).Where(x => x > 0).Distinct().Count();
+        var witnessedDispVouchers = disposalItems.Where(d => !string.IsNullOrWhiteSpace(GetNullableStr(d, "witness_name"))).Select(d => ToLong(d, "disposal_id")).Where(x => x > 0).Distinct().Count();
 
         return new Dictionary<string, object?>
         {
@@ -2910,30 +4351,30 @@ public class ReportsController : ApiControllerBase
             ["summary"] = new Dictionary<string, object?>
             {
                 ["total_narcotic_products"] = targetProducts.Count,
-                ["active_batches_count"] = 0,
-                ["opening_units_total"] = totalOnHand,
-                ["total_units_on_hand"] = totalOnHand,
-                ["units_purchased"] = 0,
-                ["purchase_invoices_count"] = 0,
-                ["units_dispensed"] = 0,
-                ["dispensing_invoices_count"] = 0,
-                ["compliant_sales_count"] = 0,
-                ["full_cnsa_compliant_count"] = 0,
-                ["missing_rx_sales_count"] = 0,
-                ["compliance_rate"] = 100.0,
-                ["units_returned_by_customers"] = 0,
-                ["units_returned_to_suppliers"] = 0,
-                ["units_disposed"] = 0,
-                ["disposal_vouchers_count"] = 0,
-                ["witnessed_disposals_count"] = 0
+                ["active_batches_count"] = batchInventory.Count,
+                ["opening_units_total"] = stockLedger.Sum(s => (int)ToLong(s, "opening_qty")),
+                ["total_units_on_hand"] = stockLedger.Sum(s => (int)ToLong(s, "closing_qty")),
+                ["units_purchased"] = procurementRegister.Sum(p => (int)ToLong(p, "total_units_in")),
+                ["purchase_invoices_count"] = procurementRegister.Select(p => ToLong(p, "purchase_invoice_id")).Where(x => x > 0).Distinct().Count(),
+                ["units_dispensed"] = dispensingRegister.Sum(d => (int)ToLong(d, "total_units_out")),
+                ["dispensing_invoices_count"] = dispensingRegister.Select(d => ToLong(d, "sale_invoice_id")).Where(x => x > 0).Distinct().Count(),
+                ["compliant_sales_count"] = compliantRows,
+                ["full_cnsa_compliant_count"] = fullCnsaRows,
+                ["missing_rx_sales_count"] = missingRxRows,
+                ["compliance_rate"] = complianceRate,
+                ["units_returned_by_customers"] = saleReturnItems.Sum(s => (int)ToLong(s, "unit_return_quantity")),
+                ["units_returned_to_suppliers"] = purchaseReturnItems.Sum(p => (int)ToLong(p, "return_unit_quantity")),
+                ["units_disposed"] = disposalItems.Sum(d => (int)ToLong(d, "dispose_qty")),
+                ["disposal_vouchers_count"] = uniqueDispVouchers,
+                ["witnessed_disposals_count"] = witnessedDispVouchers
             },
-            ["chronological_register"] = Array.Empty<object>(),
-            ["product_registers"] = Array.Empty<object>(),
+            ["chronological_register"] = chronologicalRegister,
+            ["product_registers"] = productRegisters,
             ["stock_ledger"] = stockLedger,
-            ["dispensing_register"] = Array.Empty<object>(),
-            ["procurement_register"] = Array.Empty<object>(),
-            ["destruction_and_returns"] = Array.Empty<object>(),
-            ["batch_inventory"] = Array.Empty<object>(),
+            ["dispensing_register"] = dispensingRegister,
+            ["procurement_register"] = procurementRegister,
+            ["destruction_and_returns"] = destructionAndReturns,
+            ["batch_inventory"] = batchInventory,
             ["narcotic_products"] = narcoticOptions
         };
     }
@@ -2959,134 +4400,73 @@ public class ReportsController : ApiControllerBase
             Request.Query["to"].FirstOrDefault(),
             true);
 
-        var accounting = new Karobar.Services.AccountingService(Db);
+        var accounting = new AccountingService(Db);
         var tb = await accounting.GetTrialBalanceAsync(from, to);
         var bs = await accounting.GetBalanceSheetAsync(to);
         var cf = await accounting.GetCashFlowStatementAsync(from, to);
 
-        var lines = new List<string>
-        {
-            $"Period: {from} to {to}",
-            "",
-            "--- TRIAL BALANCE ---",
-            $"Total Debit: {ToDouble(tb, "total_debit"):N2} | Total Credit: {ToDouble(tb, "total_credit"):N2} | Balanced: {(tb.GetValueOrDefault("is_balanced") is true ? "YES" : "NO")}"
-        };
-
+        var tableRows = new List<List<string>>();
         if (tb.GetValueOrDefault("rows") is List<Dictionary<string, object?>> tbRows)
         {
-            foreach (var r in tbRows.Take(20))
+            foreach (var r in tbRows)
             {
-                var code = r.GetValueOrDefault("code")?.ToString() ?? "";
-                var name = r.GetValueOrDefault("name")?.ToString() ?? "";
                 var dr = ToDouble(r, "debit");
                 var cr = ToDouble(r, "credit");
                 if (Math.Abs(dr) < 0.01 && Math.Abs(cr) < 0.01) continue;
-                lines.Add($"  {code} {name}: Dr {dr:N2} | Cr {cr:N2}");
+                tableRows.Add(["Trial Balance", GetStr(r, "code"), GetStr(r, "name"), $"{dr:N2}", $"{cr:N2}"]);
             }
         }
-
-        lines.Add("");
-        lines.Add($"--- BALANCE SHEET (As of {to}) ---");
-        lines.Add($"Total Assets: {ToDouble(bs, "total_assets"):N2} | Total Liabilities: {ToDouble(bs, "total_liabilities"):N2}");
-        lines.Add($"Period Net Income: {ToDouble(bs, "period_net_income"):N2} | Total Equity: {ToDouble(bs, "total_equity"):N2}");
-        lines.Add($"Total Liabilities & Equity: {ToDouble(bs, "total_liabilities_and_equity"):N2} | Balanced: {(bs.GetValueOrDefault("is_balanced") is true ? "YES" : "NO")}");
+        tableRows.Add(["Balance Sheet", "ASSETS", "Total Assets", $"{ToDouble(bs, "total_assets"):N2}", "—"]);
+        tableRows.Add(["Balance Sheet", "LIAB", "Total Liabilities", "—", $"{ToDouble(bs, "total_liabilities"):N2}"]);
+        tableRows.Add(["Balance Sheet", "EQUITY", "Period Net Income", "—", $"{ToDouble(bs, "period_net_income"):N2}"]);
+        tableRows.Add(["Balance Sheet", "EQUITY", "Total Equity", "—", $"{ToDouble(bs, "total_equity"):N2}"]);
 
         var op = cf.GetValueOrDefault("operating") as Dictionary<string, object?>;
         var inv = cf.GetValueOrDefault("investing") as Dictionary<string, object?>;
         var fin = cf.GetValueOrDefault("financing") as Dictionary<string, object?>;
-        lines.Add("");
-        lines.Add("--- CASH FLOW STATEMENT ---");
-        lines.Add($"Net Operating Cash Flow: {(op != null ? ToDouble(op, "net_operating_cash_flow") : 0):N2}");
-        lines.Add($"Net Investing Cash Flow: {(inv != null ? ToDouble(inv, "net_investing_cash_flow") : 0):N2}");
-        lines.Add($"Net Financing Cash Flow: {(fin != null ? ToDouble(fin, "net_financing_cash_flow") : 0):N2}");
-        lines.Add($"Net Cash Change: {ToDouble(cf, "net_cash_change"):N2} | Closing Cash & Bank: {ToDouble(cf, "closing_cash_and_bank"):N2}");
+        tableRows.Add(["Cash Flow", "CF-OP", "Net Operating Cash Flow", $"{(op != null ? ToDouble(op, "net_operating_cash_flow") : 0):N2}", "—"]);
+        tableRows.Add(["Cash Flow", "CF-INV", "Net Investing Cash Flow", $"{(inv != null ? ToDouble(inv, "net_investing_cash_flow") : 0):N2}", "—"]);
+        tableRows.Add(["Cash Flow", "CF-FIN", "Net Financing Cash Flow", $"{(fin != null ? ToDouble(fin, "net_financing_cash_flow") : 0):N2}", "—"]);
+        tableRows.Add(["Cash Flow", "CF-END", "Closing Cash & Bank", $"{ToDouble(cf, "closing_cash_and_bank"):N2}", "—"]);
 
-        var pdf = BuildReportPdf("Financial Statements (Trial Balance, Balance Sheet & Cash Flow)", lines);
+        var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
+        {
+            ReportType = "financial-statements",
+            ReportTitle = "Financial Statements (Trial Balance, Balance Sheet & Cash Flow)",
+            FromDate = from,
+            ToDate = to,
+            Setting = await LoadPrintSettingAsync(),
+            SummaryCards =
+            [
+                new("Total Debit", $"Rs. {ToDouble(tb, "total_debit"):N2}"),
+                new("Total Credit", $"Rs. {ToDouble(tb, "total_credit"):N2}"),
+                new("Total Assets", $"Rs. {ToDouble(bs, "total_assets"):N2}"),
+                new("Total Liabilities", $"Rs. {ToDouble(bs, "total_liabilities"):N2}"),
+                new("Total Equity", $"Rs. {ToDouble(bs, "total_equity"):N2}"),
+                new("Closing Cash", $"Rs. {ToDouble(cf, "closing_cash_and_bank"):N2}")
+            ],
+            Columns =
+            [
+                new() { Header = "Statement", RelativeWidth = 1.4f },
+                new() { Header = "Code", RelativeWidth = 1.0f },
+                new() { Header = "Account / Line Item", RelativeWidth = 3.0f },
+                new() { Header = "Debit / Inflow", RelativeWidth = 1.4f, AlignRight = true },
+                new() { Header = "Credit / Outflow", RelativeWidth = 1.4f, AlignRight = true }
+            ],
+            Rows = tableRows,
+            FooterTotals =
+            [
+                new("Trial Balance Balanced", tb.GetValueOrDefault("is_balanced") is true ? "YES" : "NO"),
+                new("Balance Sheet Balanced", bs.GetValueOrDefault("is_balanced") is true ? "YES" : "NO"),
+                new("Closing Cash & Bank", $"Rs. {ToDouble(cf, "closing_cash_and_bank"):N2}", isGrandTotal: true)
+            ]
+        });
         return DeliverPdf(pdf, $"financial-statements-{from}-to-{to}.pdf");
     }
 
     // =========================================================================
-    // Minimal PDF Builder & Helpers
+    // Helpers
     // =========================================================================
-
-    private static byte[] BuildReportPdf(string title, IEnumerable<string> lines)
-    {
-        static string EscapePdfText(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            var sb = new StringBuilder(s.Length);
-            foreach (var ch in s)
-            {
-                if (ch == '(' || ch == ')' || ch == '\\')
-                {
-                    sb.Append('\\').Append(ch);
-                }
-                else if (ch >= 32 && ch <= 126)
-                {
-                    sb.Append(ch);
-                }
-                else
-                {
-                    sb.Append(' ');
-                }
-            }
-            return sb.ToString();
-        }
-
-        var contentSb = new StringBuilder();
-        contentSb.AppendLine("BT");
-        contentSb.AppendLine("/F1 14 Tf");
-        contentSb.AppendLine("40 550 Td");
-        contentSb.AppendLine($"({EscapePdfText(title)}) Tj");
-        contentSb.AppendLine("/F1 10 Tf");
-
-        foreach (var line in lines.Take(30))
-        {
-            contentSb.AppendLine("0 -16 Td");
-            contentSb.AppendLine($"({EscapePdfText(line)}) Tj");
-        }
-        contentSb.AppendLine("ET");
-
-        var streamBytes = Encoding.ASCII.GetBytes(contentSb.ToString());
-
-        using var ms = new MemoryStream();
-        void WriteAscii(string str)
-        {
-            var b = Encoding.ASCII.GetBytes(str);
-            ms.Write(b, 0, b.Length);
-        }
-
-        WriteAscii("%PDF-1.4\n");
-        var offsets = new List<long>();
-
-        offsets.Add(ms.Position);
-        WriteAscii("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-        offsets.Add(ms.Position);
-        WriteAscii("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-
-        offsets.Add(ms.Position);
-        WriteAscii("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n");
-
-        offsets.Add(ms.Position);
-        WriteAscii("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
-
-        offsets.Add(ms.Position);
-        WriteAscii($"5 0 obj\n<< /Length {streamBytes.Length} >>\nstream\n");
-        ms.Write(streamBytes, 0, streamBytes.Length);
-        WriteAscii("\nendstream\nendobj\n");
-
-        var xrefOffset = ms.Position;
-        WriteAscii($"xref\n0 {offsets.Count + 1}\n");
-        WriteAscii("0000000000 65535 f \n");
-        foreach (var off in offsets)
-        {
-            WriteAscii($"{off:D10} 00000 n \n");
-        }
-
-        WriteAscii($"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF\n");
-        return ms.ToArray();
-    }
 
     private static string? FormatDateOnly(string? raw)
     {

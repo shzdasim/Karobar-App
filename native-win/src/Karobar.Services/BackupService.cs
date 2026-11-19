@@ -374,6 +374,71 @@ public class BackupService
             throw new InvalidOperationException("Backup file not found on disk.");
         }
 
+        // Pre-restore safety snapshot
+        EnsureBackupDirectoryExists();
+        if (File.Exists(_db.SqlitePath))
+        {
+            try
+            {
+                var snapPath = Path.Combine(_backupPath, $"pre-restore-safety-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
+                File.Copy(_db.SqlitePath, snapPath, overwrite: true);
+            }
+            catch { }
+        }
+
+        var lower = path.ToLowerInvariant();
+        if (lower.EndsWith(".json"))
+        {
+            var json = await File.ReadAllTextAsync(path);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("settings", out var sEl) && sEl.ValueKind == JsonValueKind.Object && await _db.HasTableAsync("settings"))
+            {
+                var cur = await _db.QuerySingleOrDefaultAsync("SELECT id FROM settings ORDER BY id ASC LIMIT 1");
+                if (cur != null)
+                {
+                    var upd = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var p in sEl.EnumerateObject())
+                    {
+                        if (p.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) continue;
+                        upd[p.Name] = KarobarDb.PrepareDbValue(p.Value);
+                    }
+                    if (upd.Count > 0) await _db.UpdateAsync("settings", Convert.ToInt64(cur["id"]), upd);
+                }
+            }
+        }
+        else if (lower.EndsWith(".sqlite") || lower.EndsWith(".db"))
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            File.Copy(path, _db.SqlitePath, overwrite: true);
+            try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
+            try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+            KarobarDb.FlushSchemaCache();
+        }
+        else if (lower.EndsWith(".zip"))
+        {
+            using var archive = ZipFile.OpenRead(path);
+            var sqliteEntry = archive.Entries.FirstOrDefault(e =>
+                e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+                e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase));
+            if (sqliteEntry != null)
+            {
+                var tmpExtract = Path.Combine(Path.GetTempPath(), $"karobar_restore_{Guid.NewGuid():N}.sqlite");
+                try
+                {
+                    sqliteEntry.ExtractToFile(tmpExtract, overwrite: true);
+                    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                    File.Copy(tmpExtract, _db.SqlitePath, overwrite: true);
+                    try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
+                    try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+                    KarobarDb.FlushSchemaCache();
+                }
+                finally
+                {
+                    try { if (File.Exists(tmpExtract)) File.Delete(tmpExtract); } catch { }
+                }
+            }
+        }
+
         await _db.UpdateAsync("backup_logs", id, new Dictionary<string, object?>
         {
             ["status"] = "restored"
@@ -410,12 +475,11 @@ public class BackupService
         var origName = file.FileName;
         var lower = origName.ToLowerInvariant();
         var type = lower.EndsWith(".json") ? "settings" : (lower.EndsWith(".zip") ? "full" : "database");
-        var ext = type switch
-        {
-            "full" => "zip",
-            "settings" => "json",
-            _ => "sql.gz"
-        };
+        var ext = lower.EndsWith(".sql.gz") ? "sql.gz"
+            : lower.EndsWith(".sqlite") ? "sqlite"
+            : lower.EndsWith(".sql") ? "sql"
+            : lower.EndsWith(".json") ? "json"
+            : "zip";
 
         var filename = await GenerateUniqueBackupFilenameAsync(type, "uploaded");
         var targetPath = Path.Combine(_backupPath, $"{filename}.{ext}");
@@ -525,6 +589,23 @@ public class BackupService
         {
             if (string.IsNullOrWhiteSpace(createSql)) continue;
             sb.AppendLine($"{createSql};");
+
+            var escaped = name.Replace("\"", "\"\"");
+            var rows = (await conn.QueryAsync($"SELECT * FROM \"{escaped}\" LIMIT 50000")).ToList();
+            foreach (var r in rows)
+            {
+                if (r is not IDictionary<string, object?> dict || dict.Count == 0) continue;
+                var cols = string.Join(", ", dict.Keys.Select(k => $"\"{k.Replace("\"", "\"\"")}\""));
+                var vals = string.Join(", ", dict.Values.Select(v => v switch
+                {
+                    null => "NULL",
+                    bool b => b ? "1" : "0",
+                    int or long or double or float or decimal => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) ?? "0",
+                    byte[] bytes => $"X'{Convert.ToHexString(bytes)}'",
+                    _ => $"'{(v.ToString() ?? "").Replace("'", "''")}'"
+                }));
+                sb.AppendLine($"INSERT INTO \"{escaped}\" ({cols}) VALUES ({vals});");
+            }
         }
 
         sb.AppendLine("PRAGMA foreign_keys = ON;");

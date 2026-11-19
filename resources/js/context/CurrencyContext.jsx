@@ -63,6 +63,10 @@ export function CurrencyProvider({ children }) {
   const mountedRef = useRef(true);
 
   const fetchCurrency = useCallback(async () => {
+    if (!localStorage.getItem("token")) {
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
     try {
       // Shares the in-flight deduplicated /api/sale-system request with SaleSystemProvider
       const { data } = await axios.get("/api/sale-system");

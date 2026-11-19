@@ -224,6 +224,8 @@ export default function ProductComprehensiveReport() {
         return <span className="report-type report-status-warning">P.RETURN</span>;
       case "sale_return":
         return <span className="report-type report-badge">S.RETURN</span>;
+      case "stock_adjustment":
+        return <span className="report-type report-badge">ADJUSTMENT</span>;
       default:
         return null;
     }

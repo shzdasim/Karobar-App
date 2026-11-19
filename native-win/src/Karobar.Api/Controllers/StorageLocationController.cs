@@ -2,25 +2,28 @@ using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Karobar.Api.Controllers;
 
 [Route("api/storage-locations")]
+[Authorize]
 public class StorageLocationController : ApiControllerBase
 {
     private static readonly string[] ViewPermissions =
     [
-        "storage-location.view", "product.view", "product.create", "product.update",
+        "storage-location.manage", "storage-location.view", "product.view", "product.create", "product.update",
         "batch-expiry.view", "batch-expiry.update",
         "purchase-invoice.view", "purchase-invoice.create",
         "sale-invoice.view", "sale-invoice.create",
-        "stocktake.view", "stock-adjustment.view", "stock-adjustment.create"
+        "stocktake.view", "stock-adjustment.view", "stock-adjustment.create",
+        "report.current-stock.view", "report.near-expiry-product.view"
     ];
 
     private static readonly string[] ManagePermissions =
     [
-        "product.create", "product.update", "batch-expiry.update", "stock-adjustment.create"
+        "storage-location.manage", "product.create", "product.update", "batch-expiry.update", "stock-adjustment.create"
     ];
 
     public StorageLocationController(KarobarDb db) : base(db)

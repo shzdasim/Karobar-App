@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -6,11 +8,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Api.Controllers;
 
@@ -84,29 +88,61 @@ public class TerminalController : ApiControllerBase
                 LEFT JOIN users u ON u.id = t.current_user_id
                 ORDER BY t.is_authorized DESC, t.last_seen_at DESC, t.id ASC");
 
+            var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+            var hasOpenDrawers = await Db.HasTableAsync("cash_drawer_sessions");
+            var hasTermColOnDrawer = hasOpenDrawers && await Db.HasColumnAsync("cash_drawer_sessions", "terminal_id");
+            var hasSaleInvoices = await Db.HasTableAsync("sale_invoices");
+            var hasTermColOnSales = hasSaleInvoices && await Db.HasColumnAsync("sale_invoices", "terminal_id");
+
             foreach (var t in rows)
             {
+                var termId = Convert.ToInt64(t["id"]);
                 var lastSeenStr = t.GetValueOrDefault("last_seen_at")?.ToString();
                 bool isOnline = false;
-                if (DateTimeOffset.TryParse(lastSeenStr, out var lsDt))
+                if (!string.IsNullOrWhiteSpace(lastSeenStr) &&
+                    DateTimeOffset.TryParse(lastSeenStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var lsDt))
                 {
                     isOnline = (DateTimeOffset.UtcNow - lsDt).TotalSeconds <= 45;
                 }
 
                 Dictionary<string, object?>? currentUser = null;
-                if (t.GetValueOrDefault("current_user_id") != null)
+                long? curUid = null;
+                if (t.GetValueOrDefault("current_user_id") != null && long.TryParse(t.GetValueOrDefault("current_user_id")?.ToString(), out var parsedUid))
                 {
+                    curUid = parsedUid;
                     currentUser = new Dictionary<string, object?>
                     {
-                        ["id"] = t.GetValueOrDefault("current_user_id"),
+                        ["id"] = parsedUid,
                         ["name"] = t.GetValueOrDefault("current_user_name"),
                         ["email"] = t.GetValueOrDefault("current_user_email")
                     };
                 }
 
+                Dictionary<string, object?>? openDrawer = null;
+                if (hasOpenDrawers)
+                {
+                    openDrawer = hasTermColOnDrawer
+                        ? await Db.QuerySingleOrDefaultAsync("SELECT id, opening_balance, closing_balance_expected AS expected_balance, opened_at FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @termId ORDER BY id DESC LIMIT 1", new { termId })
+                        : (curUid.HasValue ? await Db.QuerySingleOrDefaultAsync("SELECT id, opening_balance, closing_balance_expected AS expected_balance, opened_at FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @curUid ORDER BY id DESC LIMIT 1", new { curUid }) : null);
+                }
+
+                int todayInvoicesCount = 0;
+                decimal todaySalesTotal = 0.0m;
+                if (hasSaleInvoices)
+                {
+                    var stat = hasTermColOnSales
+                        ? await Db.QuerySingleOrDefaultAsync("SELECT COUNT(1) AS cnt, COALESCE(SUM(total), 0) AS tot FROM sale_invoices WHERE DATE(date) = @todayStr AND terminal_id = @termId AND (status IS NULL OR status != 'reversed')", new { todayStr, termId })
+                        : (curUid.HasValue ? await Db.QuerySingleOrDefaultAsync("SELECT COUNT(1) AS cnt, COALESCE(SUM(total), 0) AS tot FROM sale_invoices WHERE DATE(date) = @todayStr AND user_id = @curUid AND (status IS NULL OR status != 'reversed')", new { todayStr, curUid }) : null);
+                    if (stat != null)
+                    {
+                        todayInvoicesCount = Convert.ToInt32(stat.GetValueOrDefault("cnt") ?? 0);
+                        todaySalesTotal = AccountService.ToDecimal(stat.GetValueOrDefault("tot"));
+                    }
+                }
+
                 terminals.Add(new Dictionary<string, object?>
                 {
-                    ["id"] = Convert.ToInt64(t["id"]),
+                    ["id"] = termId,
                     ["terminal_uid"] = t.GetValueOrDefault("terminal_uid"),
                     ["name"] = t.GetValueOrDefault("name"),
                     ["hostname"] = t.GetValueOrDefault("hostname"),
@@ -119,9 +155,9 @@ public class TerminalController : ApiControllerBase
                     ["last_seen_at"] = lastSeenStr,
                     ["last_seen_human"] = isOnline ? "Online now" : (lastSeenStr ?? "Never"),
                     ["current_user"] = currentUser,
-                    ["open_drawer"] = null,
-                    ["today_invoices_count"] = 0,
-                    ["today_sales_total"] = 0.0m
+                    ["open_drawer"] = openDrawer,
+                    ["today_invoices_count"] = todayInvoicesCount,
+                    ["today_sales_total"] = Math.Round(todaySalesTotal, 2)
                 });
             }
         }
@@ -221,7 +257,7 @@ public class TerminalController : ApiControllerBase
     [Authorize]
     public async Task<IActionResult> ExportDatabase([FromQuery] string? format = null)
     {
-        if (!await CanAsync("backup.create", "backup.download", "settings.update"))
+        if (!await CanAsync("backup.create", "backup.view", "settings.update"))
         {
             return Forbidden("Only administrators can export the database.");
         }
@@ -259,18 +295,150 @@ public class TerminalController : ApiControllerBase
             return Forbidden("Only administrators can import a database.");
         }
 
-        SyncPulseService.Bump("stock", "drafts", "drawer", "settings");
-        await Task.CompletedTask;
-
-        return Ok(new
+        if (!Request.HasFormContentType)
         {
-            ok = true,
-            type = "sqlite_topological_import",
-            message = "Database imported successfully! Inserted 0 rows, Updated 0 rows.",
-            total_inserted = 0,
-            total_updated = 0,
-            total_skipped = 0
-        });
+            return Unprocessable("A multipart form upload with a database file is required.");
+        }
+
+        var form = await Request.ReadFormAsync();
+        var file = form.Files.GetFile("file");
+        if (file == null || file.Length == 0)
+        {
+            return Unprocessable("Please select a valid .sqlite or .zip database file to import.");
+        }
+
+        var mode = (form["mode"].FirstOrDefault() ?? "merge").Trim().ToLowerInvariant();
+        var conflictPolicy = (form["conflict_policy"].FirstOrDefault() ?? "upsert").Trim().ToLowerInvariant();
+        var includeSettings = string.Equals(form["include_settings"].FirstOrDefault(), "1", StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(form["include_settings"].FirstOrDefault(), "true", StringComparison.OrdinalIgnoreCase);
+
+        var tempDir = Path.Combine(Path.GetTempPath(), $"karobar_qimp_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var uploadedPath = Path.Combine(tempDir, Path.GetFileName(file.FileName));
+            await using (var fs = new FileStream(uploadedPath, FileMode.Create, FileAccess.Write))
+            {
+                await file.CopyToAsync(fs);
+            }
+
+            string sqliteSourcePath = uploadedPath;
+            if (uploadedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                using var zip = ZipFile.OpenRead(uploadedPath);
+                var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase));
+                if (entry == null) return Unprocessable("No .sqlite database file found inside the uploaded ZIP archive.");
+                sqliteSourcePath = Path.Combine(tempDir, "extracted.sqlite");
+                entry.ExtractToFile(sqliteSourcePath, overwrite: true);
+            }
+
+            // Validate SQLite header
+            var header = new byte[16];
+            await using (var hfs = new FileStream(sqliteSourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                var read = await hfs.ReadAsync(header, 0, 16);
+                if (read < 15 || !Encoding.ASCII.GetString(header, 0, 15).StartsWith("SQLite format 3", StringComparison.Ordinal))
+                    return Unprocessable("Uploaded file is not a valid SQLite 3 database.");
+            }
+
+            // Pre-import safety backup
+            if (System.IO.File.Exists(Db.SqlitePath))
+            {
+                try
+                {
+                    var bDir = Db.StoragePath("app/backups");
+                    Directory.CreateDirectory(bDir);
+                    System.IO.File.Copy(Db.SqlitePath, Path.Combine(bDir, $"pre-quick-import-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite"), overwrite: true);
+                }
+                catch { }
+            }
+
+            var protectedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "users", "licenses", "roles", "permissions", "model_has_roles", "model_has_permissions",
+                "role_has_permissions", "sessions", "personal_access_tokens", "password_reset_tokens",
+                "migrations", "cache", "cache_locks", "jobs", "job_batches", "failed_jobs", "backup_logs", "backup_schedules"
+            };
+            if (!includeSettings)
+            {
+                protectedTables.Add("settings");
+                protectedTables.Add("theme_settings");
+            }
+
+            var srcConnStr = new SqliteConnectionStringBuilder { DataSource = sqliteSourcePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
+            await using var srcConn = new SqliteConnection(srcConnStr);
+            await srcConn.OpenAsync();
+            var srcTables = (await srcConn.QueryAsync<string>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).ToList();
+
+            int totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
+            var isReplace = mode == "replace";
+            var useReplaceVerb = isReplace || conflictPolicy == "upsert";
+
+            await using var dstConn = await Db.OpenConnectionAsync();
+            await dstConn.ExecuteAsync("PRAGMA foreign_keys = OFF;");
+            try
+            {
+                await using var tx = await dstConn.BeginTransactionAsync();
+                foreach (var tbl in srcTables)
+                {
+                    if (protectedTables.Contains(tbl) || !await Db.HasTableAsync(tbl)) continue;
+                    var escaped = tbl.Replace("\"", "\"\"");
+                    var dstCols = (await dstConn.QueryAsync<dynamic>($"PRAGMA table_info(\"{escaped}\");", transaction: tx))
+                        .Select(c => (string)c.name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    if (isReplace)
+                    {
+                        await dstConn.ExecuteAsync($"DELETE FROM \"{escaped}\";", transaction: tx);
+                    }
+
+                    var rows = (await srcConn.QueryAsync($"SELECT * FROM \"{escaped}\";")).ToList();
+                    foreach (var r in rows)
+                    {
+                        if (r is not IDictionary<string, object?> dict) continue;
+                        var filtered = dict.Where(kv => dstCols.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => KarobarDb.PrepareDbValue(kv.Value));
+                        if (filtered.Count == 0) { totalSkipped++; continue; }
+
+                        var cols = filtered.Keys.ToList();
+                        var colSql = string.Join(", ", cols.Select(c => $"\"{c.Replace("\"", "\"\"")}\""));
+                        var valSql = string.Join(", ", cols.Select((_, i) => $"@p{i}"));
+                        var dp = new DynamicParameters();
+                        for (int i = 0; i < cols.Count; i++) dp.Add($"p{i}", filtered[cols[i]]);
+
+                        var verb = useReplaceVerb ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
+                        try
+                        {
+                            var aff = await dstConn.ExecuteAsync($"{verb} INTO \"{escaped}\" ({colSql}) VALUES ({valSql});", dp, tx);
+                            if (aff > 0) totalInserted++;
+                            else totalSkipped++;
+                        }
+                        catch
+                        {
+                            totalSkipped++;
+                        }
+                    }
+                }
+                await tx.CommitAsync();
+            }
+            finally
+            {
+                await dstConn.ExecuteAsync("PRAGMA foreign_keys = ON;");
+            }
+
+            SyncPulseService.Bump("stock", "drafts", "drawer", "settings");
+            return Ok(new
+            {
+                ok = true,
+                type = "sqlite_topological_import",
+                message = $"Database imported successfully! Inserted/Upserted {totalInserted} rows, Skipped {totalSkipped} rows.",
+                total_inserted = totalInserted,
+                total_updated = totalUpdated,
+                total_skipped = totalSkipped
+            });
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
     }
 
     [HttpGet("server/diagnostics")]

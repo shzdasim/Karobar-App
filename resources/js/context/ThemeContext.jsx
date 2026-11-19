@@ -430,6 +430,10 @@ export function ThemeProvider({ children }) {
 
   // Fetch active theme from server
   const fetchTheme = useCallback(async () => {
+    if (!localStorage.getItem('token')) {
+      setLoading(false);
+      return;
+    }
     try {
       const { data } = await axios.get('/api/theme-settings/active');
       

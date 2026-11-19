@@ -24,8 +24,10 @@ public class SystemUpdateController : ApiControllerBase
 
     [HttpGet("check-update")]
     [AllowAnonymous]
-    public async Task<IActionResult> CheckUpdate([FromQuery] bool force = false)
+    public async Task<IActionResult> CheckUpdate([FromQuery] string? force = null)
     {
+        var isForce = !string.IsNullOrWhiteSpace(force) &&
+            (force.Trim() == "1" || force.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || force.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase));
         var bridge = ResolveDesktopBridge();
         if (bridge != null)
         {
@@ -34,7 +36,7 @@ public class SystemUpdateController : ApiControllerBase
                 var method = bridge.GetType().GetMethod("CheckForUpdatesAsync");
                 if (method != null)
                 {
-                    var taskObj = method.Invoke(bridge, new object?[] { null, HttpContext.RequestAborted });
+                    var taskObj = method.Invoke(bridge, new object?[] { isForce ? "force" : null, HttpContext.RequestAborted });
                     if (taskObj is Task<object> resTask)
                     {
                         var result = await resTask;

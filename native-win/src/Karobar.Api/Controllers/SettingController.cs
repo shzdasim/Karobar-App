@@ -56,12 +56,12 @@ public class SettingController : ApiControllerBase
             ["currency_code"] = setting?.GetValueOrDefault("currency_code") ?? "PKR",
             ["currency_symbol"] = setting?.GetValueOrDefault("currency_symbol") ?? "Rs.",
             ["currency_position"] = setting?.GetValueOrDefault("currency_position") ?? "before",
-            ["currency_decimal_places"] = Convert.ToInt32(setting?.GetValueOrDefault("currency_decimal_places") ?? 2),
+            ["currency_decimal_places"] = SafeInt(setting?.GetValueOrDefault("currency_decimal_places"), 2),
             ["is_setup_completed"] = isSetupCompleted,
             ["setup_completed_at"] = setting?.GetValueOrDefault("setup_completed_at"),
             ["fbr_enabled"] = setting?.GetValueOrDefault("fbr_enabled") is true or 1 or 1L,
             ["fbr_pos_fee_enabled"] = setting?.GetValueOrDefault("fbr_pos_fee_enabled") is true or 1 or 1L,
-            ["fbr_pos_fee_amount"] = Convert.ToDecimal(setting?.GetValueOrDefault("fbr_pos_fee_amount") ?? 1.00m),
+            ["fbr_pos_fee_amount"] = SafeDecimal(setting?.GetValueOrDefault("fbr_pos_fee_amount"), 1.00m),
             ["enable_dosage_stickers"] = setting == null || setting.GetValueOrDefault("enable_dosage_stickers") is not (false or 0 or 0L),
             ["dosage_sticker_config"] = ResolveDosageStickerConfig(setting),
             ["enable_prescription_attachments"] = setting == null || setting.GetValueOrDefault("enable_prescription_attachments") is not (false or 0 or 0L),
@@ -85,8 +85,26 @@ public class SettingController : ApiControllerBase
             currency_code = setting?.GetValueOrDefault("currency_code")?.ToString() ?? "PKR",
             currency_symbol = setting?.GetValueOrDefault("currency_symbol")?.ToString() ?? "Rs.",
             currency_position = setting?.GetValueOrDefault("currency_position")?.ToString() ?? "before",
-            currency_decimal_places = Convert.ToInt32(setting?.GetValueOrDefault("currency_decimal_places") ?? 2)
+            currency_decimal_places = SafeInt(setting?.GetValueOrDefault("currency_decimal_places"), 2)
         });
+    }
+
+    private static int SafeInt(object? val, int fallback)
+    {
+        if (val == null) return fallback;
+        if (val is int i) return i;
+        if (val is long l) return (int)l;
+        return int.TryParse(val.ToString(), out var parsed) ? parsed : fallback;
+    }
+
+    private static decimal SafeDecimal(object? val, decimal fallback)
+    {
+        if (val == null) return fallback;
+        if (val is decimal d) return d;
+        if (val is double dbl) return (decimal)dbl;
+        if (val is int i) return i;
+        if (val is long l) return l;
+        return decimal.TryParse(val.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
     }
 
     [HttpPost("settings")]
@@ -108,11 +126,28 @@ public class SettingController : ApiControllerBase
             "fbr_bearer_token"
         };
 
+        var numericDefaults = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["currency_decimal_places"] = 2,
+            ["fbr_pos_fee_amount"] = 1.00m,
+            ["expiry_warning_days"] = 90,
+            ["expiry_critical_days"] = 30,
+            ["expiry_daily_flash_limit"] = 5,
+            ["smtp_port"] = 587,
+            ["print_paper_width_mm"] = null,
+            ["print_margin_top_mm"] = 0,
+            ["print_margin_bottom_mm"] = 4,
+            ["print_margin_left_mm"] = 0,
+            ["print_margin_right_mm"] = 0,
+            ["print_font_scale"] = 100
+        };
+
         foreach (var kv in body)
         {
             if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase))
+                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("clear_fbr_bearer_token", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -121,7 +156,16 @@ public class SettingController : ApiControllerBase
             {
                 continue;
             }
+            if (numericDefaults.TryGetValue(kv.Key, out var numFallback) && string.IsNullOrWhiteSpace(prepared?.ToString()))
+            {
+                prepared = numFallback;
+            }
             updates[kv.Key] = prepared;
+        }
+
+        if (GetBool(body, "clear_fbr_bearer_token", false))
+        {
+            updates["fbr_bearer_token"] = null;
         }
 
         if (Request.HasFormContentType)
@@ -335,7 +379,12 @@ public class SettingController : ApiControllerBase
                         schedUpdates["time_of_day"] = tod.Trim();
                     var customPath = GetString(body, "custom_backup_path");
                     if (customPath != null)
-                        schedUpdates["custom_backup_path"] = customPath.Trim();
+                    {
+                        var trimmedPath = customPath.Trim();
+                        schedUpdates["custom_backup_path"] = trimmedPath;
+                        if (!string.IsNullOrWhiteSpace(trimmedPath))
+                            schedUpdates["storage_destination"] = "custom_folder";
+                    }
 
                     if (schedUpdates.Count > 0)
                     {
@@ -455,8 +504,10 @@ public class SettingController : ApiControllerBase
     }
 
     [HttpGet("settings/whatsapp-agent/status")]
-    public IActionResult WhatsAppAgentStatus()
+    public async Task<IActionResult> WhatsAppAgentStatus()
     {
+        if (!await CanAsync("settings.view", "settings.update", "sale-invoice.view", "customer-ledger.view"))
+            return Forbidden();
         return Ok(new
         {
             ok = true,
@@ -466,25 +517,29 @@ public class SettingController : ApiControllerBase
             pairing_code = (string?)null,
             user = (object?)null,
             last_error = (string?)null,
-            agent_url = "http://127.0.0.1:3849"
+            agent_url = "http://127.0.0.1:3001"
         });
     }
 
     [HttpPost("settings/whatsapp-agent/start")]
-    public IActionResult WhatsAppAgentStart()
+    public async Task<IActionResult> WhatsAppAgentStart()
     {
+        if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
+            return Forbidden();
         return Ok(new
         {
             ok = true,
             agent_running = true,
             status = "starting",
-            agent_url = "http://127.0.0.1:3849"
+            agent_url = "http://127.0.0.1:3001"
         });
     }
 
     [HttpPost("settings/whatsapp-agent/pair-code")]
     public async Task<IActionResult> WhatsAppAgentPairCode()
     {
+        if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
+            return Forbidden();
         var body = await ReadJsonBodyAsync();
         var phone = GetString(body, "phone") ?? "";
         if (string.IsNullOrWhiteSpace(phone))
@@ -501,14 +556,16 @@ public class SettingController : ApiControllerBase
     }
 
     [HttpPost("settings/whatsapp-agent/logout")]
-    public IActionResult WhatsAppAgentLogout()
+    public async Task<IActionResult> WhatsAppAgentLogout()
     {
+        if (!await CanAsync("settings.update")) return Forbidden();
         return Ok(new { ok = true, status = "logged_out" });
     }
 
     [HttpPost("settings/whatsapp-agent/stop")]
-    public IActionResult WhatsAppAgentStop()
+    public async Task<IActionResult> WhatsAppAgentStop()
     {
+        if (!await CanAsync("settings.update")) return Forbidden();
         return Ok(new { ok = true, agent_running = false, status = "stopped" });
     }
 
@@ -596,27 +653,60 @@ public class SettingController : ApiControllerBase
             ? ""
             : (rawFbr.Length > 8 ? $"{rawFbr.Substring(0, 4)}••••••••{rawFbr.Substring(rawFbr.Length - 4)}" : "••••••••");
 
+        // Never leak raw secrets or network tokens in general settings payload
+        copy.Remove("fbr_bearer_token");
+        copy.Remove("network_server_token");
+        copy.Remove("smtp_password");
+        copy.Remove("whatsapp_access_token");
+        copy.Remove("cube_groq_api_key");
+        copy.Remove("cube_gemini_api_key");
+
+        var groqReq = 0; var groqOk = 0; var groqFail = 0;
+        var gemReq = 0; var gemOk = 0; var gemFail = 0;
+        if (await Db.HasTableAsync("cube_provider_usages"))
+        {
+            var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+            var uRows = await Db.QueryListAsync(
+                "SELECT provider, request_count, success_count, failure_count FROM cube_provider_usages WHERE usage_date = @todayStr",
+                new { todayStr });
+            foreach (var ur in uRows)
+            {
+                var prov = (ur.GetValueOrDefault("provider")?.ToString() ?? "").Trim().ToLowerInvariant();
+                if (prov == "groq")
+                {
+                    groqReq += SafeInt(ur.GetValueOrDefault("request_count"), 0);
+                    groqOk += SafeInt(ur.GetValueOrDefault("success_count"), 0);
+                    groqFail += SafeInt(ur.GetValueOrDefault("failure_count"), 0);
+                }
+                else if (prov == "gemini")
+                {
+                    gemReq += SafeInt(ur.GetValueOrDefault("request_count"), 0);
+                    gemOk += SafeInt(ur.GetValueOrDefault("success_count"), 0);
+                    gemFail += SafeInt(ur.GetValueOrDefault("failure_count"), 0);
+                }
+            }
+        }
+
         copy["cube_usage_summary"] = new Dictionary<string, object?>
         {
             ["groq"] = new
             {
-                request_count = 0,
-                success_count = 0,
-                failure_count = 0,
+                request_count = groqReq,
+                success_count = groqOk,
+                failure_count = groqFail,
                 status = "ready",
                 has_env_key = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GROQ_API_KEY"))
             },
             ["gemini"] = new
             {
-                request_count = 0,
-                success_count = 0,
-                failure_count = 0,
+                request_count = gemReq,
+                success_count = gemOk,
+                failure_count = gemFail,
                 status = "ready",
                 has_env_key = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GEMINI_API_KEY"))
             }
         };
 
-        await Task.CompletedTask;
         return copy;
     }
 

@@ -39,7 +39,10 @@ public class KarobarDb
         "config",
         "template_config",
         "fbr_response_payload",
-        "fbr_request_payload"
+        "fbr_request_payload",
+        "destination_config",
+        "metadata",
+        "thermal_custom_layout"
     };
 
     private static readonly HashSet<string> BooleanColumns = new(StringComparer.OrdinalIgnoreCase)
@@ -58,9 +61,18 @@ public class KarobarDb
         "print_show_logo",
         "share_show_logo",
         "fbr_enabled",
+        "fbr_auto_sync",
         "fbr_pos_fee_enabled",
         "allow_negative_stock",
         "auto_backup_enabled",
+        "smtp_enabled",
+        "cube_ai_enabled",
+        "cube_groq_enabled",
+        "cube_gemini_enabled",
+        "whatsapp_enabled",
+        "whatsapp_auto_fallback",
+        "is_automated",
+        "notify_on_failure",
         "is_regular",
         "is_preferred",
         "requires_cold_chain",

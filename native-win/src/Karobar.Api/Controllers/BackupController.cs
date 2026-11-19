@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -89,7 +90,7 @@ public class BackupController : ApiControllerBase
     [HttpGet("{id:long}/download")]
     public async Task<IActionResult> Download(long id)
     {
-        if (!await CanAsync("backup.view", "backup.download", "settings.view")) return Forbidden();
+        if (!await CanAsync("backup.view", "settings.view")) return Forbidden();
 
         var path = await _backupService.GetDownloadPathAsync(id);
         if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
@@ -101,6 +102,14 @@ public class BackupController : ApiControllerBase
         return File(bytes, "application/octet-stream", Path.GetFileName(path));
     }
 
+    private async Task<bool> VerifyCurrentUserPasswordAsync(string password)
+    {
+        if (CurrentUserId == null || string.IsNullOrEmpty(password)) return false;
+        var user = await Db.QuerySingleOrDefaultAsync("SELECT password FROM users WHERE id = @id", new { id = CurrentUserId.Value });
+        var hash = user?.GetValueOrDefault("password")?.ToString() ?? "";
+        return !string.IsNullOrEmpty(hash) && SanctumAuthenticationHandler.VerifyLaravelBcryptPassword(password, hash);
+    }
+
     [HttpPost("{id:long}/restore")]
     public async Task<IActionResult> Restore(long id)
     {
@@ -108,9 +117,16 @@ public class BackupController : ApiControllerBase
 
         var body = await ReadJsonBodyAsync();
         var password = GetString(body, "password") ?? "";
-        if (password.Length < 6)
+        if (string.IsNullOrWhiteSpace(password))
         {
             return Unprocessable("Password is required to restore a backup.");
+        }
+        if (!await VerifyCurrentUserPasswordAsync(password))
+        {
+            return Unprocessable("Invalid account password. Backup restore aborted.", new Dictionary<string, string[]>
+            {
+                ["password"] = new[] { "The provided password does not match your account password." }
+            });
         }
 
         try
@@ -268,8 +284,10 @@ public class BackupController : ApiControllerBase
     }
 
     [HttpGet("browse-directories")]
-    public IActionResult BrowseDirectories([FromQuery] string? path = null)
+    public async Task<IActionResult> BrowseDirectories([FromQuery] string? path = null)
     {
+        if (!await CanAsync("backup.view", "backup.create", "settings.update")) return Forbidden();
+
         var shortcuts = new List<object>();
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (!string.IsNullOrEmpty(home) && Directory.Exists(home))
@@ -360,7 +378,20 @@ public class BackupController : ApiControllerBase
     {
         if (!await CanAsync("backup.create", "settings.update")) return Forbidden();
 
-        await _backupService.CreateBackupAsync("full", CurrentUserId, isAutomated: true);
+        var sched = await _backupService.GetScheduleAsync();
+        var backupType = sched.GetValueOrDefault("backup_type")?.ToString();
+        if (string.IsNullOrWhiteSpace(backupType)) backupType = "full";
+
+        await _backupService.CreateBackupAsync(backupType, CurrentUserId, isAutomated: true);
+        if (sched.TryGetValue("id", out var sidObj) && sidObj != null && await Db.HasTableAsync("backup_schedules"))
+        {
+            await Db.UpdateAsync("backup_schedules", Convert.ToInt64(sidObj), new Dictionary<string, object?>
+            {
+                ["last_run_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                ["last_run_status"] = "success"
+            });
+        }
+
         return Ok(new
         {
             message = "Scheduled backup job executed successfully.",
@@ -419,9 +450,16 @@ public class BackupController : ApiControllerBase
         var fileId = GetNullableLong(body, "file_id");
         var password = GetString(body, "password") ?? "";
 
-        if (!fileId.HasValue || password.Length < 6)
+        if (!fileId.HasValue || string.IsNullOrWhiteSpace(password))
         {
             return Unprocessable("File ID and password are required.");
+        }
+        if (!await VerifyCurrentUserPasswordAsync(password))
+        {
+            return Unprocessable("Invalid account password. Backup restore aborted.", new Dictionary<string, string[]>
+            {
+                ["password"] = new[] { "The provided password does not match your account password." }
+            });
         }
 
         try
