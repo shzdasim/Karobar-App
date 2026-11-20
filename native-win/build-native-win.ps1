@@ -232,9 +232,15 @@ try {
     Pop-Location
 }
 
-# Compute deterministic third-party DLL + bundled WhatsApp Node/Baileys runtime fingerprint BEFORE Inno Setup & OTA patch packaging
-# so older installs lacking runtime\node\node.exe or runtime\whatsapp-agent\node_modules automatically receive the full installer once.
-$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
+# Compute deterministic third-party DLL (including native runtimes/) + bundled WhatsApp Node/Baileys runtime fingerprint BEFORE Inno Setup & OTA patch packaging
+# so older installs lacking runtime\node\node.exe or runtime\whatsapp-agent\node_modules or native runtimes automatically receive the full installer once.
+$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" -Recurse | Where-Object {
+    $_.Name -notlike "Karobar*" -and
+    $_.FullName -notlike "*\runtime\whatsapp-agent\*"
+} | Sort-Object FullName | ForEach-Object {
+    $rel = $_.FullName.Substring($StageDir.Length).TrimStart('\', '/')
+    "${rel}:$($_.Length)"
+}) -join "|"
 $NodeExeSize = if (Test-Path $BundledNodeExe) { (Get-Item $BundledNodeExe).Length } else { 0 }
 $WaPkgRaw = if (Test-Path (Join-Path $WaRuntimeDir "package.json")) { (Get-Content (Join-Path $WaRuntimeDir "package.json") -Raw).Trim() } else { "" }
 $FingerprintSeed = "$ThirdPartyDllList|wa-node:$NodeExeSize|wa-pkg:$WaPkgRaw"

@@ -215,11 +215,16 @@ export default function CubeAiSetting({
     const apiKey = (
       isGroq ? form.cube_groq_api_key : form.cube_gemini_api_key
     )?.trim();
+    const hasSavedKey = Boolean(
+      isGroq
+        ? form.has_cube_groq_api_key || groqStats.has_env_key
+        : form.has_cube_gemini_api_key || geminiStats.has_env_key
+    );
     const model = isGroq
       ? form.cube_groq_model || "openai/gpt-oss-120b"
       : form.cube_gemini_model || "gemini-3.8-flash";
 
-    if (!apiKey) {
+    if (!apiKey && !hasSavedKey) {
       toast.error(
         `Please enter your ${isGroq ? "Groq" : "Google Gemini"} API Key first.`
       );
@@ -443,7 +448,9 @@ export default function CubeAiSetting({
                   autoCapitalize="off"
                   spellCheck={false}
                   placeholder={
-                    groqStats.has_env_key
+                    form.has_cube_groq_api_key
+                      ? "Saved on server (leave blank to keep existing key, or paste a new key)"
+                      : groqStats.has_env_key
                       ? "Configured via .env (enter a key here to override from UI)"
                       : "Paste your free Groq API Key (starts with gsk_...)"
                   }
@@ -614,7 +621,9 @@ export default function CubeAiSetting({
                   autoCapitalize="off"
                   spellCheck={false}
                   placeholder={
-                    geminiStats.has_env_key
+                    form.has_cube_gemini_api_key
+                      ? "Saved on server (leave blank to keep existing key, or paste a new key)"
+                      : geminiStats.has_env_key
                       ? "Configured via .env (enter a key here to override from UI)"
                       : "Paste your free Google Gemini API Key (starts with AIza...)"
                   }
@@ -755,12 +764,12 @@ function NativeMascotSettingsCard({ isDark }) {
   const syncPrefs = (next) => {
     try {
       if (typeof next.enabled === "boolean") {
-        window.localStorage.setItem("karobar_bottom_mascot_enabled", String(next.enabled));
-        window.dispatchEvent(new Event("guide-bot-bottom-mascot-changed"));
+        window.localStorage.setItem("karobar_bottom_mascot_enabled", next.enabled ? "1" : "0");
+        window.dispatchEvent(new CustomEvent("guide-bot-bottom-mascot-changed", { detail: { enabled: next.enabled } }));
       }
       if (next.skin) {
         window.localStorage.setItem("karobar_guide_bot_mascot_style", next.skin);
-        window.dispatchEvent(new Event("guide-bot-mascot-changed"));
+        window.dispatchEvent(new CustomEvent("guide-bot-mascot-changed", { detail: { style: next.skin } }));
       }
     } catch {}
     if (window.karobarDesktop?.setMascotPrefs) {

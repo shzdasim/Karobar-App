@@ -2761,7 +2761,7 @@ public class SaleInvoiceController : ApiControllerBase
         var html = _renderer.RenderDosageStickers(invVm, settingVm, stickerCfg, PrintViewModelMapper.QueryToDict(Request.Query));
         if (autoPrint)
         {
-            html = html.Replace("</body>", "<script>window.onload=function(){try{window.print();}catch(e){}};</script></body>", StringComparison.OrdinalIgnoreCase);
+            html = html.Replace("</body>", "<script>window.onload=function(){try{if(!window.karobarDesktop&&!window.__karobarSilentPrintWorker&&window.self===window.top&&!new URLSearchParams(window.location.search).has('silent_print')){window.print();}}catch(e){}};</script></body>", StringComparison.OrdinalIgnoreCase);
         }
         return html;
     }

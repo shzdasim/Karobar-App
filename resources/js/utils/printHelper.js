@@ -210,6 +210,8 @@ export async function printSlipUrl(urlOrPayload, options = {}) {
       const res = await desktop.printUrl(url, {
         silent: options.silent !== false,
         deviceName: deviceName || undefined,
+        isThermal: options.isThermal,
+        scaleMode: options.scaleMode,
       });
       if (res?.ok) {
         if (!options.quiet) {
@@ -254,6 +256,8 @@ export async function printSlipHtml(html, options = {}) {
       const res = await desktop.printHtml(html, {
         silent: options.silent !== false,
         deviceName: deviceName || undefined,
+        isThermal: options.isThermal,
+        scaleMode: options.scaleMode,
       });
       if (res?.ok) {
         if (!options.quiet) {
@@ -298,6 +302,8 @@ export async function printCurrentView(options = {}) {
       const res = await desktop.silentPrint({
         silent: options.silent !== false,
         deviceName: deviceName || undefined,
+        isThermal: options.isThermal,
+        scaleMode: options.scaleMode,
       });
       if (res?.ok) {
         if (!options.quiet) {

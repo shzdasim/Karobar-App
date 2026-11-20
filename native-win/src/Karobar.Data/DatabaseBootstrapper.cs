@@ -342,6 +342,27 @@ public sealed class DatabaseBootstrapper
                     {
                         await conn.ExecuteAsync(createSql);
                         existingTables.Add(tableName);
+
+                        // Also create EF Core indexes for newly created tables on upgraded databases
+                        foreach (var idx in entityType.GetIndexes())
+                        {
+                            var idxCols = idx.Properties
+                                .Select(p => p.GetColumnName())
+                                .Where(c => !string.IsNullOrWhiteSpace(c))
+                                .Select(c => $"\"{c!.Replace("\"", "\"\"")}\"")
+                                .ToList();
+                            if (idxCols.Count == 0) continue;
+
+                            var idxName = idx.GetDatabaseName()
+                                ?? $"IX_{tableName}_{string.Join("_", idx.Properties.Select(p => p.GetColumnName()))}";
+                            var escapedIdx = idxName.Replace("\"", "\"\"");
+                            var uniqueKw = idx.IsUnique ? "UNIQUE " : "";
+                            try
+                            {
+                                await conn.ExecuteAsync($"CREATE {uniqueKw}INDEX IF NOT EXISTS \"{escapedIdx}\" ON \"{escapedTable}\" ({string.Join(", ", idxCols)});");
+                            }
+                            catch { }
+                        }
                     }
                     catch
                     {

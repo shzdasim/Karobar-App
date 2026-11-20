@@ -63,6 +63,7 @@ public sealed class KarobarCliCommandRunner
         "license:verify-installer",
         "expenses:process-recurring",
         "backup:run-scheduled",
+        "karobar:backup",
         "demands:notify"
     ];
 
@@ -398,7 +399,7 @@ public sealed class KarobarCliCommandRunner
             "expenses:process-recurring"
                 => await ExecuteProcessRecurringExpensesAsync(db, args, cancellationToken),
 
-            "backup:run-scheduled"
+            "backup:run-scheduled" or "karobar:backup"
                 => await ExecuteRunScheduledBackupAsync(db, args, cancellationToken),
 
             "demands:notify"
@@ -520,14 +521,21 @@ public sealed class KarobarCliCommandRunner
             }
         }
 
-        // Pre-patch safety backup
+        // Pre-patch safety backup (WAL-safe SQLite Online Backup API)
         var dbPath = Path.Combine(_appRoot, "database", "database.sqlite");
         if (File.Exists(dbPath))
         {
             var backupDir = Path.Combine(_appRoot, "storage", "backups");
             Directory.CreateDirectory(backupDir);
             var backupFile = Path.Combine(backupDir, $"pre-patch-{DateTime.Now:yyyyMMdd-HHmmss}.sqlite");
-            try { File.Copy(dbPath, backupFile, overwrite: true); } catch { }
+            try
+            {
+                await BackupSqliteOnlineAsync(dbPath, backupFile, cancellationToken);
+            }
+            catch
+            {
+                try { File.Copy(dbPath, backupFile, overwrite: true); } catch { }
+            }
         }
 
         var stagingDir = Path.Combine(Path.GetTempPath(), $"karobar-patch-extract-{Guid.NewGuid():N}");
@@ -576,10 +584,24 @@ public sealed class KarobarCliCommandRunner
         }
     }
 
+    private static async Task BackupSqliteOnlineAsync(string sourceDb, string destinationDb, CancellationToken cancellationToken)
+    {
+        await using var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;Pooling=False;");
+        await using var dstConn = new SqliteConnection($"Data Source={destinationDb};Mode=ReadWriteCreate;Pooling=False;");
+        await srcConn.OpenAsync(cancellationToken);
+        await dstConn.OpenAsync(cancellationToken);
+        await using (var cmd = srcConn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA busy_timeout=15000;";
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        srcConn.BackupDatabase(dstConn);
+    }
+
     /// <summary>
     /// 3. `karobar:export-sqlite` (`KarobarExportSqliteCommand.php`)
     /// </summary>
-    public Task<CliCommandResult> ExecuteExportSqliteAsync(
+    public async Task<CliCommandResult> ExecuteExportSqliteAsync(
         IDictionary<string, string?> args,
         CancellationToken cancellationToken = default)
     {
@@ -591,7 +613,14 @@ public sealed class KarobarCliCommandRunner
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         if (File.Exists(sourceDb))
         {
-            File.Copy(sourceDb, outPath, overwrite: true);
+            try
+            {
+                await BackupSqliteOnlineAsync(sourceDb, outPath, cancellationToken);
+            }
+            catch
+            {
+                File.Copy(sourceDb, outPath, overwrite: true);
+            }
         }
         else
         {
@@ -599,12 +628,12 @@ public sealed class KarobarCliCommandRunner
         }
 
         var sizeMb = File.Exists(outPath) ? Math.Round(new FileInfo(outPath).Length / (1024.0 * 1024.0), 2) : 0;
-        return Task.FromResult(new CliCommandResult
+        return new CliCommandResult
         {
             ExitCode = 0,
             Output = $"Portable SQLite database exported successfully ({sizeMb} MB): {outPath}",
             Data = new Dictionary<string, object?> { ["ok"] = true, ["path"] = outPath, ["size_mb"] = sizeMb }
-        });
+        };
     }
 
     /// <summary>
@@ -625,23 +654,32 @@ public sealed class KarobarCliCommandRunner
             };
         }
 
+        var mode = args.TryGetValue("mode", out var m) && !string.IsNullOrWhiteSpace(m) ? m.Trim() : "merge";
         var staged = await _importEngine.StageDatabaseFromFileAsync(filePath, Path.GetFileName(filePath), cancellationToken);
         var token = staged["token"]?.ToString() ?? "";
-        var inspection = await _importEngine.InspectAndProposeMappingAsync(token, cancellationToken);
-        var reconciliation = await _importEngine.RunPostImportReconciliationAsync(db, cancellationToken);
-        _importEngine.CleanupStagedSession(token);
-
-        return new CliCommandResult
+        try
         {
-            ExitCode = 0,
-            Output = "Import completed!",
-            Data = new Dictionary<string, object?>
+            var inspection = await _importEngine.InspectAndProposeMappingAsync(token, cancellationToken);
+            var importSummary = await _importEngine.ExecuteImportAsync(db, token, mode, cancellationToken);
+            var reconciliation = await _importEngine.RunPostImportReconciliationAsync(db, cancellationToken);
+
+            return new CliCommandResult
             {
-                ["ok"] = true,
-                ["inspection"] = inspection,
-                ["reconciliation"] = reconciliation
-            }
-        };
+                ExitCode = 0,
+                Output = $"Import completed! Imported {importSummary["total_rows_inserted"]} row(s) across {importSummary["tables_imported"]} table(s).",
+                Data = new Dictionary<string, object?>
+                {
+                    ["ok"] = true,
+                    ["inspection"] = inspection,
+                    ["import"] = importSummary,
+                    ["reconciliation"] = reconciliation
+                }
+            };
+        }
+        finally
+        {
+            _importEngine.CleanupStagedSession(token);
+        }
     }
 
     /// <summary>
@@ -1364,7 +1402,7 @@ public sealed class KarobarCliCommandRunner
     {
         var asOfDate = args.TryGetValue("date", out var dStr) && DateTime.TryParse(dStr, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed.Date
-            : DateTime.UtcNow.Date;
+            : DateTime.Today;
 
         var dueTemplates = await db.Expenses
             .Where(e => e.IsRecurring &&
@@ -1388,7 +1426,7 @@ public sealed class KarobarCliCommandRunner
 
             if (nextDate <= asOfDate)
             {
-                db.Expenses.Add(new Expense
+                var newExp = new Expense
                 {
                     ExpenseNumber = $"EXP-REC-{DateTime.UtcNow:yyyyMMddHHmmss}-{template.Id}",
                     ExpenseCategoryId = template.ExpenseCategoryId,
@@ -1404,8 +1442,33 @@ public sealed class KarobarCliCommandRunner
                     RecurringFrequency = template.RecurringFrequency,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
-                });
+                };
+                db.Expenses.Add(newExp);
                 template.IsRecurring = false;
+
+                // Debit the linked financial account & record an AccountTransaction so balances stay reconciled
+                if (template.AccountId.HasValue && template.AccountId.Value > 0 && template.Amount > 0m)
+                {
+                    var account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == template.AccountId.Value, cancellationToken);
+                    if (account != null)
+                    {
+                        account.CurrentBalance = Math.Round(account.CurrentBalance - template.Amount, 2);
+                        account.UpdatedAt = DateTime.UtcNow;
+                        db.AccountTransactions.Add(new AccountTransaction
+                        {
+                            AccountId = account.Id,
+                            Type = "withdrawal",
+                            Amount = template.Amount,
+                            BalanceAfter = account.CurrentBalance,
+                            ReferenceType = "expense",
+                            Description = $"Recurring Expense ({newExp.ExpenseNumber}): {template.Description ?? template.Payee ?? "Scheduled"}",
+                            UserId = template.UserId,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+
                 processedCount++;
             }
         }
@@ -1543,6 +1606,41 @@ public sealed class KarobarCliCommandRunner
         schedule.LastErrorMessage = null;
         await db.SaveChangesAsync(cancellationToken);
 
+        // Apply retention pruning on automated backups if MaxBackupsKeep > 0 or RetentionDays > 0
+        if (schedule.MaxBackupsKeep > 0 || schedule.RetentionDays > 0)
+        {
+            try
+            {
+                var allAutoLogs = await db.BackupLogs
+                    .Where(l => l.IsAutomated)
+                    .OrderByDescending(l => l.Id)
+                    .ToListAsync(cancellationToken);
+                var cutoffUtc = schedule.RetentionDays > 0 ? DateTime.UtcNow.AddDays(-schedule.RetentionDays) : DateTime.MinValue;
+                var toRemove = new List<BackupLog>();
+                for (var idx = 0; idx < allAutoLogs.Count; idx++)
+                {
+                    var item = allAutoLogs[idx];
+                    var exceedsCount = schedule.MaxBackupsKeep > 0 && idx >= schedule.MaxBackupsKeep;
+                    var exceedsAge = schedule.RetentionDays > 0 && item.CreatedAt.HasValue && item.CreatedAt.Value < cutoffUtc;
+                    if (exceedsCount || exceedsAge)
+                    {
+                        toRemove.Add(item);
+                    }
+                }
+                if (toRemove.Count > 0)
+                {
+                    foreach (var stale in toRemove)
+                    {
+                        var staleFile = Path.Combine(backupDir, Path.GetFileName(stale.Filename ?? ""));
+                        try { if (File.Exists(staleFile)) File.Delete(staleFile); } catch { }
+                        db.BackupLogs.Remove(stale);
+                    }
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+            }
+            catch { }
+        }
+
         return new CliCommandResult
         {
             ExitCode = 0,
@@ -1555,12 +1653,18 @@ public sealed class KarobarCliCommandRunner
     {
         var targetTime = string.IsNullOrWhiteSpace(schedule.TimeOfDay) ? "02:00" : schedule.TimeOfDay.Trim();
         var parts = targetTime.Split(':');
-        var targetHour = parts.Length > 0 && int.TryParse(parts[0], out var th) ? th : 2;
+        var targetHour = parts.Length > 0 && int.TryParse(parts[0], out var th) ? Math.Clamp(th, 0, 23) : 2;
+        var targetMinute = parts.Length > 1 && int.TryParse(parts[1], out var tm) ? Math.Clamp(tm, 0, 59) : 0;
 
-        if (now.Hour != targetHour) return false;
-        if (schedule.LastRunAt.HasValue && schedule.LastRunStatus == "success" && schedule.LastRunAt.Value.Date == DateTime.UtcNow.Date)
+        if (now.TimeOfDay < new TimeSpan(targetHour, targetMinute, 0)) return false;
+
+        if (schedule.LastRunAt.HasValue && schedule.LastRunStatus == "success")
         {
-            return false;
+            var lastLocal = DateTime.SpecifyKind(schedule.LastRunAt.Value, DateTimeKind.Utc).ToLocalTime();
+            if (lastLocal.Date == now.Date)
+            {
+                return false;
+            }
         }
 
         return (schedule.Frequency ?? "daily").ToLowerInvariant() switch

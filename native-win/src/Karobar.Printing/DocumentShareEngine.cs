@@ -1128,7 +1128,12 @@ public sealed class DocumentShareEngine
 
         var sharedDir = Path.Combine(_appRoot, "storage", "app", "shared-pdfs");
         Directory.CreateDirectory(sharedDir);
-        var uniqueName = $"{Guid.NewGuid():D}_{filename}";
+        var safeFilename = Path.GetFileName((filename ?? "document.pdf").Trim());
+        if (string.IsNullOrWhiteSpace(safeFilename) || safeFilename is "." or "..")
+        {
+            safeFilename = "document.pdf";
+        }
+        var uniqueName = $"{Guid.NewGuid():D}_{safeFilename}";
         var storedRelPath = $"shared-pdfs/{uniqueName}";
         await File.WriteAllBytesAsync(Path.Combine(sharedDir, uniqueName), pdfBytes, cancellationToken);
 
@@ -1142,7 +1147,7 @@ public sealed class DocumentShareEngine
                     waConfig,
                     normalizedPhone,
                     pdfBytes,
-                    filename,
+                    safeFilename,
                     caption,
                     signedPdfUrl,
                     cancellationToken);
@@ -1152,8 +1157,8 @@ public sealed class DocumentShareEngine
                     ["status"] = "sent_via_api",
                     ["mode"] = "cloud_api",
                     ["provider"] = provider,
-                    ["message"] = $"PDF document ({filename}) sent directly to WhatsApp (+{normalizedPhone})",
-                    ["filename"] = filename,
+                    ["message"] = $"PDF document ({safeFilename}) sent directly to WhatsApp (+{normalizedPhone})",
+                    ["filename"] = safeFilename,
                     ["stored_path"] = storedRelPath,
                     ["signed_pdf_url"] = signedPdfUrl,
                     ["normalized_phone"] = normalizedPhone,

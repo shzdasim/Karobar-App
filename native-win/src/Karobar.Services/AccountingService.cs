@@ -264,37 +264,44 @@ public class AccountingService
         var description = (data.GetValueOrDefault("description")?.ToString() ?? "").Trim();
         if (string.IsNullOrEmpty(description)) description = "Manual Journal Entry";
 
-        var entryId = await _db.InsertAsync("journal_entries", new Dictionary<string, object?>
-        {
-            ["entry_number"] = entryNumber,
-            ["entry_date"] = entryDate,
-            ["reference_type"] = data.GetValueOrDefault("reference_type")?.ToString() ?? "manual",
-            ["reference_number"] = data.GetValueOrDefault("reference_number")?.ToString(),
-            ["account_id"] = treasuryAccountId,
-            ["description"] = description,
-            ["total_debit"] = totalDebit,
-            ["total_credit"] = totalCredit,
-            ["status"] = "posted",
-            ["created_by"] = userId
-        });
-
         var cashBankCoaRows = await _db.QueryListAsync(
             "SELECT id FROM chart_of_accounts WHERE sub_type = 'cash_bank' OR system_key = 'cash_and_banks'");
         var cashBankCoaIds = cashBankCoaRows.Select(r => AccountService.ToLong(r["id"])).ToHashSet();
 
+        long entryId;
         decimal netCashDelta = 0m;
-        foreach (var lineData in normalizedLines)
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await conn.BeginTransactionAsync())
         {
-            lineData["journal_entry_id"] = entryId;
-            await _db.InsertAsync("journal_entry_lines", lineData);
-
-            var coaId = AccountService.ToLong(lineData["chart_of_account_id"]);
-            if (cashBankCoaIds.Contains(coaId))
+            entryId = await _db.InsertAsync("journal_entries", new Dictionary<string, object?>
             {
-                var dr = AccountService.ToDecimal(lineData["debit"]);
-                var cr = AccountService.ToDecimal(lineData["credit"]);
-                netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
+                ["entry_number"] = entryNumber,
+                ["entry_date"] = entryDate,
+                ["reference_type"] = data.GetValueOrDefault("reference_type")?.ToString() ?? "manual",
+                ["reference_number"] = data.GetValueOrDefault("reference_number")?.ToString(),
+                ["account_id"] = treasuryAccountId,
+                ["description"] = description,
+                ["total_debit"] = totalDebit,
+                ["total_credit"] = totalCredit,
+                ["status"] = "posted",
+                ["created_by"] = userId
+            }, conn, tx);
+
+            foreach (var lineData in normalizedLines)
+            {
+                lineData["journal_entry_id"] = entryId;
+                await _db.InsertAsync("journal_entry_lines", lineData, conn, tx);
+
+                var coaId = AccountService.ToLong(lineData["chart_of_account_id"]);
+                if (cashBankCoaIds.Contains(coaId))
+                {
+                    var dr = AccountService.ToDecimal(lineData["debit"]);
+                    var cr = AccountService.ToDecimal(lineData["credit"]);
+                    netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
+                }
             }
+
+            await tx.CommitAsync();
         }
 
         if (treasuryAccountId.HasValue && Math.Abs(netCashDelta) > 0.009m && await _db.HasTableAsync("accounts"))

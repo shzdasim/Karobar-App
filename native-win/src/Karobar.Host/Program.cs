@@ -63,6 +63,12 @@ public static class Program
             }
 
 #if WINDOWS_DESKTOP
+            System.Windows.Forms.Application.SetUnhandledExceptionMode(System.Windows.Forms.UnhandledExceptionMode.CatchException);
+            System.Windows.Forms.Application.ThreadException += (_, argsEx) => LogFatalException("WinForms ThreadException", argsEx.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (_, argsEx) =>
+            {
+                if (argsEx.ExceptionObject is Exception uex) LogFatalException("AppDomain UnhandledException", uex);
+            };
             System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
             System.Windows.Forms.Application.EnableVisualStyles();
             System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
@@ -126,7 +132,12 @@ public static class Program
             hostServer.DesktopBridge.NativeSilentPrintExecutor = mainForm.ExecuteNativeSilentPrintAsync;
 
             // Route all child-window / openWindow / openSubWindow requests into Waseela-style tabs
-            // inside the SINGLE main window instead of spawning separate OS windows.
+            // inside the SINGLE main window without creating ghost AppWindowInstance entries.
+            windowManager.OnOpenTabRequested = (routePath, title) =>
+            {
+                if (mainForm.IsDisposed) return;
+                mainForm.OpenTabFromExternal(routePath, title);
+            };
             windowManager.OnWindowCreated = childWin =>
             {
                 if (childWin.Id == mainWin.Id || childWin.IsOffscreenPrintWorker) return;
@@ -210,8 +221,27 @@ public static class Program
         }
         finally
         {
-            Task.Run(() => hostServer.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+            try
+            {
+                Task.Run(() => hostServer.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(5));
+            }
+            catch { }
         }
+    }
+
+    private static void LogFatalException(string source, Exception ex)
+    {
+        try
+        {
+            var appDataLogDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Karobar-App-Native");
+            Directory.CreateDirectory(appDataLogDir);
+            File.AppendAllText(
+                Path.Combine(appDataLogDir, "startup-error.log"),
+                $"[{DateTime.UtcNow:O}] [{source}] {ex}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     public static Mutex? AcquireSingleInstanceLock(out bool createdNew)

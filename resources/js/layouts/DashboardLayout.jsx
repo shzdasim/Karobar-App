@@ -276,7 +276,11 @@ export default function DashboardLayout({ children }) {
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
     const unsubNav = desktop?.onNavigate?.((payload) => {
       if (payload?.path) {
-        navigate(payload.path);
+        if (/^https?:\/\//i.test(String(payload.path))) {
+          window.location.assign(payload.path);
+        } else {
+          navigate(payload.path);
+        }
       }
     });
     const unsubOpenSub = desktop?.onOpenSubWindow?.((payload) => {

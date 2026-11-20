@@ -103,13 +103,11 @@ public class SignedUrlMiddleware
             return false;
         }
 
-        if (request.Query.TryGetValue("expires", out var expVals) &&
-            long.TryParse(expVals.ToString(), out var expTs))
+        if (!request.Query.TryGetValue("expires", out var expVals) ||
+            !long.TryParse(expVals.ToString(), out var expTs) ||
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds() > expTs)
         {
-            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > expTs)
-            {
-                return false;
-            }
+            return false;
         }
 
         // Accept either native signed URL or Laravel's APP_KEY HMAC-SHA256 URL

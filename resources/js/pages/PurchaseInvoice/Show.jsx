@@ -1,6 +1,6 @@
 // /src/pages/purchase-invoices/Show.jsx
 import { Fragment, useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import {
   DocumentTextIcon,
@@ -367,9 +367,9 @@ export default function PurchaseInvoiceShow() {
         <div className="g-toolbar px-3 py-1 text-[11px] flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 dark:border-slate-700">
           <span>
             Source Purchase Order:{" "}
-            <a className="underline font-semibold" href={`/purchase-orders/${inv.purchase_order.id}`}>
+            <Link className="underline font-semibold" to={`/purchase-orders/${inv.purchase_order.id}`}>
               {inv.purchase_order.number}
-            </a>
+            </Link>
           </span>
           {inv.purchase_order.status && (
             <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-500/10 text-blue-600 dark:text-blue-300">

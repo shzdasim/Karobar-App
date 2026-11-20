@@ -1523,7 +1523,7 @@ export default function Dashboard() {
 
               <div className="lg:ml-auto flex items-center gap-3">
                 <Link
-                  to="/batch-workbench"
+                  to="/product-batches"
                   className="text-xs font-semibold text-[var(--workspace-accent)] hover:underline inline-flex items-center gap-1"
                 >
                   <span>Batch Workbench</span>

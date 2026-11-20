@@ -100,6 +100,31 @@ public static class KarobarApiServiceExtensions
 
     public static IApplicationBuilder UseKarobarApiPipeline(this IApplicationBuilder app)
     {
+        // Global JSON exception boundary for /api/* routes so domain/validation/missing-record errors
+        // never leak raw HTML or stack traces and instead return clean Laravel-compatible { message } JSON.
+        app.Use(async (context, next) =>
+        {
+            try
+            {
+                await next();
+            }
+            catch (Exception ex) when (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) && !context.Response.HasStarted)
+            {
+                var (statusCode, msg) = ex switch
+                {
+                    KeyNotFoundException => (StatusCodes.Status404NotFound, string.IsNullOrWhiteSpace(ex.Message) ? "Resource not found." : ex.Message),
+                    ArgumentException or InvalidOperationException => (StatusCodes.Status422UnprocessableEntity, string.IsNullOrWhiteSpace(ex.Message) ? "Invalid operation." : ex.Message),
+                    UnauthorizedAccessException => (StatusCodes.Status403Forbidden, string.IsNullOrWhiteSpace(ex.Message) ? "This action is unauthorized." : ex.Message),
+                    Microsoft.Data.Sqlite.SqliteException sqlex when sqlex.SqliteErrorCode == 19 => (StatusCodes.Status422UnprocessableEntity, "Database constraint violation: please check required or unique fields."),
+                    _ => (StatusCodes.Status500InternalServerError, "An unexpected server error occurred. Please check logs or try again.")
+                };
+                context.Response.Clear();
+                context.Response.StatusCode = statusCode;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsJsonAsync(new Dictionary<string, object?> { ["message"] = msg });
+            }
+        });
+
         // Match Laravel's ConvertEmptyStringsToNull middleware globally so empty query params
         // like ?low_stock=&customer_id=&supplier_id= never trigger ASP.NET Core 400/422 errors
         // on typed int/long/bool [FromQuery] parameters across all 59 controllers.

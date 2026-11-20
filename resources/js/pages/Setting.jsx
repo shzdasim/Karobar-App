@@ -248,12 +248,14 @@ export default function Setting() {
     smtp_port: 587,
     smtp_username: "",
     smtp_password: "",
+    has_smtp_password: false,
     smtp_encryption: "tls",
     smtp_from_address: "",
     smtp_from_name: "",
     whatsapp_enabled: false,
     whatsapp_provider: "local_agent",
     whatsapp_access_token: "",
+    has_whatsapp_access_token: false,
     whatsapp_phone_number_id: "",
     whatsapp_business_account_id: "",
     whatsapp_api_version: "v21.0",
@@ -265,10 +267,12 @@ export default function Setting() {
     cube_ai_enabled: true,
     cube_groq_enabled: true,
     cube_groq_api_key: "",
+    has_cube_groq_api_key: false,
     cube_groq_model: "llama-3.3-70b-versatile",
     cube_groq_daily_limit: 250,
     cube_gemini_enabled: true,
     cube_gemini_api_key: "",
+    has_cube_gemini_api_key: false,
     cube_gemini_model: "gemini-3.8-flash",
     cube_gemini_daily_limit: 250,
     fbr_enabled: false,
@@ -538,12 +542,14 @@ export default function Setting() {
             : 587,
         smtp_username: data.smtp_username || "",
         smtp_password: data.smtp_password || "",
+        has_smtp_password: Boolean(data.has_smtp_password),
         smtp_encryption: data.smtp_encryption || "tls",
         smtp_from_address: data.smtp_from_address || "",
         smtp_from_name: data.smtp_from_name || "",
         whatsapp_enabled: Boolean(data.whatsapp_enabled),
         whatsapp_provider: data.whatsapp_provider || "local_agent",
         whatsapp_access_token: data.whatsapp_access_token || "",
+        has_whatsapp_access_token: Boolean(data.has_whatsapp_access_token),
         whatsapp_phone_number_id: data.whatsapp_phone_number_id || "",
         whatsapp_business_account_id: data.whatsapp_business_account_id || "",
         whatsapp_api_version: data.whatsapp_api_version || "v21.0",
@@ -560,6 +566,7 @@ export default function Setting() {
         cube_groq_enabled:
           data.cube_groq_enabled !== undefined ? Boolean(data.cube_groq_enabled) : true,
         cube_groq_api_key: data.cube_groq_api_key || "",
+        has_cube_groq_api_key: Boolean(data.has_cube_groq_api_key),
         cube_groq_model: data.cube_groq_model || "llama-3.3-70b-versatile",
         cube_groq_daily_limit:
           data.cube_groq_daily_limit !== undefined && data.cube_groq_daily_limit !== null
@@ -570,6 +577,7 @@ export default function Setting() {
             ? Boolean(data.cube_gemini_enabled)
             : true,
         cube_gemini_api_key: data.cube_gemini_api_key || "",
+        has_cube_gemini_api_key: Boolean(data.has_cube_gemini_api_key),
         cube_gemini_model: data.cube_gemini_model || "gemini-3.8-flash",
         cube_gemini_daily_limit:
           data.cube_gemini_daily_limit !== undefined &&
@@ -836,6 +844,14 @@ export default function Setting() {
           data?.whatsapp_message_ur !== undefined
             ? data.whatsapp_message_ur
             : prev.whatsapp_message_ur,
+        smtp_password: "",
+        has_smtp_password: Boolean(data?.has_smtp_password),
+        whatsapp_access_token: "",
+        has_whatsapp_access_token: Boolean(data?.has_whatsapp_access_token),
+        cube_groq_api_key: "",
+        has_cube_groq_api_key: Boolean(data?.has_cube_groq_api_key),
+        cube_gemini_api_key: "",
+        has_cube_gemini_api_key: Boolean(data?.has_cube_gemini_api_key),
         fbr_bearer_token: "",
         has_fbr_bearer_token: Boolean(data?.has_fbr_bearer_token),
         fbr_bearer_token_preview: data?.fbr_bearer_token_preview || "",

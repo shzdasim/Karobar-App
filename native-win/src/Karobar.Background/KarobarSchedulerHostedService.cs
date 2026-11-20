@@ -38,7 +38,7 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
     private DateTime _lastDemandsNotifyDate = DateTime.MinValue;
     private DateTime _lastRecurringExpensesDate = DateTime.MinValue;
     private DateTime _lastSharedPdfCleanupDate = DateTime.MinValue;
-    private int _lastScheduledBackupHour = -1;
+    private (DateTime Date, int Hour) _lastScheduledBackupSlot = (DateTime.MinValue, -1);
 
     public KarobarSchedulerHostedService(
         IServiceProvider serviceProvider,
@@ -149,7 +149,8 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
         }
 
         // 4. Hourly -> backup:run-scheduled (plus independent FBR queue retry)
-        if (_lastScheduledBackupHour != now.Hour)
+        var currentSlot = (now.Date, now.Hour);
+        if (_lastScheduledBackupSlot != currentSlot)
         {
             try
             {
@@ -164,7 +165,7 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
             }
             catch { }
 
-            _lastScheduledBackupHour = now.Hour;
+            _lastScheduledBackupSlot = currentSlot;
         }
 
         return executed;

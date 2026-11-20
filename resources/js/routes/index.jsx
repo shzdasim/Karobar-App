@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 import DashboardLayout from "../layouts/DashboardLayout.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
@@ -318,6 +318,7 @@ export default function AppRoutes() {
 
           {/* Purchase Orders */}
           <Route path="/purchase-orders/forecast" element={<PurchaseOrder />} />
+          <Route path="/smart-reorder" element={<PurchaseOrder />} />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/purchase-orders/create" element={<PurchaseOrders />} />
           <Route path="/purchase-orders/:id" element={<PurchaseOrders />} />
@@ -377,6 +378,7 @@ export default function AppRoutes() {
           {/* Stock Disposals & Quarantine */}
           <Route path="/stock-disposals" element={<StockDisposalsIndex />} />
           <Route path="/stock-disposals/create" element={<CreateStockDisposal />} />
+          <Route path="/stock-disposals/:id" element={<StockDisposalsIndex />} />
 
           {/* Finance, Accounting, HR & Ledgers */}
           <Route path="/accounts" element={<AccountsPage />} />
@@ -406,6 +408,9 @@ export default function AppRoutes() {
             </AuthGuard>
           }
         />
+
+        {/* Fallback catch-all so unmatched URLs never render a blank white screen */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Suspense>
   );

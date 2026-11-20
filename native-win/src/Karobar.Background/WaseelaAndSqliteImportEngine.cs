@@ -477,10 +477,69 @@ public sealed class WaseelaAndSqliteImportEngine
         return metadata;
     }
 
+    private static List<string> SplitSqlStatementsQuoteAware(string sql)
+    {
+        var statements = new List<string>();
+        var current = new StringBuilder();
+        var inSingle = false;
+        var inDouble = false;
+        var inLineComment = false;
+        var inBlockComment = false;
+
+        for (var i = 0; i < sql.Length; i++)
+        {
+            var ch = sql[i];
+            var next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (ch == '\n') inLineComment = false;
+                continue;
+            }
+            if (inBlockComment)
+            {
+                if (ch == '*' && next == '/') { inBlockComment = false; i++; }
+                continue;
+            }
+            if (!inSingle && !inDouble)
+            {
+                if (ch == '-' && next == '-') { inLineComment = true; i++; continue; }
+                if (ch == '/' && next == '*') { inBlockComment = true; i++; continue; }
+            }
+
+            if (ch == '\'' && !inDouble)
+            {
+                current.Append(ch);
+                if (inSingle && next == '\'') { current.Append(next); i++; }
+                else inSingle = !inSingle;
+                continue;
+            }
+            if (ch == '"' && !inSingle)
+            {
+                current.Append(ch);
+                if (inDouble && next == '"') { current.Append(next); i++; }
+                else inDouble = !inDouble;
+                continue;
+            }
+            if (ch == ';' && !inSingle && !inDouble)
+            {
+                var stmt = current.ToString().Trim();
+                if (!string.IsNullOrEmpty(stmt)) statements.Add(stmt);
+                current.Clear();
+                continue;
+            }
+            current.Append(ch);
+        }
+
+        var tail = current.ToString().Trim();
+        if (!string.IsNullOrEmpty(tail)) statements.Add(tail);
+        return statements;
+    }
+
     private static async Task BuildSqliteFromSqlDumpAsync(string sqlContent, string targetSqlitePath, CancellationToken cancellationToken)
     {
         if (File.Exists(targetSqlitePath)) File.Delete(targetSqlitePath);
-        await using var conn = new SqliteConnection($"Data Source={targetSqlitePath}");
+        await using var conn = new SqliteConnection($"Data Source={targetSqlitePath};Pooling=False;");
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = conn.CreateCommand();
@@ -489,9 +548,9 @@ public sealed class WaseelaAndSqliteImportEngine
 
         // Normalize SQL Server [dbo].[TableName] brackets if coming from Abuzar Waseela SQL Server dump
         var normalizedSql = Regex.Replace(sqlContent, @"\[dbo\]\.", "", RegexOptions.IgnoreCase);
-        normalizedSql = Regex.Replace(normalizedSql, @"\bGO\b", ";", RegexOptions.IgnoreCase);
+        normalizedSql = Regex.Replace(normalizedSql, @"(?m)^\s*GO\s*$", ";", RegexOptions.IgnoreCase);
 
-        var statements = normalizedSql.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var statements = SplitSqlStatementsQuoteAware(normalizedSql);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
         foreach (var rawStmt in statements)
         {
@@ -536,7 +595,7 @@ public sealed class WaseelaAndSqliteImportEngine
         var tableName = Regex.Replace(rawTableName, @"[^A-Za-z0-9_]", "_");
         if (string.IsNullOrEmpty(tableName)) tableName = "waseela_items";
 
-        await using var conn = new SqliteConnection($"Data Source={targetSqlitePath}");
+        await using var conn = new SqliteConnection($"Data Source={targetSqlitePath};Pooling=False;");
         await conn.OpenAsync(cancellationToken);
 
         var colDefs = string.Join(", ", headers.Select(h => $"`{h.Replace("`", "")}` TEXT"));
@@ -670,7 +729,7 @@ public sealed class WaseelaAndSqliteImportEngine
             ? JsonSerializer.Deserialize<Dictionary<string, object?>>(await File.ReadAllTextAsync(metaPath, cancellationToken)) ?? new()
             : new Dictionary<string, object?>();
 
-        await using var conn = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly");
+        await using var conn = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly;Pooling=False;");
         await conn.OpenAsync(cancellationToken);
 
         var rawTableNames = new List<string>();
@@ -876,6 +935,209 @@ public sealed class WaseelaAndSqliteImportEngine
         };
     }
 
+    /// <summary>
+    /// Executes a topological 6-stage import from the staged SQLite file into the active Karobar database,
+    /// preserving protected security/license tables and translating matching columns automatically.
+    /// </summary>
+    public async Task<Dictionary<string, object?>> ExecuteImportAsync(
+        KarobarDbContext db,
+        string token,
+        string mode = "merge",
+        CancellationToken cancellationToken = default)
+    {
+        var stagedPath = ResolveStagedPath(token);
+        var targetConnStr = db.Database.GetConnectionString()
+            ?? $"Data Source={Path.Combine(_appRoot, "database", "database.sqlite")};";
+
+        var importedTables = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var totalRowsInserted = 0;
+
+        await using var srcConn = new SqliteConnection($"Data Source={stagedPath};Mode=ReadOnly;Pooling=False;");
+        await srcConn.OpenAsync(cancellationToken);
+
+        await using var dstConn = new SqliteConnection(targetConnStr);
+        await dstConn.OpenAsync(cancellationToken);
+
+        await using (var pragmaCmd = dstConn.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA busy_timeout=15000; PRAGMA foreign_keys = OFF;";
+            await pragmaCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var srcTables = new List<string>();
+        await using (var cmd = srcConn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+            await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await r.ReadAsync(cancellationToken))
+            {
+                var t = r.GetString(0);
+                if (!string.IsNullOrWhiteSpace(t) && !ProtectedTables.Contains(t, StringComparer.OrdinalIgnoreCase))
+                {
+                    srcTables.Add(t);
+                }
+            }
+        }
+
+        var dstTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var cmd = dstConn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+            await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await r.ReadAsync(cancellationToken))
+            {
+                dstTables.Add(r.GetString(0));
+            }
+        }
+
+        var orderedPlan = new List<(string SrcTable, string TargetTable)>();
+        var targetToSrc = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var st in srcTables)
+        {
+            var (target, _) = ResolveTargetTable(st, Array.Empty<string>());
+            if (target != null && dstTables.Contains(target) &&
+                !ProtectedTables.Contains(target, StringComparer.OrdinalIgnoreCase) &&
+                !OptionalConfigTables.Contains(target, StringComparer.OrdinalIgnoreCase) &&
+                !targetToSrc.ContainsKey(target))
+            {
+                targetToSrc[target] = st;
+            }
+        }
+
+        foreach (var stage in DependencyStages.OrderBy(kv => kv.Key))
+        {
+            foreach (var target in stage.Value)
+            {
+                if (targetToSrc.TryGetValue(target, out var st))
+                {
+                    orderedPlan.Add((st, target));
+                }
+            }
+        }
+
+        var replaceMode = string.Equals(mode, "replace", StringComparison.OrdinalIgnoreCase);
+        await using var tx = await dstConn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            if (replaceMode)
+            {
+                foreach (var (_, target) in orderedPlan.AsEnumerable().Reverse())
+                {
+                    await using var delCmd = dstConn.CreateCommand();
+                    delCmd.Transaction = (SqliteTransaction)tx;
+                    delCmd.CommandText = $"DELETE FROM \"{target.Replace("\"", "\"\"")}\";";
+                    await delCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+
+            foreach (var (srcTable, targetTable) in orderedPlan)
+            {
+                var srcCols = new List<string>();
+                await using (var cCmd = srcConn.CreateCommand())
+                {
+                    cCmd.CommandText = $"PRAGMA table_info(\"{srcTable.Replace("\"", "\"\"")}\")";
+                    await using var cr = await cCmd.ExecuteReaderAsync(cancellationToken);
+                    while (await cr.ReadAsync(cancellationToken))
+                    {
+                        var cn = cr["name"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(cn)) srcCols.Add(cn);
+                    }
+                }
+
+                var dstCols = new List<string>();
+                await using (var cCmd = dstConn.CreateCommand())
+                {
+                    cCmd.Transaction = (SqliteTransaction)tx;
+                    cCmd.CommandText = $"PRAGMA table_info(\"{targetTable.Replace("\"", "\"\"")}\")";
+                    await using var cr = await cCmd.ExecuteReaderAsync(cancellationToken);
+                    while (await cr.ReadAsync(cancellationToken))
+                    {
+                        var cn = cr["name"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(cn)) dstCols.Add(cn);
+                    }
+                }
+
+                var srcSet = new HashSet<string>(srcCols, StringComparer.OrdinalIgnoreCase);
+                var colPairs = new List<(string Src, string Dst)>();
+                foreach (var dc in dstCols)
+                {
+                    if (srcSet.Contains(dc))
+                    {
+                        colPairs.Add((srcCols.First(s => s.Equals(dc, StringComparison.OrdinalIgnoreCase)), dc));
+                    }
+                    else if (ColumnAliases.TryGetValue(dc, out var aliases))
+                    {
+                        var aliasMatch = aliases.FirstOrDefault(a => srcSet.Contains(a));
+                        if (aliasMatch != null)
+                        {
+                            colPairs.Add((srcCols.First(s => s.Equals(aliasMatch, StringComparison.OrdinalIgnoreCase)), dc));
+                        }
+                    }
+                }
+
+                if (colPairs.Count == 0) continue;
+
+                var selectCols = string.Join(", ", colPairs.Select(p => $"\"{p.Src.Replace("\"", "\"\"")}\""));
+                var insertCols = string.Join(", ", colPairs.Select(p => $"\"{p.Dst.Replace("\"", "\"\"")}\""));
+                var paramPlaceholders = string.Join(", ", colPairs.Select((_, idx) => $"@p{idx}"));
+                var insertVerb = replaceMode ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
+
+                await using var selCmd = srcConn.CreateCommand();
+                selCmd.CommandText = $"SELECT {selectCols} FROM \"{srcTable.Replace("\"", "\"\"")}\"";
+                await using var reader = await selCmd.ExecuteReaderAsync(cancellationToken);
+
+                var insertedForTable = 0;
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    await using var insCmd = dstConn.CreateCommand();
+                    insCmd.Transaction = (SqliteTransaction)tx;
+                    insCmd.CommandText = $"{insertVerb} INTO \"{targetTable.Replace("\"", "\"\"")}\" ({insertCols}) VALUES ({paramPlaceholders});";
+                    for (var i = 0; i < colPairs.Count; i++)
+                    {
+                        var val = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                        insCmd.Parameters.AddWithValue($"@p{i}", val);
+                    }
+                    try
+                    {
+                        insertedForTable += await insCmd.ExecuteNonQueryAsync(cancellationToken);
+                    }
+                    catch
+                    {
+                        // Skip individual malformed rows without aborting entire batch
+                    }
+                }
+
+                importedTables[targetTable] = insertedForTable;
+                totalRowsInserted += insertedForTable;
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await using var fkCmd = dstConn.CreateCommand();
+                fkCmd.CommandText = "PRAGMA foreign_keys = ON;";
+                await fkCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch { }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["mode"] = replaceMode ? "replace" : "merge",
+            ["tables_imported"] = importedTables.Count,
+            ["total_rows_inserted"] = totalRowsInserted,
+            ["per_table"] = importedTables
+        };
+    }
+
     public static string NormalizeDateString(string? raw)
     {
         var trimmed = (raw ?? "").Trim();
@@ -889,9 +1151,10 @@ public sealed class WaseelaAndSqliteImportEngine
         if (m1.Success)
         {
             var d = int.Parse(m1.Groups[1].Value, CultureInfo.InvariantCulture);
-            var mo = int.Parse(m1.Groups[2].Value, CultureInfo.InvariantCulture);
-            var y = int.Parse(m1.Groups[3].Value, CultureInfo.InvariantCulture);
-            return $"{y:D4}-{Math.Clamp(mo, 1, 12):D2}-{Math.Clamp(d, 1, 28):D2}";
+            var mo = Math.Clamp(int.Parse(m1.Groups[2].Value, CultureInfo.InvariantCulture), 1, 12);
+            var y = Math.Clamp(int.Parse(m1.Groups[3].Value, CultureInfo.InvariantCulture), 1900, 2999);
+            var maxDay = DateTime.DaysInMonth(y, mo);
+            return $"{y:D4}-{mo:D2}-{Math.Clamp(d, 1, maxDay):D2}";
         }
 
         // MM/YYYY (common for medicine expiry dates in Abuzar Waseela)
@@ -899,8 +1162,9 @@ public sealed class WaseelaAndSqliteImportEngine
         if (m2.Success)
         {
             var mo = Math.Clamp(int.Parse(m2.Groups[1].Value, CultureInfo.InvariantCulture), 1, 12);
-            var y = int.Parse(m2.Groups[2].Value, CultureInfo.InvariantCulture);
-            return $"{y:D4}-{mo:D2}-28";
+            var y = Math.Clamp(int.Parse(m2.Groups[2].Value, CultureInfo.InvariantCulture), 1900, 2999);
+            var lastDay = DateTime.DaysInMonth(y, mo);
+            return $"{y:D4}-{mo:D2}-{lastDay:D2}";
         }
 
         if (DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))

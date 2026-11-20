@@ -120,6 +120,8 @@ public sealed class PdfDocumentGenerator
     static PdfDocumentGenerator()
     {
         QuestPDF.Settings.License = LicenseType.Community;
+        // Prevent QuestPDF DocumentDrawingException when store/customer/product text contains Urdu/Arabic or non-Latin Unicode glyphs
+        QuestPDF.Settings.CheckIfAllTextGlyphsAreAvailable = false;
     }
 
     private static (string PrimaryHex, string SecondaryHex, string AccentBgHex, string TextHex) ResolveThemeColors(string? design)
@@ -354,11 +356,10 @@ public sealed class PdfDocumentGenerator
                         contentCol.Item().PaddingTop(6).Text($"Remarks: {request.Remarks}").FontSize(isThermal ? 5.8f : 9f).FontColor(secondaryHex);
                     }
 
-                    if (!string.IsNullOrWhiteSpace(request.FbrInvoiceNumber) || request.Setting.FbrEnabled)
+                    var isFbrEligibleDoc = request.DocumentType is "sale_invoice" or "sale_return";
+                    if (isFbrEligibleDoc && !string.IsNullOrWhiteSpace(request.FbrInvoiceNumber))
                     {
-                        var fbrNo = !string.IsNullOrWhiteSpace(request.FbrInvoiceNumber)
-                            ? request.FbrInvoiceNumber
-                            : $"{request.Setting.FbrPosId ?? "966130"}{DateTime.Now:yyMMddHHmmss}01";
+                        var fbrNo = request.FbrInvoiceNumber.Trim();
                         var qrPayload = !string.IsNullOrWhiteSpace(request.FbrQrData) ? request.FbrQrData! : fbrNo;
                         var qrSvg = PrintTemplateRenderer.GenerateQrSvg(qrPayload, isThermal ? 64 : 76);
 
@@ -561,6 +562,21 @@ public sealed class PdfDocumentGenerator
         return doc.GeneratePdf();
     }
 
+    private static bool IsValidRasterImageBytes(byte[]? bytes)
+    {
+        if (bytes == null || bytes.Length < 12) return false;
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+        // JPEG: FF D8 FF
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+        // GIF: 47 49 46 38
+        if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true;
+        // WebP: RIFF....WEBP
+        if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return true;
+        return false;
+    }
+
     private static byte[]? TryLoadLogoBytes(string? logoUrl)
     {
         if (string.IsNullOrWhiteSpace(logoUrl)) return null;
@@ -570,27 +586,37 @@ public sealed class PdfDocumentGenerator
             if (trimmed.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
             {
                 var comma = trimmed.IndexOf(',');
-                if (comma > 0) return Convert.FromBase64String(trimmed[(comma + 1)..]);
+                if (comma > 0)
+                {
+                    var decoded = Convert.FromBase64String(trimmed[(comma + 1)..]);
+                    return IsValidRasterImageBytes(decoded) ? decoded : null;
+                }
                 return null;
             }
-            if (File.Exists(trimmed)) return File.ReadAllBytes(trimmed);
 
             var rel = trimmed;
             if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) rel = uri.AbsolutePath;
-            rel = rel.TrimStart('/');
+            rel = rel.Replace('\\', '/').TrimStart('/');
             if (rel.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)) rel = rel[8..];
+            if (string.IsNullOrWhiteSpace(rel) || rel.Contains("..")) return null;
 
             var appRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH")
                 ?? Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT")
                 ?? Directory.GetCurrentDirectory();
-            var candidates = new[]
+            var allowedRoots = new[]
             {
-                Path.Combine(appRoot, "storage", "app", "public", rel.Replace('/', Path.DirectorySeparatorChar)),
-                Path.Combine(appRoot, "public", "storage", rel.Replace('/', Path.DirectorySeparatorChar))
+                Path.GetFullPath(Path.Combine(appRoot, "storage", "app", "public")),
+                Path.GetFullPath(Path.Combine(appRoot, "public", "storage"))
             };
-            foreach (var c in candidates)
+            foreach (var root in allowedRoots)
             {
-                if (File.Exists(c)) return File.ReadAllBytes(c);
+                var rootWithSep = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var candidate = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
+                if (candidate.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase) && File.Exists(candidate))
+                {
+                    var bytes = File.ReadAllBytes(candidate);
+                    return IsValidRasterImageBytes(bytes) ? bytes : null;
+                }
             }
         }
         catch { }

@@ -137,7 +137,23 @@ public sealed class NativeWebView2Form : Form
             else NavigateOnUi();
         };
 
-        Load += async (_, _) => await InitializeInitialTabAsync();
+        Load += async (_, _) =>
+        {
+            try
+            {
+                await InitializeInitialTabAsync();
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Karobar-App-Native");
+                    Directory.CreateDirectory(logDir);
+                    File.AppendAllText(Path.Combine(logDir, "startup-error.log"), $"[{DateTime.Now:O}] Initial tab load error: {ex}\n");
+                }
+                catch { }
+            }
+        };
         Activated += (_, _) => _winInstance.IsFocused = true;
         Deactivate += (_, _) => _winInstance.IsFocused = false;
         FormClosed += (_, _) =>
@@ -172,7 +188,8 @@ public sealed class NativeWebView2Form : Form
                 try { wv.Dispose(); } catch { }
             }
             _tabWebViews.Clear();
-            try { _envInitLock.Dispose(); } catch { }
+            // Do not dispose _envInitLock here because an in-flight CoreWebView2Environment.CreateAsync
+            // may still release it in its finally block on form close.
             _windowManager.CloseWindow(_winInstance.Id);
         };
     }
@@ -196,12 +213,14 @@ public sealed class NativeWebView2Form : Form
             _trayMenu.Items.Add("New POS Tab (Ctrl+Shift+P)", null, (_, _) =>
             {
                 Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
                 Activate();
                 _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
             });
             _trayMenu.Items.Add("Cube AI GuideBot (Ctrl+G)", null, (_, _) =>
             {
                 Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
                 Activate();
                 ToggleGuideBot();
             });
@@ -1039,9 +1058,25 @@ public sealed class NativeWebView2Form : Form
                 }
             };
 
-            core.NavigationCompleted += (_, _) =>
+            core.NavigationCompleted += (_, navArgs) =>
             {
                 _windowManager.CloseSplashWindow();
+
+                // In Multi-PC Terminal Mode, if the Store Server becomes unreachable mid-session,
+                // navigate cleanly to the local offline recovery page instead of showing Edge's raw error page.
+                if (!navArgs.IsSuccess && _bridge.NetworkConfig.IsTerminalMode())
+                {
+                    var currentUri = core.Source ?? "";
+                    if (!currentUri.Contains("terminal-offline.html", StringComparison.OrdinalIgnoreCase) &&
+                        !currentUri.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var offlinePath = _windowManager.ResolveTerminalOfflineHtmlPath();
+                        if (File.Exists(offlinePath))
+                        {
+                            try { core.Navigate(new Uri(offlinePath).AbsoluteUri); } catch { }
+                        }
+                    }
+                }
             };
 
             var navUrl = !string.IsNullOrWhiteSpace(explicitUrl) ? explicitUrl : BuildAbsoluteUrl(tab.RoutePath);

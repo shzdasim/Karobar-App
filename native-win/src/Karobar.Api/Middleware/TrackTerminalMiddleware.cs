@@ -82,6 +82,13 @@ public class TrackTerminalMiddleware
                                         (aaObj is string s && (s == "1" || s.Equals("true", StringComparison.OrdinalIgnoreCase)));
                     }
 
+                    var remoteIp = context.Connection.RemoteIpAddress;
+                    var isLoopback = remoteIp == null || System.Net.IPAddress.IsLoopback(remoteIp.IsIPv4MappedToIPv6 ? remoteIp.MapToIPv4() : remoteIp);
+                    if (!isLoopback && !string.IsNullOrEmpty(storedToken) && !hasValidToken)
+                    {
+                        autoAuthorize = false;
+                    }
+
                     if (autoAuthorize && !await HasAvailableLicenseSeatAsync(db, licenseService, terminalUid))
                     {
                         autoAuthorize = false;
@@ -95,21 +102,27 @@ public class TrackTerminalMiddleware
                     var validMode = mode is "standalone" or "server" or "terminal" or "browser" ? mode : "terminal";
                     var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
-                    var newId = await db.InsertAsync("terminals", new Dictionary<string, object?>
-                    {
-                        ["terminal_uid"] = terminalUid,
-                        ["name"] = defaultName,
-                        ["hostname"] = string.IsNullOrEmpty(hostname) ? null : hostname,
-                        ["ip_address"] = ipAddress,
-                        ["os_platform"] = string.IsNullOrEmpty(osPlatform) ? null : osPlatform,
-                        ["app_version"] = string.IsNullOrEmpty(appVersion) ? null : appVersion,
-                        ["mode"] = validMode,
-                        ["current_user_id"] = userId,
-                        ["is_authorized"] = autoAuthorize ? 1 : 0,
-                        ["last_seen_at"] = nowStr
-                    });
+                    await db.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO terminals
+                            (terminal_uid, name, hostname, ip_address, os_platform, app_version, mode, current_user_id, is_authorized, last_seen_at, created_at, updated_at)
+                        VALUES
+                            (@terminal_uid, @name, @hostname, @ip_address, @os_platform, @app_version, @mode, @current_user_id, @is_authorized, @last_seen_at, @nowStr, @nowStr)",
+                        new
+                        {
+                            terminal_uid = terminalUid,
+                            name = defaultName,
+                            hostname = string.IsNullOrEmpty(hostname) ? null : hostname,
+                            ip_address = ipAddress,
+                            os_platform = string.IsNullOrEmpty(osPlatform) ? null : osPlatform,
+                            app_version = string.IsNullOrEmpty(appVersion) ? null : appVersion,
+                            mode = validMode,
+                            current_user_id = userId,
+                            is_authorized = autoAuthorize ? 1 : 0,
+                            last_seen_at = nowStr,
+                            nowStr
+                        });
 
-                    terminal = await db.QuerySingleOrDefaultAsync("SELECT * FROM terminals WHERE id = @id", new { id = newId });
+                    terminal = await db.QuerySingleOrDefaultAsync("SELECT * FROM terminals WHERE terminal_uid = @uid", new { uid = terminalUid });
                 }
                 else
                 {

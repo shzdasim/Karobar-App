@@ -314,12 +314,46 @@ public class SqliteImportController : ApiControllerBase
             }
             else
             {
-                if (!System.IO.File.Exists(filePath))
+                // Restrict local_file_path server-disk reads strictly to local loopback requests.
+                var remoteIp = HttpContext.Connection.RemoteIpAddress;
+                if (remoteIp != null)
+                {
+                    if (remoteIp.IsIPv4MappedToIPv6) remoteIp = remoteIp.MapToIPv4();
+                    if (!System.Net.IPAddress.IsLoopback(remoteIp))
+                    {
+                        return StatusCode(403, new Dictionary<string, object?>
+                        {
+                            ["message"] = "Local file path imports are restricted to the Store Server PC. Please upload the file instead."
+                        });
+                    }
+                }
+
+                if (filePath.StartsWith(@"\\", StringComparison.Ordinal) ||
+                    filePath.StartsWith("//", StringComparison.Ordinal) ||
+                    !Path.IsPathRooted(filePath))
+                {
+                    throw new InvalidOperationException("Only absolute local disk paths are permitted for direct database import.");
+                }
+
+                var fullSourcePath = Path.GetFullPath(filePath);
+                var liveDbPath = Path.GetFullPath(Db.SqlitePath);
+                if (string.Equals(fullSourcePath, liveDbPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Cannot import directly from the currently active live database file.");
+                }
+
+                var srcExt = Path.GetExtension(fullSourcePath).ToLowerInvariant();
+                if (srcExt is not (".sqlite" or ".sqlite3" or ".db" or ".db3" or ".zip" or ".gz"))
+                {
+                    throw new InvalidOperationException("Unsupported local file extension. Select a .sqlite, .sqlite3, .db, .db3, .zip, or .gz database file.");
+                }
+
+                if (!System.IO.File.Exists(fullSourcePath))
                 {
                     throw new InvalidOperationException("Selected database file does not exist or is not readable.");
                 }
-                originalName = Path.GetFileName(filePath);
-                await using (var srcFs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, true))
+                originalName = Path.GetFileName(fullSourcePath);
+                await using (var srcFs = new FileStream(fullSourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, true))
                 await using (var dstFs = new FileStream(stagedSqlitePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
                 {
                     await srcFs.CopyToAsync(dstFs);
@@ -328,7 +362,7 @@ public class SqliteImportController : ApiControllerBase
                 // CRITICAL WAL-MODE SUPPORT: If a sibling `-wal` (and optional `-shm`) exists beside the selected
                 // SQLite file (e.g. from a running Electron Karobar-App), copy them alongside the staged copy and
                 // checkpoint immediately so 100% of uncheckpointed Sale Invoices / recent rows are merged in!
-                var srcWal = filePath + "-wal";
+                var srcWal = fullSourcePath + "-wal";
                 if (System.IO.File.Exists(srcWal))
                 {
                     try
@@ -339,7 +373,7 @@ public class SqliteImportController : ApiControllerBase
                     }
                     catch { }
                 }
-                var srcShm = filePath + "-shm";
+                var srcShm = fullSourcePath + "-shm";
                 if (System.IO.File.Exists(srcShm))
                 {
                     try
@@ -358,6 +392,24 @@ public class SqliteImportController : ApiControllerBase
                 throw new InvalidOperationException("The selected database file is empty or unreadable.");
             }
 
+            const long maxDecompressedBytes = 2L * 1024 * 1024 * 1024; // 2 GB cap
+
+            static async Task CopyBoundedAsync(Stream source, Stream destination, long maxBytes)
+            {
+                var buffer = new byte[81920];
+                long total = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    total += read;
+                    if (total > maxBytes)
+                    {
+                        throw new InvalidOperationException("Decompressed database exceeds the maximum allowed size limit (2 GB).");
+                    }
+                    await destination.WriteAsync(buffer, 0, read);
+                }
+            }
+
             // Read first 64 bytes to detect GZip (.gz), ZIP (.zip), or raw SQLite 3 header
             var headerBytes = new byte[Math.Min(64, (int)stagedInfo.Length)];
             await using (var hdrFs = new FileStream(stagedSqlitePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -369,37 +421,60 @@ public class SqliteImportController : ApiControllerBase
             if (headerBytes.Length >= 2 && headerBytes[0] == 0x1F && headerBytes[1] == 0x8B)
             {
                 var tmpUnzipped = stagedSqlitePath + ".tmp";
-                await using (var inFs = new FileStream(stagedSqlitePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                await using (var gz = new GZipStream(inFs, CompressionMode.Decompress))
-                await using (var outFs = new FileStream(tmpUnzipped, FileMode.Create, FileAccess.Write, FileShare.None))
+                try
                 {
-                    await gz.CopyToAsync(outFs);
+                    await using (var inFs = new FileStream(stagedSqlitePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    await using (var gz = new GZipStream(inFs, CompressionMode.Decompress))
+                    await using (var outFs = new FileStream(tmpUnzipped, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        await CopyBoundedAsync(gz, outFs, maxDecompressedBytes);
+                    }
+                    System.IO.File.Move(tmpUnzipped, stagedSqlitePath, overwrite: true);
                 }
-                System.IO.File.Move(tmpUnzipped, stagedSqlitePath, overwrite: true);
+                catch
+                {
+                    try { if (System.IO.File.Exists(tmpUnzipped)) System.IO.File.Delete(tmpUnzipped); } catch { }
+                    throw;
+                }
             }
             // Extract largest .sqlite / .db entry from ZIP archive if needed
             else if (headerBytes.Length >= 4 && headerBytes[0] == 0x50 && headerBytes[1] == 0x4B && headerBytes[2] == 0x03 && headerBytes[3] == 0x04)
             {
                 var tmpUnzipped = stagedSqlitePath + ".tmp";
-                using (var archive = ZipFile.OpenRead(stagedSqlitePath))
+                try
                 {
-                    var dbEntry = archive.Entries
-                        .Where(e => e.Length > 0 && (
-                            e.Name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
-                            e.Name.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase) ||
-                            e.Name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
-                            e.Name.EndsWith(".db3", StringComparison.OrdinalIgnoreCase)))
-                        .OrderByDescending(e => e.Length)
-                        .FirstOrDefault();
-
-                    if (dbEntry == null)
+                    using (var archive = ZipFile.OpenRead(stagedSqlitePath))
                     {
-                        throw new InvalidOperationException("ZIP archive does not contain a .sqlite or .db database file.");
-                    }
+                        var dbEntry = archive.Entries
+                            .Where(e => e.Length > 0 && (
+                                e.Name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+                                e.Name.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase) ||
+                                e.Name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
+                                e.Name.EndsWith(".db3", StringComparison.OrdinalIgnoreCase)))
+                            .OrderByDescending(e => e.Length)
+                            .FirstOrDefault();
 
-                    dbEntry.ExtractToFile(tmpUnzipped, overwrite: true);
+                        if (dbEntry == null)
+                        {
+                            throw new InvalidOperationException("ZIP archive does not contain a .sqlite or .db database file.");
+                        }
+
+                        if (dbEntry.Length > maxDecompressedBytes)
+                        {
+                            throw new InvalidOperationException("Database archive entry exceeds the maximum allowed size limit (2 GB).");
+                        }
+
+                        await using var entryStream = dbEntry.Open();
+                        await using var outFs = new FileStream(tmpUnzipped, FileMode.Create, FileAccess.Write, FileShare.None);
+                        await CopyBoundedAsync(entryStream, outFs, maxDecompressedBytes);
+                    }
+                    System.IO.File.Move(tmpUnzipped, stagedSqlitePath, overwrite: true);
                 }
-                System.IO.File.Move(tmpUnzipped, stagedSqlitePath, overwrite: true);
+                catch
+                {
+                    try { if (System.IO.File.Exists(tmpUnzipped)) System.IO.File.Delete(tmpUnzipped); } catch { }
+                    throw;
+                }
             }
 
             // Validate SQLite 3 magic header
@@ -454,6 +529,14 @@ public class SqliteImportController : ApiControllerBase
             return StatusCode(422, new Dictionary<string, object?>
             {
                 ["message"] = "Session token, source_table, and target_table are required."
+            });
+        }
+
+        if (ProtectedTables.Contains(sourceTable) || ProtectedTables.Contains(targetTable))
+        {
+            return StatusCode(403, new Dictionary<string, object?>
+            {
+                ["message"] = $"Table [{targetTable}] is protected and cannot be previewed or imported."
             });
         }
 

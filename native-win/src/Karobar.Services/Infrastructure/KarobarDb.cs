@@ -43,7 +43,12 @@ public class KarobarDb
         "fbr_request_payload",
         "destination_config",
         "metadata",
-        "thermal_custom_layout"
+        "thermal_custom_layout",
+        "closing_denominations",
+        "layout_options",
+        "before_payload",
+        "after_payload",
+        "diff"
     };
 
     private static readonly HashSet<string> BooleanColumns = new(StringComparer.OrdinalIgnoreCase)
@@ -86,7 +91,9 @@ public class KarobarDb
         "is_blind",
         "has_narcotics",
         "record_expense",
-        "is_manual"
+        "is_manual",
+        "eligible_for_schemes",
+        "is_custom_price"
     };
 
     public KarobarDb(IServiceProvider? serviceProvider = null, IConfiguration? configuration = null, string? explicitSqlitePath = null)
@@ -214,7 +221,7 @@ public class KarobarDb
         var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
         using var cmd = conn.CreateCommand();
         cmd.CommandText = needsWal
-            ? "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
+            ? "PRAGMA busy_timeout=15000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
             : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
         cmd.ExecuteNonQuery();
         if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
@@ -245,7 +252,7 @@ public class KarobarDb
         var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = needsWal
-            ? "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
+            ? "PRAGMA busy_timeout=15000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
             : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
         await cmd.ExecuteNonQueryAsync();
         if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
@@ -273,6 +280,8 @@ public class KarobarDb
     {
         TableCache.Clear();
         ColumnCache.Clear();
+        WalInitializedDbPaths.Clear();
+        Karobar.Data.SqliteConnectionInterceptor.ResetWalCache();
     }
 
     public async Task<bool> HasTableAsync(string tableName)

@@ -248,6 +248,18 @@ public sealed class Win32RawPrinterService
             return (false, null, strategy.Error ?? "No physical thermal printer detected to kick cash drawer.");
         }
 
+        // Prevent sending raw ESC/POS drawer kick bytes to an obvious office laser/inkjet A4 printer unless explicitly chosen.
+        if (string.IsNullOrWhiteSpace(requestedPrinter) && strategy.PrinterInfo != null && !strategy.PrinterInfo.IsThermalPos)
+        {
+            var lowerName = $"{strategy.PrinterInfo.Name} {strategy.PrinterInfo.DriverName}".ToLowerInvariant();
+            if (lowerName.Contains("laserjet") || lowerName.Contains("officejet") || lowerName.Contains("deskjet") ||
+                lowerName.Contains("inkjet") || lowerName.Contains("ecotank") || lowerName.Contains("pixma") ||
+                lowerName.Contains("brother hl") || lowerName.Contains("brother mfc"))
+            {
+                return (false, strategy.DeviceName, $"Skipped cash drawer kick because '{strategy.DeviceName}' appears to be an A4 office printer. Select your thermal POS printer in Settings -> Print & Receipt Layouts.");
+            }
+        }
+
         var (ok, _, error) = SendRawBytesToPrinter(
             strategy.DeviceName,
             CashDrawerKickCommand,
@@ -395,35 +407,53 @@ public sealed class Win32RawPrinterService
                     StandardOutputEncoding = Encoding.UTF8
                 };
 
-                using var proc = Process.Start(psi);
-                if (proc != null)
+                Process? proc = null;
+                try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(4500));
-                    var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
-                    await proc.WaitForExitAsync(cts.Token);
-
-                    if (!string.IsNullOrWhiteSpace(stdout))
+                    proc = Process.Start(psi);
+                    if (proc != null)
                     {
-                        using var doc = JsonDocument.Parse(stdout.Trim());
-                        var elements = doc.RootElement.ValueKind == JsonValueKind.Array
-                            ? doc.RootElement.EnumerateArray().ToList()
-                            : [doc.RootElement];
+                        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(4500));
+                        var stdoutTask = proc.StandardOutput.ReadToEndAsync(cts.Token);
+                        await proc.WaitForExitAsync(cts.Token);
+                        var stdout = await stdoutTask;
 
-                        foreach (var el in elements)
+                        if (!string.IsNullOrWhiteSpace(stdout))
                         {
-                            if (el.ValueKind != JsonValueKind.Object) continue;
-                            var name = el.TryGetProperty("Name", out var n) ? (n.GetString() ?? "").Trim() : "";
-                            if (string.IsNullOrEmpty(name)) continue;
+                            using var doc = JsonDocument.Parse(stdout.Trim());
+                            var elements = doc.RootElement.ValueKind == JsonValueKind.Array
+                                ? doc.RootElement.EnumerateArray().ToList()
+                                : [doc.RootElement];
 
-                            var isDefault = el.TryGetProperty("Default", out var d) && d.ValueKind == JsonValueKind.True;
-                            var workOffline = el.TryGetProperty("WorkOffline", out var wo) && wo.ValueKind == JsonValueKind.True;
-                            var printerStatus = el.TryGetProperty("PrinterStatus", out var ps) && ps.TryGetInt32(out var psiVal) ? psiVal : 0;
-                            var portName = el.TryGetProperty("PortName", out var pn) ? (pn.GetString() ?? "").Trim() : "";
-                            var driverName = el.TryGetProperty("DriverName", out var dn) ? (dn.GetString() ?? "").Trim() : "";
+                            foreach (var el in elements)
+                            {
+                                if (el.ValueKind != JsonValueKind.Object) continue;
+                                var name = el.TryGetProperty("Name", out var n) ? (n.GetString() ?? "").Trim() : "";
+                                if (string.IsNullOrEmpty(name)) continue;
 
-                            result.Add(ClassifyPrinter(name, name, driverName, portName, isDefault, workOffline, printerStatus, preferredName));
+                                var isDefault = el.TryGetProperty("Default", out var d) && d.ValueKind == JsonValueKind.True;
+                                var workOffline = el.TryGetProperty("WorkOffline", out var wo) && wo.ValueKind == JsonValueKind.True;
+                                var printerStatus = el.TryGetProperty("PrinterStatus", out var ps) && ps.TryGetInt32(out var psiVal) ? psiVal : 0;
+                                var portName = el.TryGetProperty("PortName", out var pn) ? (pn.GetString() ?? "").Trim() : "";
+                                var driverName = el.TryGetProperty("DriverName", out var dn) ? (dn.GetString() ?? "").Trim() : "";
+
+                                result.Add(ClassifyPrinter(name, name, driverName, portName, isDefault, workOffline, printerStatus, preferredName));
+                            }
                         }
                     }
+                }
+                catch
+                {
+                    try
+                    {
+                        if (proc != null && !proc.HasExited) proc.Kill(entireProcessTree: true);
+                    }
+                    catch { }
+                    throw;
+                }
+                finally
+                {
+                    try { proc?.Dispose(); } catch { }
                 }
             }
             catch
@@ -559,7 +589,10 @@ public sealed class Win32RawPrinterService
             {
                 if (matched.WorkOffline)
                 {
-                    var onlineAlt = printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline);
+                    var onlineAlt = isThermalDoc
+                        ? (printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline && p.IsThermalPos)
+                           ?? printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline))
+                        : printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline);
                     if (onlineAlt != null)
                     {
                         return new PrinterStrategyResult
@@ -705,7 +738,7 @@ public sealed class Win32RawPrinterService
                 FileName = sumatraExe,
                 CreateNoWindow = true,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
+                RedirectStandardOutput = false,
                 RedirectStandardError = true
             };
             psi.ArgumentList.Add("-print-to");
@@ -715,14 +748,16 @@ public sealed class Win32RawPrinterService
             psi.ArgumentList.Add(effectiveScale);
             psi.ArgumentList.Add(pdfFilePath);
 
+            Process? proc = null;
             try
             {
-                using var proc = Process.Start(psi);
+                proc = Process.Start(psi);
                 if (proc != null)
                 {
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                    var stderr = await proc.StandardError.ReadToEndAsync(cts.Token);
+                    var stderrTask = proc.StandardError.ReadToEndAsync(cts.Token);
                     await proc.WaitForExitAsync(cts.Token);
+                    var stderr = await stderrTask;
                     if (proc.ExitCode == 0)
                     {
                         return (true, targetPrinter, "sumatra", null);
@@ -732,7 +767,19 @@ public sealed class Win32RawPrinterService
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (proc != null && !proc.HasExited)
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                }
+                catch { }
                 return (false, targetPrinter, "sumatra", ex.Message);
+            }
+            finally
+            {
+                try { proc?.Dispose(); } catch { }
             }
         }
 

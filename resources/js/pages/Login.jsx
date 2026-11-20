@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import axios from "axios";
 import { ArrowRightIcon, ArrowPathIcon, EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -189,7 +189,7 @@ export default function Login() {
                 <input type="checkbox" name="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
                 <span>Remember me <span className="login-duration">(24h)</span></span>
               </label>
-              <a href="/forgot-password" className="login-link">Forgot password?</a>
+              <Link to="/forgot-password" className="login-link">Forgot password?</Link>
             </div>
             <button type="submit" disabled={loading} className="g-btn-primary login-submit">
               <span>{loading ? "Signing in…" : "Sign in"}</span>

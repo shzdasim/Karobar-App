@@ -586,13 +586,23 @@ export default function PrinterSetting({
     const scaleMode = String(form.print_scale_mode || "auto");
     const nowStr = new Date().toLocaleString();
 
+    const metaConfigJson = JSON.stringify({
+      isThermal: isThermalMode,
+      paperWidthMm: targetWidthMm,
+      marginTopMm: topMm,
+      marginBottomMm: bottomMm,
+      marginLeftMm: leftMm,
+      marginRightMm: rightMm,
+      fontScale,
+      contrastMode,
+      scaleMode,
+    }).replace(/"/g, "&quot;");
+
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
-  <meta name="karobar-print-config"
-    content="paperWidthMm=${targetWidthMm};marginTopMm=${topMm};marginBottomMm=${bottomMm};marginLeftMm=${leftMm};marginRightMm=${rightMm};fontScale=${fontScale};contrastMode=${contrastMode};scaleMode=${scaleMode}"
-  />
+  <meta name="karobar-print-config" content="${metaConfigJson}" />
   <title>Printer Alignment & Width Calibration Test</title>
   <style>
     @page { size: ${targetWidthMm}mm auto; margin: 0; }

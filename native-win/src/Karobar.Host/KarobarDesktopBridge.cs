@@ -1270,10 +1270,15 @@ public sealed class KarobarDesktopBridge
                 var backupDir = Path.Combine(_networkConfig.AppRoot, "storage", "app", "backups");
                 Directory.CreateDirectory(backupDir);
                 var destFile = Path.Combine(backupDir, $"backup-{DateTime.UtcNow:yyyy-MM-dd-HHmmss}.sqlite");
-                using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;");
-                using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={destFile};Mode=ReadWriteCreate;");
+                using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;Pooling=False;");
+                using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={destFile};Mode=ReadWriteCreate;Pooling=False;");
                 await srcConn.OpenAsync(cancellationToken);
                 await dstConn.OpenAsync(cancellationToken);
+                using (var pragmaCmd = srcConn.CreateCommand())
+                {
+                    pragmaCmd.CommandText = "PRAGMA busy_timeout=15000;";
+                    await pragmaCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
                 srcConn.BackupDatabase(dstConn);
             }
 
@@ -1442,8 +1447,8 @@ public sealed class KarobarDesktopBridge
                         ? rdProp.GetString() ?? ""
                         : "";
                     var depsCompatible = string.IsNullOrEmpty(remoteDeps) ||
-                                         string.IsNullOrEmpty(local.DepsFingerprint) ||
-                                         string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase);
+                                         (!string.IsNullOrEmpty(local.DepsFingerprint) &&
+                                          string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase));
 
                     // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
                     // require a one-time zero-data-loss full installer upgrade instead of a differential patch.
@@ -1781,7 +1786,7 @@ public sealed class KarobarDesktopBridge
                 var installDir = _networkConfig.AppRoot.TrimEnd(Path.DirectorySeparatorChar);
                 if (isPatch)
                 {
-                    LaunchWindowsDifferentialPatchSwap(tempFilePath, installDir);
+                    LaunchWindowsDifferentialPatchSwap(tempFilePath, installDir, _networkConfig.IsTerminalMode());
                 }
                 else
                 {
@@ -1888,7 +1893,7 @@ public sealed class KarobarDesktopBridge
         }
     }
 
-    private static void LaunchWindowsDifferentialPatchSwap(string patchZipPath, string installDir)
+    private static void LaunchWindowsDifferentialPatchSwap(string patchZipPath, string installDir, bool isTerminalMode)
     {
         var pid = Environment.ProcessId;
         var helperScriptPath = Path.Combine(Path.GetTempPath(), $"karobar-apply-patch-{pid}.ps1");
@@ -1897,6 +1902,7 @@ public sealed class KarobarDesktopBridge
         try { Directory.CreateDirectory(logDir); } catch { }
         var logPath = Path.Combine(logDir, "patch-update.log");
         var needsElevation = !CanWriteToInstallDirectory(installDir);
+        var isTerminalLiteral = isTerminalMode ? "$true" : "$false";
 
         var ps1 = $$"""
             $ErrorActionPreference = 'Stop'
@@ -1905,7 +1911,10 @@ public sealed class KarobarDesktopBridge
             $installDir = '{{installDir.Replace("'", "''")}}'
             $exePath = '{{exePath.Replace("'", "''")}}'
             $logPath = '{{logPath.Replace("'", "''")}}'
+            $isTerminalMode = {{isTerminalLiteral}}
             $stageDir = Join-Path $env:TEMP "karobar-patch-stage-$targetPid"
+            $rollbackDir = Join-Path $env:TEMP "karobar-patch-rollback-$targetPid"
+            $backedUpRels = New-Object System.Collections.Generic.List[string]
 
             function Write-Log([string]$msg) {
                 try {
@@ -1913,7 +1922,7 @@ public sealed class KarobarDesktopBridge
                 } catch {}
             }
 
-            Write-Log "=== Starting differential OTA patch swap (PID=$targetPid, Zip=$zipPath, InstallDir=$installDir) ==="
+            Write-Log "=== Starting differential OTA patch swap (PID=$targetPid, TerminalMode=$isTerminalMode, Zip=$zipPath, InstallDir=$installDir) ==="
 
             try {
                 # 1. Wait cleanly for Karobar-Native.exe to exit; force-close after 6s if still lingering so DLL locks release
@@ -1929,7 +1938,9 @@ public sealed class KarobarDesktopBridge
 
                 # 2. Extract patch zip cleanly using .NET ZipFile (fast, reliable across PowerShell 5.1 & 7)
                 if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue }
+                if (Test-Path $rollbackDir) { Remove-Item -Recurse -Force $rollbackDir -ErrorAction SilentlyContinue }
                 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+                New-Item -ItemType Directory -Force -Path $rollbackDir | Out-Null
                 Add-Type -AssemblyName System.IO.Compression.FileSystem
                 [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $stageDir)
                 Write-Log "Extracted patch archive into $stageDir"
@@ -1964,6 +1975,15 @@ public sealed class KarobarDesktopBridge
                     $destDir = Split-Path -Parent $dest
                     if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
 
+                    # Back up existing file before overwriting so a mid-patch failure can roll back cleanly
+                    if (Test-Path $dest) {
+                        $rbDest = Join-Path $rollbackDir $rel
+                        $rbDir = Split-Path -Parent $rbDest
+                        if (-not (Test-Path $rbDir)) { New-Item -ItemType Directory -Force -Path $rbDir | Out-Null }
+                        Copy-Item -Path $dest -Destination $rbDest -Force
+                        $backedUpRels.Add($rel)
+                    }
+
                     $ok = $false
                     $lastErr = $null
                     for ($attempt = 1; $attempt -le 8; $attempt++) {
@@ -1984,22 +2004,6 @@ public sealed class KarobarDesktopBridge
                 Write-Log "Successfully updated $copied files in $installDir"
 
                 if (Test-Path $exePath) {
-                    $isTerminalMode = $false
-                    foreach ($modeCfg in @(
-                        (Join-Path $installDir 'storage\app\network-mode.json'),
-                        (Join-Path $env:APPDATA 'Karobar-App-Native\network-mode.json')
-                    )) {
-                        if (Test-Path $modeCfg) {
-                            try {
-                                $cfgRaw = Get-Content -Path $modeCfg -Raw -ErrorAction Stop
-                                if ($cfgRaw -match '"mode"\s*:\s*"terminal"') {
-                                    $isTerminalMode = $true
-                                    break
-                                }
-                            } catch {}
-                        }
-                    }
-
                     if ($isTerminalMode) {
                         Write-Log "Terminal Mode detected - skipping local --cli install --upgrade-only."
                     } else {
@@ -2013,12 +2017,23 @@ public sealed class KarobarDesktopBridge
                 Write-Log "Patch applied successfully!"
             } catch {
                 Write-Log "ERROR: $($_.Exception.Message)"
+                if ($backedUpRels.Count -gt 0) {
+                    Write-Log "Rolling back $($backedUpRels.Count) overwritten file(s)..."
+                    foreach ($rel in $backedUpRels) {
+                        try {
+                            $rbSrc = Join-Path $rollbackDir $rel
+                            $dest = Join-Path $installDir $rel
+                            if (Test-Path $rbSrc) { Copy-Item -Path $rbSrc -Destination $dest -Force }
+                        } catch {}
+                    }
+                }
                 try {
                     Add-Type -AssemblyName System.Windows.Forms
-                    [System.Windows.Forms.MessageBox]::Show("Karobar-App Native patch update failed:`n`n$($_.Exception.Message)`n`nLog: $logPath", 'Karobar-App Native Updater', 'OK', 'Error') | Out-Null
+                    [System.Windows.Forms.MessageBox]::Show("Karobar-App Native patch update failed and was rolled back:`n`n$($_.Exception.Message)`n`nLog: $logPath", 'Karobar-App Native Updater', 'OK', 'Error') | Out-Null
                 } catch {}
             } finally {
                 Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
+                Remove-Item -Recurse -Force $rollbackDir -ErrorAction SilentlyContinue
                 if (Test-Path $exePath) {
                     Write-Log "Relaunching $exePath"
                     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -2051,11 +2066,15 @@ public sealed class KarobarDesktopBridge
     private static void LaunchWindowsInstallerAfterExit(string installerExePath, string installDir)
     {
         var pid = Environment.ProcessId;
+        var exePath = Path.Combine(installDir, Program.ExecutableFileName);
+        var otaFlagPath = Path.Combine(Path.GetTempPath(), "karobar-native-ota-upgrade.flag");
         var helperScriptPath = Path.Combine(Path.GetTempPath(), $"karobar-run-setup-{pid}.ps1");
         var ps1 = $$"""
             $targetPid = {{pid}}
             $setupExe = '{{installerExePath.Replace("'", "''")}}'
             $installDir = '{{installDir.Replace("'", "''")}}'
+            $exePath = '{{exePath.Replace("'", "''")}}'
+            $otaFlagPath = '{{otaFlagPath.Replace("'", "''")}}'
 
             # Wait for Karobar-Native.exe to exit and release Global\KarobarNativeErpV2Mutex before Inno Setup starts
             for ($i = 0; $i -lt 40; $i++) {
@@ -2068,7 +2087,13 @@ public sealed class KarobarDesktopBridge
             Start-Sleep -Milliseconds 400
 
             $setupArgs = "/SILENT /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 `"/DIR=$installDir`""
-            Start-Process -FilePath $setupExe -ArgumentList $setupArgs
+            try {
+                Start-Process -FilePath $setupExe -ArgumentList $setupArgs -ErrorAction Stop
+            } catch {
+                # If the user cancels UAC elevation or setup fails to start, clean up the OTA flag and relaunch the app cleanly
+                if (Test-Path $otaFlagPath) { Remove-Item -Force $otaFlagPath -ErrorAction SilentlyContinue }
+                if (Test-Path $exePath) { Start-Process -FilePath $exePath -WorkingDirectory $installDir }
+            }
             """;
 
         File.WriteAllText(helperScriptPath, ps1, new UTF8Encoding(false));
@@ -2193,7 +2218,10 @@ public sealed class KarobarDesktopBridge
 
         if (!string.IsNullOrWhiteSpace(url) &&
             (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-             url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+             url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+             url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) ||
+             url.StartsWith("whatsapp:", StringComparison.OrdinalIgnoreCase) ||
+             url.StartsWith("tel:", StringComparison.OrdinalIgnoreCase)))
         {
             WebView2WindowManager.TryOpenExternalUrl(url);
             return Task.FromResult<object>(new { ok = true });

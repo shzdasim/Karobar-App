@@ -262,7 +262,8 @@ public sealed class PrintTemplateRenderer
     /// </summary>
     public string RenderCalibrationStyles(
         PrintSettingViewModel setting,
-        IDictionary<string, string>? queryOverrides = null)
+        IDictionary<string, string>? queryOverrides = null,
+        bool isThermal = true)
     {
         int GetInt(string key, int fallback)
         {
@@ -293,11 +294,11 @@ public sealed class PrintTemplateRenderer
             return fallback;
         }
 
-        var calPaperWidthMm = GetInt("paper_width_mm", setting.PrintPaperWidthMm ?? 0);
-        var calMarginTopMm = GetInt("margin_top_mm", setting.PrintMarginTopMm);
-        var calMarginBottomMm = GetInt("margin_bottom_mm", setting.PrintMarginBottomMm);
-        var calMarginLeftMm = GetInt("margin_left_mm", setting.PrintMarginLeftMm);
-        var calMarginRightMm = GetInt("margin_right_mm", setting.PrintMarginRightMm);
+        var calPaperWidthMm = isThermal ? GetInt("paper_width_mm", setting.PrintPaperWidthMm ?? 0) : 0;
+        var calMarginTopMm = isThermal ? GetInt("margin_top_mm", setting.PrintMarginTopMm) : 0;
+        var calMarginBottomMm = isThermal ? GetInt("margin_bottom_mm", setting.PrintMarginBottomMm) : 0;
+        var calMarginLeftMm = isThermal ? GetInt("margin_left_mm", setting.PrintMarginLeftMm) : 0;
+        var calMarginRightMm = isThermal ? GetInt("margin_right_mm", setting.PrintMarginRightMm) : 0;
         var calFontScale = Math.Clamp(GetInt("font_scale", setting.PrintFontScale <= 0 ? 100 : setting.PrintFontScale), 70, 150);
 
         var calContrastMode = GetStr("contrast_mode", setting.PrintContrastMode);
@@ -320,6 +321,7 @@ public sealed class PrintTemplateRenderer
 
         var calConfigJson = JsonSerializer.Serialize(new
         {
+            isThermal,
             paperWidthMm = calPaperWidthMm,
             marginTopMm = calMarginTopMm,
             marginBottomMm = calMarginBottomMm,
@@ -340,17 +342,14 @@ public sealed class PrintTemplateRenderer
             sb.AppendLine("  .logo, .wm, .watermark { display: none !important; }");
         }
 
-        if (calPaperWidthMm > 0)
+        if (isThermal && calPaperWidthMm > 0)
         {
             sb.AppendLine($"  @media print {{ @page {{ size: {calPaperWidthMm}mm auto; margin: 0; }} }}");
             sb.AppendLine($"  .receipt {{ width: {calPaperWidthMm}mm !important; max-width: 100% !important; }}");
-            sb.AppendLine($"  .page {{ width: {calPaperWidthMm}mm !important; max-width: 100% !important; }}");
-            sb.AppendLine($"  .labels-wrapper {{ max-width: {calPaperWidthMm}mm !important; }}");
-            sb.AppendLine($"  .sticker {{ max-width: {calPaperWidthMm}mm !important; }}");
             sb.AppendLine($"  body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {{ width: {calPaperWidthMm}mm !important; max-width: 100% !important; }}");
         }
 
-        if (calMarginTopMm != 0 || calMarginBottomMm != 0 || calMarginLeftMm != 0 || calMarginRightMm != 0)
+        if (isThermal && (calMarginTopMm != 0 || calMarginBottomMm != 0 || calMarginLeftMm != 0 || calMarginRightMm != 0))
         {
             var padRules = new StringBuilder();
             if (calMarginTopMm != 0) padRules.Append($"padding-top: {Math.Max(0, calMarginTopMm)}mm !important; ");
@@ -360,14 +359,13 @@ public sealed class PrintTemplateRenderer
             if (calMarginRightMm > 0) padRules.Append($"padding-right: {calMarginRightMm}mm !important; ");
 
             sb.AppendLine($"  .receipt {{ {padRules} }}");
-            sb.AppendLine($"  .labels-wrapper {{ {padRules} }}");
             sb.AppendLine($"  body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {{ {padRules} }}");
         }
 
-        if (calFontScale != 100)
+        if (isThermal && calFontScale != 100)
         {
             var zoom = Math.Round(calFontScale / 100.0, 3).ToString(CultureInfo.InvariantCulture);
-            sb.AppendLine($"  .receipt .content, .receipt > table, .page, .labels-wrapper, body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {{ zoom: {zoom}; }}");
+            sb.AppendLine($"  .receipt .content, .receipt > table, body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {{ zoom: {zoom}; }}");
         }
 
         if (calContrastMode is "high_contrast" or "extra_bold")
@@ -408,14 +406,12 @@ public sealed class PrintTemplateRenderer
             fbrInvNo = $"{prefix}{DateTime.Now:yyMMdd}{docId:D6}";
         }
 
-        if (string.IsNullOrEmpty(fbrInvNo) && !fbrEnabled)
+        if (string.IsNullOrEmpty(fbrInvNo))
         {
             return "";
         }
 
-        var displayInvNo = !string.IsNullOrEmpty(fbrInvNo)
-            ? fbrInvNo
-            : $"{(string.IsNullOrEmpty(posId) ? "966130" : posId)}{DateTime.Now:yyMMddHHmmss}01";
+        var displayInvNo = fbrInvNo;
 
         var fbrQrData = (doc?.FbrQrData ?? "").Trim();
         if (string.IsNullOrEmpty(fbrQrData) && !string.IsNullOrEmpty(displayInvNo))
@@ -523,7 +519,7 @@ public sealed class PrintTemplateRenderer
         var showBalance = remainThis > 0 || (customerTotalDue.HasValue && customerTotalDue.Value > 0);
         var showTotalDue = customerTotalDue.HasValue && customerTotalDue.Value > 0;
         var footerNote = !string.IsNullOrWhiteSpace(invoice.FooterNote) ? invoice.FooterNote.Trim() : (setting.Note ?? "").Trim();
-        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides);
+        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides, isThermal: true);
         var fbrFooterHtml = RenderFbrFiscalFooter(invoice, setting);
         var invoiceType = (invoice.InvoiceType ?? "debit").ToUpperInvariant();
         var itemCount = invoice.Items.Count;
@@ -557,7 +553,7 @@ public sealed class PrintTemplateRenderer
             sb.AppendLine("<div class=\"hr\"></div><table><tbody>");
             foreach (var it in invoice.Items)
             {
-                sb.AppendLine($"<tr><td class=\"item-name\">{H(it.ProductName)}</td><td class=\"item-qty\">{F0(it.Quantity)}x</td><td class=\"item-price\">{F2(it.SubTotal)}</td></tr>");
+                sb.AppendLine($"<tr><td class=\"item-name\">{H(it.ProductName)}</td><td class=\"item-qty\">{Nf(it.Quantity)}x</td><td class=\"item-price\">{F2(it.SubTotal)}</td></tr>");
             }
             sb.AppendLine("</tbody></table><div class=\"totals\"><div class=\"hr\"></div>");
             sb.AppendLine($"<div class=\"pair\"><span>Total</span><span>{F2(total)}</span></div>");
@@ -608,7 +604,7 @@ public sealed class PrintTemplateRenderer
             sb.AppendLine("<div class=\"double-hr\"></div><table><thead><tr><th>ITEM</th><th class=\"center\">QTY</th><th class=\"right\">RATE</th><th class=\"right\">AMT</th></tr></thead><tbody>");
             foreach (var it in invoice.Items)
             {
-                sb.AppendLine($"<tr><td>{H(it.ProductName)}</td><td class=\"center\">{F0(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
+                sb.AppendLine($"<tr><td>{H(it.ProductName)}</td><td class=\"center\">{Nf(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
             }
             sb.AppendLine("</tbody></table><div class=\"totals\"><div class=\"hr\"></div>");
             sb.AppendLine($"<div class=\"pair\"><span>Sub Total</span><span>{F2(gross)}</span></div>");
@@ -652,7 +648,7 @@ public sealed class PrintTemplateRenderer
             sb.AppendLine("<div class=\"dotted-hr\"></div><table><tbody>");
             foreach (var it in invoice.Items)
             {
-                sb.AppendLine($"<tr><td class=\"col-name\">{H(it.ProductName)}</td><td class=\"col-qty\">{F0(it.Quantity)}</td><td class=\"col-price\">{F2(it.SubTotal)}</td></tr>");
+                sb.AppendLine($"<tr><td class=\"col-name\">{H(it.ProductName)}</td><td class=\"col-qty\">{Nf(it.Quantity)}</td><td class=\"col-price\">{F2(it.SubTotal)}</td></tr>");
             }
             sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"hr\"></div><div class=\"pair\"><span>Gross</span><span>{F2(gross)}</span></div><div class=\"pair\"><span>Disc</span><span>-{F2(disc)}</span></div>{(tax > 0 ? $"<div class=\"pair\"><span>Tax</span><span>{F2(tax)}</span></div>" : "")}<div class=\"pair total\"><span>TOTAL</span><span>{F2(total)}</span></div>");
             if (remainThis > 0) sb.AppendLine($"<div class=\"pair\"><span>Paid</span><span>{F2(totalReceive)}</span></div><div class=\"pair\"><span>Due</span><span>{F2(remainThis)}</span></div>");
@@ -690,7 +686,7 @@ public sealed class PrintTemplateRenderer
             sb.AppendLine("<div class=\"solid-hr\"></div><table><thead><tr><th>ITEM</th><th class=\"center\">QTY</th><th class=\"right\">PRICE</th><th class=\"right\">TOTAL</th></tr></thead><tbody>");
             foreach (var it in invoice.Items)
             {
-                sb.AppendLine($"<tr><td>{H(it.ProductName)}</td><td class=\"center\">{F0(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
+                sb.AppendLine($"<tr><td>{H(it.ProductName)}</td><td class=\"center\">{Nf(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
             }
             sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"pair\"><span>SUBTOTAL</span><span>{F2(gross)}</span></div><div class=\"pair\"><span>DISCOUNT</span><span>-{F2(disc)}</span></div><div class=\"pair\"><span>TAX</span><span>{F2(tax)}</span></div><div class=\"pair total\"><span>TOTAL</span><span>{F2(total)}</span></div>");
             if (remainThis > 0) sb.AppendLine($"<div class=\"pair\" style=\"margin-top:8px;border-top:2px solid #fff;padding-top:4px;\"><span>PAID</span><span>{F2(totalReceive)}</span></div><div class=\"pair total\"><span>DUE</span><span>{F2(remainThis)}</span></div>");
@@ -730,7 +726,7 @@ public sealed class PrintTemplateRenderer
                 sb.AppendLine("<tr><td>");
                 sb.AppendLine($"<div>{H(it.ProductName)}</div>");
                 if (!string.IsNullOrEmpty(it.Barcode)) sb.AppendLine($"<div class=\"item-barcode\">{H(it.Barcode)}</div>");
-                sb.AppendLine($"</td><td class=\"center\">{F0(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
+                sb.AppendLine($"</td><td class=\"center\">{Nf(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
             }
             sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"hr\"></div><div class=\"pair\"><span>Subtotal:</span><span>{F2(gross)}</span></div><div class=\"pair\"><span>Discount:</span><span>-{F2(disc)}</span></div><div class=\"pair\"><span>Tax:</span><span>{F2(tax)}</span></div><div class=\"pair total\"><span>TOTAL</span><span>{F2(total)}</span></div></div>");
             if (remainThis > 0)
@@ -779,7 +775,7 @@ public sealed class PrintTemplateRenderer
         sbStd.AppendLine($"<table><thead><tr><th class=\"col-name\">Name</th><th class=\"right col-qty\">Qty</th><th class=\"right col-price\">Price</th><th class=\"right col-disc\">{(isBaseThermal ? "Dis%" : "Dis")}</th><th class=\"right col-subtotal\">Subt.</th></tr></thead><tbody>");
         foreach (var it in invoice.Items)
         {
-            sbStd.AppendLine($"<tr><td style=\"font-size:10px\">{H(it.ProductName)}</td><td class=\"center\">{F0(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"center\">{F0(it.ItemDiscountPercentage)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
+            sbStd.AppendLine($"<tr><td style=\"font-size:10px\">{H(it.ProductName)}</td><td class=\"center\">{Nf(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"center\">{F0(it.ItemDiscountPercentage)}</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
         }
         sbStd.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"hr\"></div><div class=\"pair\"><div>Gross</div><div>{F2(gross)}</div></div><div class=\"pair\"><div>Discount</div><div>{F2(disc)}</div></div><div class=\"pair\"><div>Tax</div><div>{F2(tax)}</div></div><div class=\"pair total\"><div>{(isBaseThermal ? "Total" : "TOTAL")}</div><div>{F2(total)}</div></div>");
         if (showBalance)
@@ -815,7 +811,7 @@ public sealed class PrintTemplateRenderer
         var showBalance = remainThis > 0 || (customerTotalDue.HasValue && customerTotalDue.Value > 0);
         var showTotalDue = customerTotalDue.HasValue && customerTotalDue.Value > 0;
         var footerNote = !string.IsNullOrWhiteSpace(invoice.FooterNote) ? invoice.FooterNote.Trim() : (setting.Note ?? "").Trim();
-        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides);
+        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides, isThermal: false);
         var fbrFooterHtml = RenderFbrFiscalFooter(invoice, setting);
         var logo = setting.PrintShowLogo ? setting.LogoUrl : null;
         var dateStr = invoice.Date?.ToString(normalized == "compact" ? "dd/MM/yyyy" : "dd MMM yyyy", CultureInfo.InvariantCulture) ?? "";
@@ -837,10 +833,10 @@ public sealed class PrintTemplateRenderer
             {
                 sb.AppendLine($"<tr><td>{H(it.ProductName)}</td><td class=\"center\">{F2(it.Quantity)}</td><td class=\"right\">{F2(it.Price)}</td><td class=\"right\">{F1(it.ItemDiscountPercentage)}%</td><td class=\"right\">{F2(it.SubTotal)}</td></tr>");
             }
-            sb.AppendLine($"</tbody></table><div class=\"clear\"></div><div class=\"totals\"><div class=\"row\"><span>Gross</span><span>{F2(gross)}</span></div><div class=\"row\"><span>Discount</span><span>{F2(disc)}</span></div><div class=\"row\"><span>Tax</span><span>{F2(tax)}</span></div><div class=\"row total\"><span>Total</span><span>{F2(total)}</span></div>");
+            sb.AppendLine($"</tbody></table><div class=\"totals\"><div class=\"row\"><span>Gross</span><span>{F2(gross)}</span></div><div class=\"row\"><span>Discount</span><span>{F2(disc)}</span></div><div class=\"row\"><span>Tax</span><span>{F2(tax)}</span></div><div class=\"row total\"><span>Total</span><span>{F2(total)}</span></div>");
             if (remainThis > 0) sb.AppendLine($"<div class=\"row\"><span>Paid</span><span>{F2(totalReceive)}</span></div><div class=\"row total\"><span>Due</span><span>{F2(remainThis)}</span></div>");
             if (showTotalDue) sb.AppendLine($"<div class=\"row grand\"><span>Total Due</span><span>{F2(customerTotalDue!.Value)}</span></div>");
-            sb.AppendLine("</div>");
+            sb.AppendLine("</div><div class=\"clear\"></div>");
             sb.AppendLine(fbrFooterHtml);
             sb.AppendLine($"<div class=\"footer\">{(!string.IsNullOrEmpty(footerNote) ? $"<div style=\"margin-bottom:10px;\">{H(footerNote)}</div>" : "")}<div class=\"thankyou\">Thank you for your business!</div></div></div></body></html>");
             return sb.ToString();
@@ -920,7 +916,6 @@ public sealed class PrintTemplateRenderer
 
         if (normalized == "barcode")
         {
-            var barHash = ComputeMd5Hex($"{invoice.PostedNumber}|{dateStr}|{total}|{setting.StoreName}");
             var sb = new StringBuilder();
             sb.AppendLine($"<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>Sale Invoice (Barcode A4) - {H(invoice.PostedNumber)}</title>");
             sb.AppendLine("<style>:root{--text:#111;--muted:#666;--border:#ccc;--primary:#0d6efd;}*{box-sizing:border-box;}html,body{margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;color:var(--text);}.page{width:210mm;min-height:297mm;padding:18mm 14mm;margin:0 auto;}.print-actions{margin:12px auto;width:210mm;text-align:right;}.print-actions button{padding:8px 16px;cursor:pointer;background:var(--primary);color:#fff;border:none;border-radius:4px;font-size:12px;}@media print{.print-actions{display:none;}.page{padding:12mm;}}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--primary);padding-bottom:12px;margin-bottom:15px;}.store-info h1{margin:0;font-size:20px;color:var(--primary);}.store-info .details{font-size:10px;color:var(--muted);margin-top:4px;}.barcode-section{text-align:right;}.barcode-text{font-family:'Courier New',monospace;font-size:18px;font-weight:bold;letter-spacing:2px;}.meta-boxes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:15px;}.meta-box{background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid var(--primary);}.meta-box .label{font-size:9px;text-transform:uppercase;color:var(--muted);}.meta-box .value{font-weight:600;font-size:12px;margin-top:2px;}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px;}thead th{background:var(--primary);color:#fff;text-align:left;padding:10px 8px;font-size:10px;text-transform:uppercase;}tbody td{padding:8px;border-bottom:1px solid #e9ecef;}tbody tr:nth-child(even){background:#f8f9fa;}.right{text-align:right;}.center{text-align:center;}.product-barcode{font-family:'Courier New',monospace;font-size:9px;color:var(--muted);}.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}.summary-box{border:1px solid var(--border);border-radius:6px;overflow:hidden;}.summary-box .title{background:#343a40;color:#fff;padding:8px 12px;font-weight:bold;font-size:11px;}.summary-box .row{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #e9ecef;}.summary-box .row.total{background:#f8f9fa;font-weight:bold;font-size:14px;}.summary-box .row.due{background:#fff3cd;font-weight:bold;}.summary-box .row.grand{background:#dc3545;color:#fff;font-weight:bold;font-size:16px;}.qr-section{margin-top:15px;text-align:center;padding:15px;background:#f8f9fa;border-radius:6px;}.qr-text{font-size:9px;color:var(--muted);margin-top:4px;}.footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--border);text-align:center;}.footer-note{background:#fff3cd;padding:8px;border-radius:4px;border-left:3px solid #ffc107;font-size:10px;margin-bottom:10px;}.thankyou{font-style:italic;color:var(--muted);}.powered{font-size:9px;color:#adb5bd;margin-top:5px;}</style>");
@@ -942,15 +937,8 @@ public sealed class PrintTemplateRenderer
             else sb.AppendLine("<div class=\"row\" style=\"background:#d4edda;color:#155724;\"><span>PAID IN FULL</span><span></span></div>");
             if (showTotalDue) sb.AppendLine($"<div class=\"row grand\"><span>TOTAL DUE</span><span>{F2(customerTotalDue!.Value)}</span></div>");
             sb.AppendLine("</div></div>");
-            sb.AppendLine("<div class=\"qr-section\"><svg width=\"160\" height=\"44\" viewBox=\"0 0 160 44\" xmlns=\"http://www.w3.org/2000/svg\" style=\"display:inline-block;\"><rect width=\"160\" height=\"44\" fill=\"#ffffff\"/>");
-            for (var bi = 0; bi < 32; bi++)
-            {
-                var bVal = Convert.ToInt32(barHash[bi].ToString(), 16);
-                var bX = (6 + (bi * 4.6)).ToString("0.##", CultureInfo.InvariantCulture);
-                var bW = (bVal % 3 == 0 ? 3.2 : (bVal % 2 == 0 ? 2.1 : 1.2)).ToString("0.##", CultureInfo.InvariantCulture);
-                sb.AppendLine($"<rect x=\"{bX}\" y=\"4\" width=\"{bW}\" height=\"36\" fill=\"#000000\"/>");
-            }
-            sb.AppendLine($"</svg><div class=\"qr-text\">{H(invoice.PostedNumber)} — Verified Invoice</div></div>");
+            var a4BarSvg = GenerateCode128Svg(string.IsNullOrWhiteSpace(invoice.PostedNumber) ? "INV-0001" : invoice.PostedNumber, 220, 44);
+            sb.AppendLine($"<div class=\"qr-section\">{a4BarSvg}<div class=\"qr-text\">{H(invoice.PostedNumber)} — Verified Invoice</div></div>");
             sb.AppendLine(fbrFooterHtml);
             sb.AppendLine($"<div class=\"footer\">{(!string.IsNullOrEmpty(footerNote) ? $"<div class=\"footer-note\">{H(footerNote)}</div>" : "")}<div class=\"thankyou\">Thank you for your business!</div><div class=\"powered\">Software by Asim Shahzad | PH:0304-7674787</div></div></div></body></html>");
             return sb.ToString();
@@ -1006,7 +994,7 @@ public sealed class PrintTemplateRenderer
         var ptDosage = Math.Round(Math.Clamp(cfg.FontSizeDosage ?? (template == "urdu_focus" ? 8.6 : 7.5), 4.0, 28.0) * scaleMult, 2);
         var ptFooter = Math.Round(Math.Clamp(cfg.FontSizeFooter, 4.0, 28.0) * scaleMult, 2);
 
-        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides);
+        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides, isThermal: false);
         var storeName = string.IsNullOrWhiteSpace(setting.StoreName) ? "Pharmacy" : setting.StoreName;
         var patientName = !string.IsNullOrWhiteSpace(invoice.PatientName) ? invoice.PatientName : (invoice.CustomerName ?? "Walk-in Patient");
         var invDate = (invoice.Date ?? DateTime.Now).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
@@ -1031,7 +1019,7 @@ public sealed class PrintTemplateRenderer
         foreach (var item in invoice.Items)
         {
             var prodName = string.IsNullOrWhiteSpace(item.ProductName) ? "Medicine" : item.ProductName;
-            var dosage = string.IsNullOrWhiteSpace(item.DosageInstruction) ? "1 + 0 + 1 • کھانے کے بعد (After Meal)" : item.DosageInstruction.Trim();
+            var dosage = string.IsNullOrWhiteSpace(item.DosageInstruction) ? "As directed by physician / ڈاکٹر کی ہدایت کے مطابق" : item.DosageInstruction.Trim();
             var qty = (int)Math.Max(1, Math.Round(item.Quantity));
 
             sb.AppendLine("<div class=\"sticker\"><div>");
@@ -1076,7 +1064,7 @@ public sealed class PrintTemplateRenderer
         var openedAt = model.OpenedAt?.ToString("dd MMM yyyy, hh:mm tt", CultureInfo.InvariantCulture) ?? "—";
         var closedAt = model.ClosedAt?.ToString("dd MMM yyyy, hh:mm tt", CultureInfo.InvariantCulture) ?? "Active (In Progress)";
         var printedAt = DateTime.Now.ToString("dd MMM yyyy, hh:mm tt", CultureInfo.InvariantCulture);
-        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides);
+        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides, isThermal: true);
         var logo = setting.PrintShowLogo ? setting.LogoUrl : null;
 
         var sb = new StringBuilder();
@@ -1109,6 +1097,10 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">Opening Cash Float:</div><div class=\"val\">{F2(model.OpeningBalance)}</div></div>");
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(+) Cash Sales ({model.CashSalesCount}):</div><div class=\"val\">+{F2(model.CashSalesAmount)}</div></div>");
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(+) Customer Receipts ({model.CustomerPaymentsCount}):</div><div class=\"val\">+{F2(model.CustomerPaymentsAmount)}</div></div>");
+        if (model.PurchaseReturnsCount > 0 || model.PurchaseReturnsAmount > 0)
+        {
+            sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(+) Purchase Return Cash ({model.PurchaseReturnsCount}):</div><div class=\"val\">+{F2(model.PurchaseReturnsAmount)}</div></div>");
+        }
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(+) Manual Cash In ({model.ManualCashInCount}):</div><div class=\"val\">+{F2(model.ManualCashInAmount)}</div></div>");
         sb.AppendLine($"<div class=\"solid-hr\"></div><div class=\"pair total-line\"><div class=\"lbl\">TOTAL CASH INFLOW:</div><div class=\"val\">+Rs. {F2(model.TotalCashIn)}</div></div>");
 
@@ -1117,6 +1109,10 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(-) Cash Sale Refunds ({model.CashReturnsCount}):</div><div class=\"val\">-{F2(model.CashReturnsAmount)}</div></div>");
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(-) Supplier Payments ({model.SupplierPaymentsCount}):</div><div class=\"val\">-{F2(model.SupplierPaymentsAmount)}</div></div>");
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(-) Shop Expenses ({model.ExpensesCount}):</div><div class=\"val\">-{F2(model.ExpensesAmount)}</div></div>");
+        if (model.StaffAdvancesCount > 0 || model.StaffAdvancesAmount > 0)
+        {
+            sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(-) Staff Advances ({model.StaffAdvancesCount}):</div><div class=\"val\">-{F2(model.StaffAdvancesAmount)}</div></div>");
+        }
         sb.AppendLine($"<div class=\"pair\"><div class=\"lbl\">(-) Manual Cash Out ({model.ManualCashOutCount}):</div><div class=\"val\">-{F2(model.ManualCashOutAmount)}</div></div>");
         sb.AppendLine($"<div class=\"solid-hr\"></div><div class=\"pair total-line\"><div class=\"lbl\">TOTAL CASH OUTFLOW:</div><div class=\"val\">-Rs. {F2(model.TotalCashOut)}</div></div>");
 
@@ -1153,7 +1149,7 @@ public sealed class PrintTemplateRenderer
         var isThermal = string.Equals(paperSize, "thermal", StringComparison.OrdinalIgnoreCase);
         var partyTitle = isSupplier ? "Supplier" : "Customer";
         var range = $"{from ?? ""} — {to ?? ""}".Trim(' ', '—');
-        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides);
+        var calibrationHtml = RenderCalibrationStyles(setting, queryOverrides, isThermal: isThermal);
         var logo = setting.PrintShowLogo ? setting.LogoUrl : null;
 
         if (isThermal)

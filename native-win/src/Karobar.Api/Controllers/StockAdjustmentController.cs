@@ -403,7 +403,7 @@ public class StockAdjustmentController : ApiControllerBase
                     new { productId, batchNumber }, conn, tx);
                 if (batch != null)
                 {
-                    var newBatchQty = StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) - diffQty;
+                    var newBatchQty = Math.Max(0m, StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) - diffQty);
                     await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
                     {
                         ["quantity"] = newBatchQty

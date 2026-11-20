@@ -51,11 +51,11 @@ public class BarcodeController : ApiControllerBase
             ["templates"] = templates,
             ["store_info"] = new Dictionary<string, object?>
             {
-                ["store_name"] = setting?["store_name"] ?? "Karobar Pharmacy",
-                ["phone_number"] = setting?["phone_number"] ?? "",
-                ["currency_symbol"] = setting?["currency_symbol"] ?? "Rs.",
-                ["currency_position"] = setting?["currency_position"] ?? "before",
-                ["currency_decimal_places"] = Convert.ToInt32(setting?["currency_decimal_places"] ?? 2)
+                ["store_name"] = setting?.GetValueOrDefault("store_name") ?? "Karobar Pharmacy",
+                ["phone_number"] = setting?.GetValueOrDefault("phone_number") ?? "",
+                ["currency_symbol"] = setting?.GetValueOrDefault("currency_symbol") ?? "Rs.",
+                ["currency_position"] = setting?.GetValueOrDefault("currency_position") ?? "before",
+                ["currency_decimal_places"] = Convert.ToInt32(setting?.GetValueOrDefault("currency_decimal_places") ?? 2)
             }
         });
     }
@@ -455,13 +455,14 @@ public class BarcodeController : ApiControllerBase
         var defaultWsUnitPrice = Convert.ToDouble(product["whole_sale_unit_price"] ?? 0.0);
         var defaultWsPackPrice = Convert.ToDouble(product["whole_sale_pack_price"] ?? 0.0);
         var defaultUnitCost = Convert.ToDouble(product["unit_purchase_price"] ?? 0.0);
+        var canViewPurchaseCost = await CanAsync("purchase-invoice.view", "product.view");
 
         Dictionary<string, object?> FormatBatchPayload(Dictionary<string, object?> b, bool isFefo)
         {
             double PickPrice(string k, double fallback) =>
                 b.TryGetValue(k, out var v) && v != null && Convert.ToDouble(v) > 0 ? Convert.ToDouble(v) : fallback;
 
-            return new Dictionary<string, object?>
+            var payload = new Dictionary<string, object?>
             {
                 ["id"] = b["id"],
                 ["batch_number"] = b["batch_number"],
@@ -472,9 +473,13 @@ public class BarcodeController : ApiControllerBase
                 ["unit_sale_price"] = PickPrice("unit_sale_price", defaultUnitSalePrice),
                 ["pack_sale_price"] = PickPrice("pack_sale_price", defaultPackSalePrice),
                 ["whole_sale_unit_price"] = PickPrice("whole_sale_unit_price", defaultWsUnitPrice),
-                ["whole_sale_pack_price"] = PickPrice("whole_sale_pack_price", defaultWsPackPrice),
-                ["unit_purchase_price"] = PickPrice("unit_purchase_price", defaultUnitCost)
+                ["whole_sale_pack_price"] = PickPrice("whole_sale_pack_price", defaultWsPackPrice)
             };
+            if (canViewPurchaseCost)
+            {
+                payload["unit_purchase_price"] = PickPrice("unit_purchase_price", defaultUnitCost);
+            }
+            return payload;
         }
 
         var fefoBatch = batches.FirstOrDefault(b =>
@@ -506,9 +511,12 @@ public class BarcodeController : ApiControllerBase
                 ["unit_sale_price"] = defaultUnitSalePrice,
                 ["pack_sale_price"] = defaultPackSalePrice,
                 ["whole_sale_unit_price"] = defaultWsUnitPrice,
-                ["whole_sale_pack_price"] = defaultWsPackPrice,
-                ["unit_purchase_price"] = defaultUnitCost
+                ["whole_sale_pack_price"] = defaultWsPackPrice
             };
+            if (canViewPurchaseCost)
+            {
+                selectedBatch["unit_purchase_price"] = defaultUnitCost;
+            }
         }
         else if (batches.Count > 0)
         {

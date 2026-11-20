@@ -522,7 +522,15 @@ export default function NarcoticsReport() {
       });
       const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      const win = window.open(url, "_blank");
+      if (!win) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `narcotics-register-${from || "report"}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
       setTimeout(() => window.URL.revokeObjectURL(url), 60000);
     } catch (err) {
       toast.error("Failed to generate Pakistani Statutory Narcotics PDF.");

@@ -411,8 +411,35 @@ public sealed class NetworkConfigManager
 
     public string getAppBaseUrl() => GetAppBaseUrl();
 
-    public Dictionary<string, string> GetTerminalIdentityHeaders(string appVersion = "2.0.1")
+    private string? _cachedAppVersion;
+
+    public string ResolveInstalledAppVersion()
     {
+        if (!string.IsNullOrWhiteSpace(_cachedAppVersion)) return _cachedAppVersion;
+        try
+        {
+            var versionPath = Path.Combine(_appRoot, "public", "version.json");
+            if (File.Exists(versionPath))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(versionPath, Encoding.UTF8));
+                if (doc.RootElement.TryGetProperty("version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
+                {
+                    var v = (vProp.GetString() ?? "").Trim();
+                    if (!string.IsNullOrWhiteSpace(v))
+                    {
+                        _cachedAppVersion = v;
+                        return v;
+                    }
+                }
+            }
+        }
+        catch { }
+        return _cachedAppVersion = "2.0.1";
+    }
+
+    public Dictionary<string, string> GetTerminalIdentityHeaders(string? appVersion = null)
+    {
+        var resolvedVersion = string.IsNullOrWhiteSpace(appVersion) ? ResolveInstalledAppVersion() : appVersion.Trim();
         var cfg = LoadNetworkConfig();
         var hostname = GetSanitizedHostname();
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -422,7 +449,7 @@ public sealed class NetworkConfigManager
             ["X-Terminal-Mode"] = cfg.Mode,
             ["X-Terminal-Hostname"] = hostname,
             ["X-Terminal-OS"] = $"win32-{Environment.OSVersion.Version}",
-            ["X-Terminal-Version"] = appVersion
+            ["X-Terminal-Version"] = resolvedVersion
         };
 
         if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
@@ -437,10 +464,11 @@ public sealed class NetworkConfigManager
     public async Task<ServerConnectionTestResult> TestServerConnectionAsync(
         string? rawServerUrl,
         string? customTerminalName = null,
-        string appVersion = "2.0.1",
+        string? appVersion = null,
         CancellationToken cancellationToken = default,
         string? pairingTokenOverride = null)
     {
+        var resolvedVersion = string.IsNullOrWhiteSpace(appVersion) ? ResolveInstalledAppVersion() : appVersion.Trim();
         var normalized = NormalizeServerUrl(rawServerUrl);
         if (string.IsNullOrWhiteSpace(normalized))
         {
@@ -476,7 +504,7 @@ public sealed class NetworkConfigManager
             terminal_name = effectiveTerminalName,
             hostname,
             os_platform = osPlatform,
-            app_version = appVersion,
+            app_version = resolvedVersion,
             mode = "terminal"
         };
 
@@ -503,7 +531,7 @@ public sealed class NetworkConfigManager
         request.Headers.TryAddWithoutValidation("X-Terminal-Mode", "terminal");
         request.Headers.TryAddWithoutValidation("X-Terminal-Hostname", hostname);
         request.Headers.TryAddWithoutValidation("X-Terminal-OS", osPlatform);
-        request.Headers.TryAddWithoutValidation("X-Terminal-Version", appVersion);
+        request.Headers.TryAddWithoutValidation("X-Terminal-Version", resolvedVersion);
         if (!string.IsNullOrWhiteSpace(effectivePairingToken))
         {
             request.Headers.TryAddWithoutValidation("X-Network-Token", effectivePairingToken);
@@ -524,6 +552,22 @@ public sealed class NetworkConfigManager
 
                 if (response.IsSuccessStatusCode && isOk)
                 {
+                    JsonElement? termEl = root.TryGetProperty("terminal", out var term) ? term.Clone() : null;
+                    if (termEl.HasValue && termEl.Value.ValueKind == JsonValueKind.Object &&
+                        termEl.Value.TryGetProperty("is_authorized", out var authProp) &&
+                        (authProp.ValueKind == JsonValueKind.False ||
+                         (authProp.ValueKind == JsonValueKind.Number && authProp.TryGetInt32(out var av) && av == 0)))
+                    {
+                        return new ServerConnectionTestResult
+                        {
+                            Ok = false,
+                            ServerUrl = normalized,
+                            Terminal = termEl,
+                            LatencyMs = latencyMs,
+                            Error = "Connected to Store Server, but this terminal is not yet authorized. Approve this terminal in Store Server Settings -> Network & Multi-PC Terminals (or check your license seats / pairing token)."
+                        };
+                    }
+
                     return new ServerConnectionTestResult
                     {
                         Ok = true,
@@ -537,7 +581,7 @@ public sealed class NetworkConfigManager
                         OsFamily = root.TryGetProperty("os_family", out var of) && of.ValueKind == JsonValueKind.String
                             ? of.GetString()
                             : "Linux",
-                        Terminal = root.TryGetProperty("terminal", out var term) ? term.Clone() : null,
+                        Terminal = termEl,
                         LatencyMs = latencyMs
                     };
                 }

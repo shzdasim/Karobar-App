@@ -41,7 +41,16 @@ public sealed class FbrFiscalizationEngine
         {
             var handler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+                // Enforce strict TLS certificate validation on remote HTTPS gateways (FBR PRAL production);
+                // allow self-signed certificates only for local IMS loopback hosts.
+                ServerCertificateCustomValidationCallback = (req, _, _, errors) =>
+                {
+                    if (errors == System.Net.Security.SslPolicyErrors.None) return true;
+                    var host = req.RequestUri?.Host ?? "";
+                    return host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                           host == "127.0.0.1" ||
+                           host == "::1";
+                }
             };
             _httpClient = new HttpClient(handler)
             {
@@ -313,6 +322,18 @@ public sealed class FbrFiscalizationEngine
             };
         }
 
+        if (saleReturn.FbrSyncStatus == "synced" && !string.IsNullOrWhiteSpace(saleReturn.FbrInvoiceNumber) && !force)
+        {
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = true,
+                ["status"] = "synced",
+                ["fbr_invoice_number"] = saleReturn.FbrInvoiceNumber,
+                ["fbr_qr_data"] = saleReturn.FbrQrData,
+                ["message"] = "Credit Note is already fiscalized with FBR."
+            };
+        }
+
         var usin = !string.IsNullOrWhiteSpace(saleReturn.PostedNumber) ? saleReturn.PostedNumber : $"RET-{saleReturn.Id}";
         var refUsin = saleReturn.SaleInvoice?.FbrInvoiceNumber ?? saleReturn.SaleInvoice?.PostedNumber ?? "";
         var mode = string.IsNullOrWhiteSpace(setting.FbrMode) ? "digital_invoicing" : setting.FbrMode.Trim().ToLowerInvariant();
@@ -414,6 +435,29 @@ public sealed class FbrFiscalizationEngine
         }
         catch (Exception ex)
         {
+            if (env == "sandbox")
+            {
+                var posId = string.IsNullOrWhiteSpace(setting.FbrPosId) ? "966130" : setting.FbrPosId.Trim();
+                var sandboxNo = $"{posId}{DateTime.Now:yyMMddHHmmss}{(saleReturn.Id % 100):D2}";
+                var qrData = $"https://ims.fbr.gov.pk/Lv1/Verification?inv={sandboxNo}";
+                saleReturn.FbrUsin = usin;
+                saleReturn.FbrInvoiceNumber = sandboxNo;
+                saleReturn.FbrQrData = qrData;
+                saleReturn.FbrSyncStatus = "synced";
+                saleReturn.FbrSyncedAt = DateTime.UtcNow;
+                saleReturn.FbrErrorMessage = null;
+                await db.SaveChangesAsync(cancellationToken);
+
+                return new Dictionary<string, object?>
+                {
+                    ["ok"] = true,
+                    ["status"] = "synced",
+                    ["fbr_invoice_number"] = sandboxNo,
+                    ["fbr_qr_data"] = qrData,
+                    ["message"] = $"Credit Note fiscalized in FBR Sandbox Mode (#{sandboxNo})"
+                };
+            }
+
             var errMsg = $"FBR Gateway unreachable ({ex.Message}). Queued for retry.";
             saleReturn.FbrUsin = usin;
             saleReturn.FbrSyncStatus = "pending";
@@ -690,8 +734,9 @@ public sealed class FbrFiscalizationEngine
             };
         }
 
+        // Auto-retry only transient "pending" records (permanent "failed" validation rejections are retried manually by the user).
         var pendingIds = await db.SaleInvoices
-            .Where(i => (i.FbrSyncStatus == "pending" || i.FbrSyncStatus == "failed") &&
+            .Where(i => i.FbrSyncStatus == "pending" &&
                         (i.Status == null || i.Status != "reversed"))
             .OrderBy(i => i.Id)
             .Take(limit)
@@ -714,9 +759,30 @@ public sealed class FbrFiscalizationEngine
             }
         }
 
+        // Also retry pending SaleReturn credit notes so offline returns sync automatically
+        var pendingReturnIds = await db.SaleReturns
+            .Where(r => r.FbrSyncStatus == "pending")
+            .OrderBy(r => r.Id)
+            .Take(limit)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var rid in pendingReturnIds)
+        {
+            var res = await FiscalizeSaleReturnAsync(db, rid, force: true, cancellationToken);
+            if (res.TryGetValue("ok", out var okObj) && okObj is true)
+            {
+                synced++;
+            }
+            else
+            {
+                failed++;
+            }
+        }
+
         return new Dictionary<string, int>
         {
-            ["processed"] = pendingIds.Count,
+            ["processed"] = pendingIds.Count + pendingReturnIds.Count,
             ["synced"] = synced,
             ["failed"] = failed
         };

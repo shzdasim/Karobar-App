@@ -226,7 +226,20 @@ public sealed class KestrelHostServer : IAsyncDisposable
     public IServiceProvider? Services => _app?.Services;
 
     /// <summary>
-    /// Find an available localhost TCP port starting from preferredPort (default 18960).
+    /// Returns true if the given IP address is local loopback (including IPv4-mapped IPv6 `::ffff:127.0.0.1`
+    /// produced by dual-stack Kestrel `ListenAnyIP` sockets on Windows).
+    /// </summary>
+    public static bool IsLoopbackIp(IPAddress? ip)
+    {
+        if (ip == null) return true;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        return IPAddress.IsLoopback(ip);
+    }
+
+    public static bool IsLoopbackRequest(HttpContext ctx) => IsLoopbackIp(ctx.Connection.RemoteIpAddress);
+
+    /// <summary>
+    /// Find an available TCP port on all interfaces (IPAddress.Any) starting from preferredPort (default 18960).
     /// </summary>
     public static int FindFreePort(int preferredPort = NetworkConfigManager.DefaultPort)
     {
@@ -234,7 +247,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         {
             try
             {
-                using var listener = new TcpListener(IPAddress.Loopback, port);
+                using var listener = new TcpListener(IPAddress.Any, port);
                 listener.Start();
                 listener.Stop();
                 return port;
@@ -245,7 +258,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             }
         }
 
-        using var fallback = new TcpListener(IPAddress.Loopback, 0);
+        using var fallback = new TcpListener(IPAddress.Any, 0);
         fallback.Start();
         var assigned = ((IPEndPoint)fallback.LocalEndpoint).Port;
         fallback.Stop();
@@ -539,8 +552,21 @@ public sealed class KestrelHostServer : IAsyncDisposable
         }
 
         string? targetFile = null;
-        if (decodedPath.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase))
+        var isUserStorageRequest = decodedPath.StartsWith("/storage/", StringComparison.OrdinalIgnoreCase);
+        if (isUserStorageRequest)
         {
+            // Never render active HTML/SVG/JS documents uploaded into public storage inline (prevents stored XSS).
+            if (ext.Equals(".html", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".htm", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".svg", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".js", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".mjs", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                return true;
+            }
+
             var relStorage = decodedPath["/storage/".Length..].TrimStart('/', '\\');
             if (string.IsNullOrWhiteSpace(relStorage)) return false;
 
@@ -623,6 +649,10 @@ public sealed class KestrelHostServer : IAsyncDisposable
         context.Response.ContentType = contentType;
         context.Response.ContentLength = fileInfo.Length;
         context.Response.Headers.CacheControl = cacheControl;
+        if (isUserStorageRequest)
+        {
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        }
 
         if (!HttpMethods.IsHead(method))
         {
@@ -719,12 +749,6 @@ public sealed class KestrelHostServer : IAsyncDisposable
         // 2. Desktop IPC Preload Script & Invoke Endpoints — STRICTLY LOOPBACK ONLY!
         // Remote LAN clients must NEVER invoke desktop IPC on the Store Server PC.
         // (Native WebView2 Terminal PCs inject their OWN local preload via AddScriptToExecuteOnDocumentCreatedAsync.)
-        static bool IsLoopbackRequest(HttpContext ctx)
-        {
-            var ip = ctx.Connection.RemoteIpAddress;
-            return ip == null || IPAddress.IsLoopback(ip);
-        }
-
         app.MapGet("/__karobar_ipc/preload.js", (HttpContext ctx) =>
         {
             if (!IsLoopbackRequest(ctx))
@@ -823,8 +847,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
             // Inject X-Terminal-* headers ONLY for local loopback WebView2 requests on this PC.
             // Remote LAN terminals send their own X-Terminal-* and X-Network-Token headers; never overwrite them with the server's identity!
-            var remoteIp = context.Connection.RemoteIpAddress;
-            if (remoteIp == null || IPAddress.IsLoopback(remoteIp))
+            if (IsLoopbackRequest(context))
             {
                 foreach (var kv in _networkConfig.GetTerminalIdentityHeaders())
                 {
@@ -909,9 +932,16 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 await bootstrapper.EnsureSchemaReadyAsync(cancellationToken);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Non-fatal if DB already initialized or running in terminal mode
+            try
+            {
+                Console.Error.WriteLine($"[Karobar.Host] DatabaseBootstrapper.EnsureSchemaReadyAsync failed: {ex.Message}");
+                var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Karobar-App-Native");
+                Directory.CreateDirectory(logDir);
+                File.AppendAllText(Path.Combine(logDir, "startup-error.log"), $"[{DateTime.Now:O}] Schema bootstrap warning: {ex}\n");
+            }
+            catch { }
         }
         await _app.StartAsync(cancellationToken);
         await WaitForServerReadyAsync($"http://127.0.0.1:{ActivePort}/up", 15000, cancellationToken);
@@ -948,12 +978,14 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         try
         {
-            await _app.StopAsync(cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(4));
+            await _app.StopAsync(timeoutCts.Token);
             await _app.DisposeAsync();
         }
         catch
         {
-            // Ignore shutdown errors
+            // Ignore shutdown errors / bounded timeout so app exits cleanly
         }
         finally
         {
@@ -1094,7 +1126,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
                 if (type.Name == "KarobarDb")
                 {
-                    services.TryAddSingleton(sp =>
+                    services.TryAddSingleton(type, sp =>
                         ActivatorUtilities.CreateInstance(sp, type));
                     continue;
                 }

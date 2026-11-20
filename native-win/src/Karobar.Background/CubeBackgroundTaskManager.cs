@@ -167,26 +167,40 @@ public sealed class CubeBackgroundTaskManager
                 if (updated > 0) anyUpdated = true;
 
                 CubeBackgroundTaskSnapshot snap;
+                var stoppedEarly = false;
                 lock (_lock)
                 {
-                    _snapshot.ScannedCount += processed;
-                    _snapshot.UpdatedCount += updated;
-                    _snapshot.SkippedCount += skipped;
-                    _snapshot.RemainingCount = remaining;
-                    _snapshot.LastProcessedId = nextAfterId;
-                    if (_snapshot.TotalEstimate == 0)
+                    if (ct.IsCancellationRequested || _snapshot.Status == "stopped")
                     {
-                        _snapshot.TotalEstimate = Math.Max(totalMissing, _snapshot.ScannedCount + remaining);
+                        stoppedEarly = true;
+                        snap = _snapshot.Clone();
                     }
-                    if (_snapshot.UpdatedProducts.Count < 1000) _snapshot.UpdatedProducts.AddRange(updList);
-                    if (_snapshot.SkippedProducts.Count < 1000) _snapshot.SkippedProducts.AddRange(skpList);
-                    _snapshot.UpdatedAt = DateTime.Now;
-                    _snapshot.Message = hasMore
-                        ? $"Auto-filling… {_snapshot.ScannedCount}/{_snapshot.TotalEstimate} scanned ({_snapshot.UpdatedCount} filled)"
-                        : $"Completed: {_snapshot.UpdatedCount} formulation(s) filled, {_snapshot.SkippedCount} skipped.";
-                    if (!hasMore) _snapshot.Status = "completed";
-                    snap = _snapshot.Clone();
+                    else
+                    {
+                        _snapshot.ScannedCount += processed;
+                        _snapshot.UpdatedCount += updated;
+                        _snapshot.SkippedCount += skipped;
+                        _snapshot.RemainingCount = remaining;
+                        _snapshot.LastProcessedId = nextAfterId;
+                        if (_snapshot.TotalEstimate == 0)
+                        {
+                            _snapshot.TotalEstimate = Math.Max(totalMissing, _snapshot.ScannedCount + remaining);
+                        }
+                        if (_snapshot.UpdatedProducts.Count < 1000) _snapshot.UpdatedProducts.AddRange(updList);
+                        if (_snapshot.SkippedProducts.Count < 1000) _snapshot.SkippedProducts.AddRange(skpList);
+                        _snapshot.UpdatedAt = DateTime.Now;
+                        _snapshot.Message = hasMore
+                            ? $"Auto-filling… {_snapshot.ScannedCount}/{_snapshot.TotalEstimate} scanned ({_snapshot.UpdatedCount} filled)"
+                            : $"Completed: {_snapshot.UpdatedCount} formulation(s) filled, {_snapshot.SkippedCount} skipped.";
+                        if (!hasMore || nextAfterId <= afterId || processed == 0)
+                        {
+                            _snapshot.Status = "completed";
+                        }
+                        snap = _snapshot.Clone();
+                    }
                 }
+
+                if (stoppedEarly) break;
 
                 FireChanged(snap);
 
@@ -216,6 +230,20 @@ public sealed class CubeBackgroundTaskManager
         }
         finally
         {
+            CubeBackgroundTaskSnapshot? finalSnap = null;
+            lock (_lock)
+            {
+                if (_snapshot.Status == "running")
+                {
+                    _snapshot.Status = ct.IsCancellationRequested ? "stopped" : "completed";
+                    _snapshot.UpdatedAt = DateTime.Now;
+                    finalSnap = _snapshot.Clone();
+                }
+            }
+            if (finalSnap != null)
+            {
+                FireChanged(finalSnap);
+            }
             if (anyUpdated)
             {
                 try { ProductsMutated?.Invoke(); } catch { }

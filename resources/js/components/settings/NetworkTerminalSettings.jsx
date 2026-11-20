@@ -1005,7 +1005,7 @@ export default function NetworkTerminalSettings() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-slate-200">
                   <ArrowUpTrayIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  Import Existing Database (.SQLITE / .SQL.GZ / .ZIP)
+                  Import Existing Database (.SQLITE / .ZIP / .GZ)
                 </div>
                 <button
                   type="button"
@@ -1019,7 +1019,7 @@ export default function NetworkTerminalSettings() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".sqlite,.sqlite3,.db,.db3,.sql,.gz,.zip"
+                accept=".sqlite,.sqlite3,.db,.db3,.gz,.zip"
                 onChange={(e) => setImportFile(e.target.files?.[0] || null)}
                 className="block w-full text-xs text-gray-700 dark:text-slate-200 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
               />
@@ -1285,7 +1285,7 @@ export default function NetworkTerminalSettings() {
                       "Karobar-Native.exe --server-only",
                       "Karobar-Native.exe --cli install --upgrade-only",
                       "Karobar-Native.exe --cli karobar:export-sqlite",
-                      "Karobar-Native.exe --cli karobar:backup",
+                      "Karobar-Native.exe --cli backup:run-scheduled --force",
                       "netsh advfirewall firewall show rule name=\"Karobar-App Native LAN Server (TCP 18960)\"",
                     ]
                   : [

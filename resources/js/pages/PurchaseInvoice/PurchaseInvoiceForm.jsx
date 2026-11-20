@@ -2,6 +2,7 @@ import { arrangePurchaseInvoiceRows, purchaseInvoiceArrangements } from "../../u
 import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
 import { Fragment, lazy, Suspense, useState, useEffect, useRef, useMemo } from "react";
+import { Link } from "react-router-dom";
 import axios from "axios";
 import Select from "react-select";
 import toast from "react-hot-toast";
@@ -1632,9 +1633,9 @@ const contRect = container.getBoundingClientRect();
         <div className="g-toolbar px-3 py-1 text-[11px] flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span>
             Generated from PO{" "}
-            <a className="underline font-semibold" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>
+            <Link className="underline font-semibold" to={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>
               {(initialData?.purchase_order || form.purchase_order).number}
-            </a>
+            </Link>
             . Review quantities, prices, batches and expiry before saving.
           </span>
           {!invoiceId && (

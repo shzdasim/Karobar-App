@@ -10,12 +10,24 @@ public sealed class SqliteConnectionInterceptor : DbConnectionInterceptor
     private static readonly ConcurrentDictionary<string, bool> WalInitializedPaths = new(StringComparer.OrdinalIgnoreCase);
 
     public const string HighConcurrencyPragmaSql =
+        "PRAGMA busy_timeout=15000; " +
         "PRAGMA journal_mode=WAL; " +
         "PRAGMA synchronous=NORMAL; " +
-        "PRAGMA busy_timeout=15000; " +
         "PRAGMA temp_store=MEMORY; " +
         "PRAGMA cache_size=-64000; " +
         "PRAGMA foreign_keys=ON;";
+
+    public static void ResetWalCache(string? dbPath = null)
+    {
+        if (string.IsNullOrWhiteSpace(dbPath))
+        {
+            WalInitializedPaths.Clear();
+        }
+        else
+        {
+            WalInitializedPaths.TryRemove(dbPath, out _);
+        }
+    }
 
     private const string FastSessionPragmaSql =
         "PRAGMA busy_timeout=15000; " +

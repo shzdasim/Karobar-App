@@ -113,15 +113,19 @@ public class ReportsController : ApiControllerBase
 
     private IActionResult DeliverPdf(byte[] pdfBytes, string filename)
     {
+        var safeName = System.Text.RegularExpressions.Regex.Replace(filename ?? "report.pdf", @"[^A-Za-z0-9._-]", "_");
+        if (string.IsNullOrWhiteSpace(safeName)) safeName = "report.pdf";
+        if (!safeName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) safeName += ".pdf";
+
         var downloadRaw = Request.Query["download"].FirstOrDefault() ?? "";
         var isDownload = downloadRaw == "1" || downloadRaw.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         if (isDownload)
         {
-            return File(pdfBytes, "application/pdf", filename);
+            return File(pdfBytes, "application/pdf", safeName);
         }
 
-        Response.Headers["Content-Disposition"] = $"inline; filename=\"{filename}\"";
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{safeName}\"";
         return File(pdfBytes, "application/pdf");
     }
 
@@ -446,6 +450,12 @@ public class ReportsController : ApiControllerBase
             sql += " AND si.customer_id = @customerId";
             dyn.Add("customerId", customerId);
         }
+        if (string.IsNullOrWhiteSpace(invoiceId) && string.IsNullOrWhiteSpace(from) && string.IsNullOrWhiteSpace(to))
+        {
+            var today = DateTime.Now;
+            from = new DateTime(today.Year, today.Month, 1).ToString("yyyy-MM-dd");
+            to = today.ToString("yyyy-MM-dd");
+        }
         if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fDt))
         {
             sql += " AND DATE(si.date) >= @from";
@@ -710,7 +720,7 @@ public class ReportsController : ApiControllerBase
                 ["unit_sale_price"] = ToDouble(it, "unit_sale_price"),
                 ["pack_bonus"] = (int)ToLong(it, "pack_bonus"),
                 ["unit_bonus"] = (int)ToLong(it, "unit_bonus"),
-                ["bonus"] = (int)ToLong(it, "unit_bonus") + (int)ToLong(it, "pack_bonus"),
+                ["bonus"] = (int)ToLong(it, "unit_bonus") + ((int)ToLong(it, "pack_bonus") * Math.Max(1, (int)ToLong(it, "pack_size"))),
                 ["item_discount_percentage"] = ToDouble(it, "item_discount_percentage"),
                 ["margin"] = ToDouble(it, "margin"),
                 ["sub_total"] = ToDouble(it, "sub_total"),
@@ -1301,22 +1311,23 @@ public class ReportsController : ApiControllerBase
         var code = GetNullableStr(prod, "product_code") ?? "product";
         var prodName = GetNullableStr(prod, "name") ?? "-";
 
+        var currentQty = prod != null && prod.ContainsKey("current_quantity") ? ToLong(prod, "current_quantity") : ToLong(prod, "quantity");
         var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
             ReportType = "product-comprehensive",
             ReportTitle = $"Product Comprehensive Report — {prodName}",
-            Subtitle = $"Code: {code} | On Hand: {ToLong(prod, "quantity")} units",
+            Subtitle = $"Code: {code} | On Hand: {currentQty} units",
             FromDate = Request.Query["from"].FirstOrDefault(),
             ToDate = Request.Query["to"].FirstOrDefault(),
             Landscape = true,
             Setting = await LoadPrintSettingAsync(),
             SummaryCards =
             [
-                new("Purchases", GetStr(summary, "total_purchased_qty")),
-                new("Sales", GetStr(summary, "total_sold_qty")),
-                new("Sale Returns", GetStr(summary, "total_sale_return_qty")),
-                new("Purchase Returns", GetStr(summary, "total_purchase_return_qty")),
-                new("Current Stock", $"{ToLong(prod, "quantity")}")
+                new("Purchases", $"{ToDouble(summary, "total_purchases"):N0}"),
+                new("Sales", $"{ToDouble(summary, "total_sales"):N0}"),
+                new("Sale Returns", $"{ToDouble(summary, "total_sale_returns"):N0}"),
+                new("Purchase Returns", $"{ToDouble(summary, "total_purchase_returns"):N0}"),
+                new("Current Stock", $"{currentQty:N0}")
             ],
             Columns =
             [
@@ -1325,20 +1336,26 @@ public class ReportsController : ApiControllerBase
                 new() { Header = "Document #", RelativeWidth = 1.4f },
                 new() { Header = "Party", RelativeWidth = 2.0f },
                 new() { Header = "Batch", RelativeWidth = 1.2f },
-                new() { Header = "Qty", RelativeWidth = 0.9f, AlignRight = true },
+                new() { Header = "Qty (+/-)", RelativeWidth = 0.9f, AlignRight = true },
                 new() { Header = "Rate", RelativeWidth = 1.1f, AlignRight = true },
                 new() { Header = "Amount", RelativeWidth = 1.3f, AlignRight = true }
             ],
-            Rows = txns.Select(t => new List<string>
+            Rows = txns.Select(t =>
             {
-                GetStr(t, "date"),
-                GetStr(t, "type").ToUpperInvariant(),
-                GetStr(t, "posted_number"),
-                GetStr(t, "party_name"),
-                GetStr(t, "batch_number"),
-                $"{ToDouble(t, "quantity"):N0}",
-                $"{ToDouble(t, "unit_price"):N2}",
-                $"{ToDouble(t, "total"):N2}"
+                var qIn = ToDouble(t, "quantity_in");
+                var qOut = ToDouble(t, "quantity_out");
+                var signedQty = qIn > 0 ? $"+{qIn:N0}" : (qOut > 0 ? $"-{qOut:N0}" : $"{ToDouble(t, "quantity"):N0}");
+                return new List<string>
+                {
+                    GetStr(t, "date"),
+                    GetStr(t, "type").ToUpperInvariant(),
+                    GetNullableStr(t, "reference_number") ?? GetStr(t, "posted_number"),
+                    GetNullableStr(t, "counter_party") ?? GetStr(t, "party_name"),
+                    GetNullableStr(t, "batch") ?? GetStr(t, "batch_number"),
+                    signedQty,
+                    $"{ToDouble(t, "unit_price"):N2}",
+                    $"{(t.ContainsKey("sub_total") ? ToDouble(t, "sub_total") : ToDouble(t, "total")):N2}"
+                };
             }).ToList()
         });
         return DeliverPdf(pdf, $"product-comprehensive-{code}.pdf");
@@ -1699,12 +1716,15 @@ public class ReportsController : ApiControllerBase
             (fromDate, toDate) = (toDate, fromDate);
         }
 
-        var sql = @"
+        var hasStorageLocs = await Db.HasTableAsync("storage_locations") && await Db.HasColumnAsync("batches", "storage_location_id");
+        var storageLocSelect = hasStorageLocs ? "b.storage_location_id, COALESCE(sl.name, '') AS storage_location_name" : "NULL AS storage_location_id, '' AS storage_location_name";
+        var storageLocJoin = hasStorageLocs ? "LEFT JOIN storage_locations sl ON sl.id = b.storage_location_id" : "";
+        var sql = $@"
             SELECT b.id AS batch_id,
                    b.batch_number,
                    b.expiry_date,
                    b.quantity,
-                   b.storage_location_id,
+                   {storageLocSelect},
                    COALESCE(b.unit_purchase_price, p.unit_purchase_price, 0) AS unit_purchase_price,
                    p.id AS product_id,
                    p.product_code,
@@ -1712,13 +1732,12 @@ public class ReportsController : ApiControllerBase
                    p.supplier_id,
                    p.brand_id,
                    COALESCE(s.name, '') AS supplier_name,
-                   COALESCE(br.name, '') AS brand_name,
-                   COALESCE(sl.name, '') AS storage_location_name
+                   COALESCE(br.name, '') AS brand_name
             FROM batches b
             INNER JOIN products p ON p.id = b.product_id
             LEFT JOIN suppliers s ON s.id = p.supplier_id
             LEFT JOIN brands br ON br.id = p.brand_id
-            LEFT JOIN storage_locations sl ON sl.id = b.storage_location_id
+            {storageLocJoin}
             WHERE b.expiry_date IS NOT NULL
               AND DATE(b.expiry_date) BETWEEN @fromDate AND @toDate
               AND b.quantity > 0";
@@ -2325,15 +2344,31 @@ public class ReportsController : ApiControllerBase
         var tableRows = new List<List<string>>();
         foreach (var c in custRows)
         {
-            tableRows.Add(["Customer", GetStr(c, "name"), $"{ToDouble(c, "b_0_30"):N2}", $"{ToDouble(c, "b_31_60"):N2}", $"{ToDouble(c, "b_61_90"):N2}", $"{ToDouble(c, "b_90_plus"):N2}", $"{ToDouble(c, "total_due"):N2}"]);
+            tableRows.Add([
+                "Customer",
+                GetNullableStr(c, "party_name") ?? GetStr(c, "name"),
+                $"{(c.ContainsKey("days_0_30") ? ToDouble(c, "days_0_30") : ToDouble(c, "b_0_30")):N2}",
+                $"{(c.ContainsKey("days_31_60") ? ToDouble(c, "days_31_60") : ToDouble(c, "b_31_60")):N2}",
+                $"{(c.ContainsKey("days_61_90") ? ToDouble(c, "days_61_90") : ToDouble(c, "b_61_90")):N2}",
+                $"{(c.ContainsKey("over_90") ? ToDouble(c, "over_90") : ToDouble(c, "b_90_plus")):N2}",
+                $"{(c.ContainsKey("total") ? ToDouble(c, "total") : ToDouble(c, "total_due")):N2}"
+            ]);
         }
         foreach (var s in supRows)
         {
-            tableRows.Add(["Supplier", GetStr(s, "name"), $"{ToDouble(s, "b_0_30"):N2}", $"{ToDouble(s, "b_31_60"):N2}", $"{ToDouble(s, "b_61_90"):N2}", $"{ToDouble(s, "b_90_plus"):N2}", $"{ToDouble(s, "total_due"):N2}"]);
+            tableRows.Add([
+                "Supplier",
+                GetNullableStr(s, "party_name") ?? GetStr(s, "name"),
+                $"{(s.ContainsKey("days_0_30") ? ToDouble(s, "days_0_30") : ToDouble(s, "b_0_30")):N2}",
+                $"{(s.ContainsKey("days_31_60") ? ToDouble(s, "days_31_60") : ToDouble(s, "b_31_60")):N2}",
+                $"{(s.ContainsKey("days_61_90") ? ToDouble(s, "days_61_90") : ToDouble(s, "b_61_90")):N2}",
+                $"{(s.ContainsKey("over_90") ? ToDouble(s, "over_90") : ToDouble(s, "b_90_plus")):N2}",
+                $"{(s.ContainsKey("total") ? ToDouble(s, "total") : ToDouble(s, "total_due")):N2}"
+            ]);
         }
 
-        var custTotal = custRows.Sum(r => ToDouble(r, "total_due"));
-        var supTotal = supRows.Sum(r => ToDouble(r, "total_due"));
+        var custTotal = custRows.Sum(r => r.ContainsKey("total") ? ToDouble(r, "total") : ToDouble(r, "total_due"));
+        var supTotal = supRows.Sum(r => r.ContainsKey("total") ? ToDouble(r, "total") : ToDouble(r, "total_due"));
         var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
             ReportType = "outstanding-aging",
@@ -2386,17 +2421,21 @@ public class ReportsController : ApiControllerBase
         var (err, data) = await BuildOverdueWorkQueueDataAsync();
         if (err != null) return err;
 
-        var items = data!.GetValueOrDefault("items") as List<Dictionary<string, object?>> ?? new();
+        var payload = data ?? new Dictionary<string, object?>();
+        var items = (payload.GetValueOrDefault("parties") ?? payload.GetValueOrDefault("items")) as List<Dictionary<string, object?>> ?? new();
+        var totalOverdueSum = payload.ContainsKey("total_overdue_sum")
+            ? ToDouble(payload, "total_overdue_sum")
+            : items.Sum(it => it.ContainsKey("total_overdue") ? ToDouble(it, "total_overdue") : ToDouble(it, "overdue_amount"));
         var pdf = _pdfGenerator.GenerateAnalyticalReportPdf(new AnalyticalReportPdfRequest
         {
             ReportType = "overdue-work-queue",
-            ToDate = GetNullableStr(data, "as_of"),
-            Subtitle = $"Party Type: {GetStr(data, "party_type")}",
+            ToDate = GetNullableStr(payload, "as_of"),
+            Subtitle = $"Party Type: {GetStr(payload, "party_type")}",
             Setting = await LoadPrintSettingAsync(),
             SummaryCards =
             [
-                new("Overdue Parties", GetStr(data, "total_parties")),
-                new("Total Overdue", $"Rs. {ToDouble(data, "total_overdue_sum"):N2}")
+                new("Overdue Parties", $"{(payload.ContainsKey("total_parties") ? ToLong(payload, "total_parties") : items.Count)}"),
+                new("Total Overdue", $"Rs. {totalOverdueSum:N2}")
             ],
             Columns =
             [
@@ -2406,15 +2445,22 @@ public class ReportsController : ApiControllerBase
                 new() { Header = "Max Days", RelativeWidth = 1.0f, AlignRight = true },
                 new() { Header = "Overdue Amount", RelativeWidth = 1.5f, AlignRight = true }
             ],
-            Rows = items.Select(it => new List<string>
+            Rows = items.Select(it =>
             {
-                GetStr(it, "party_name"),
-                GetStr(it, "phone"),
-                $"{ToLong(it, "overdue_invoices_count")}",
-                $"{ToLong(it, "max_days_overdue")}",
-                $"{ToDouble(it, "overdue_amount"):N2}"
+                var invCount = it.GetValueOrDefault("overdue_entries") is ICollection<Dictionary<string, object?>> entries
+                    ? entries.Count
+                    : (int)ToLong(it, "overdue_invoices_count");
+                var amt = it.ContainsKey("total_overdue") ? ToDouble(it, "total_overdue") : ToDouble(it, "overdue_amount");
+                return new List<string>
+                {
+                    GetStr(it, "party_name"),
+                    GetNullableStr(it, "party_phone") ?? GetStr(it, "phone"),
+                    $"{invCount}",
+                    $"{ToLong(it, "max_days_overdue")}",
+                    $"{amt:N2}"
+                };
             }).ToList(),
-            FooterTotals = [new("Total Overdue", $"Rs. {ToDouble(data, "total_overdue_sum"):N2}", isGrandTotal: true)]
+            FooterTotals = [new("Total Overdue", $"Rs. {totalOverdueSum:N2}", isGrandTotal: true)]
         });
         return DeliverPdf(pdf, "overdue-work-queue-report.pdf");
     }
@@ -2906,7 +2952,8 @@ public class ReportsController : ApiControllerBase
         };
         foreach (var ex in expRows)
         {
-            tableRows.Add(["Operating Expense", GetStr(ex, "category_name"), $"Rs. {ToDouble(ex, "total"):N2}"]);
+            var exAmt = ex.ContainsKey("total_amount") ? ToDouble(ex, "total_amount") : ToDouble(ex, "total");
+            tableRows.Add(["Operating Expense", GetStr(ex, "category_name"), $"Rs. {exAmt:N2}"]);
         }
         tableRows.Add(["Summary", "Total Operating Expenses", $"Rs. {ToDouble(kpis, "total_expenses"):N2}"]);
         tableRows.Add(["Bottom Line", "NET PROFIT", $"Rs. {ToDouble(kpis, "net_profit"):N2}"]);
@@ -3006,29 +3053,31 @@ public class ReportsController : ApiControllerBase
         double totalExpenses = 0;
         var expensesByCategory = new List<Dictionary<string, object?>>();
 
-        if (await Db.HasTableAsync("expenses") && await Db.HasTableAsync("expense_categories"))
+        if (await Db.HasTableAsync("expenses"))
         {
+            var hasExpCats = await Db.HasTableAsync("expense_categories");
             totalExpenses = Math.Round(await Db.ExecuteScalarAsync<double>(@"
                 SELECT COALESCE(SUM(e.amount), 0)
                 FROM expenses e
-                INNER JOIN expense_categories ec ON ec.id = e.expense_category_id
                 WHERE DATE(e.date) BETWEEN @from AND @to
                   AND e.deleted_at IS NULL",
                 new { from, to }), 2);
 
-            var catRows = await Db.QueryListAsync(@"
-                SELECT ec.id AS category_id,
-                       ec.name AS category_name,
-                       ec.code AS category_code,
-                       COUNT(e.id) AS count,
-                       SUM(e.amount) AS total_amount
-                FROM expenses e
-                INNER JOIN expense_categories ec ON ec.id = e.expense_category_id
-                WHERE DATE(e.date) BETWEEN @from AND @to
-                  AND e.deleted_at IS NULL
-                GROUP BY ec.id, ec.name, ec.code
-                ORDER BY total_amount DESC",
-                new { from, to });
+            var catRows = hasExpCats
+                ? await Db.QueryListAsync(@"
+                    SELECT COALESCE(ec.id, 0) AS category_id,
+                           COALESCE(ec.name, 'Uncategorized') AS category_name,
+                           COALESCE(ec.code, '') AS category_code,
+                           COUNT(e.id) AS count,
+                           SUM(e.amount) AS total_amount
+                    FROM expenses e
+                    LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+                    WHERE DATE(e.date) BETWEEN @from AND @to
+                      AND e.deleted_at IS NULL
+                    GROUP BY COALESCE(ec.id, 0), COALESCE(ec.name, 'Uncategorized'), COALESCE(ec.code, '')
+                    ORDER BY total_amount DESC",
+                    new { from, to })
+                : new List<Dictionary<string, object?>>();
 
             foreach (var r in catRows)
             {
@@ -3824,8 +3873,10 @@ public class ReportsController : ApiControllerBase
 
         var purchInPeriod = await QueryQtyMapAsync(@"SELECT pii.product_id, COALESCE(SUM(pii.quantity), 0) AS qty FROM purchase_invoice_items pii INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id WHERE pii.product_id IN @targetIds AND DATE(pi.posted_date) BETWEEN @fromStr AND @toStr AND (pi.status IS NULL OR pi.status != 'reversed') GROUP BY pii.product_id", new { targetIds, fromStr, toStr });
         var purchAfterPeriod = await QueryQtyMapAsync(@"SELECT pii.product_id, COALESCE(SUM(pii.quantity), 0) AS qty FROM purchase_invoice_items pii INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id WHERE pii.product_id IN @targetIds AND DATE(pi.posted_date) > @toStr AND (pi.status IS NULL OR pi.status != 'reversed') GROUP BY pii.product_id", new { targetIds, toStr });
-        var salesInPeriod = await QueryQtyMapAsync(@"SELECT sii.product_id, COALESCE(SUM(sii.quantity), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) BETWEEN @fromStr AND @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, fromStr, toStr });
-        var salesAfterPeriod = await QueryQtyMapAsync(@"SELECT sii.product_id, COALESCE(SUM(sii.quantity), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) > @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, toStr });
+        var hasSalesBonus = await Db.HasColumnAsync("sale_invoice_items", "bonus");
+        var saleUnitsCol = hasSalesBonus ? "(COALESCE(sii.quantity, 0) + COALESCE(sii.bonus, 0))" : "COALESCE(sii.quantity, 0)";
+        var salesInPeriod = await QueryQtyMapAsync($@"SELECT sii.product_id, COALESCE(SUM({saleUnitsCol}), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) BETWEEN @fromStr AND @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, fromStr, toStr });
+        var salesAfterPeriod = await QueryQtyMapAsync($@"SELECT sii.product_id, COALESCE(SUM({saleUnitsCol}), 0) AS qty FROM sale_invoice_items sii INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id WHERE sii.product_id IN @targetIds AND DATE(si.date) > @toStr AND (si.status IS NULL OR si.status != 'reversed') GROUP BY sii.product_id", new { targetIds, toStr });
         var saleRetInPeriod = await QueryQtyMapAsync(@"SELECT sri.product_id, COALESCE(SUM(sri.unit_return_quantity), 0) AS qty FROM sale_return_items sri INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id WHERE sri.product_id IN @targetIds AND DATE(sr.date) BETWEEN @fromStr AND @toStr GROUP BY sri.product_id", new { targetIds, fromStr, toStr });
         var saleRetAfterPeriod = await QueryQtyMapAsync(@"SELECT sri.product_id, COALESCE(SUM(sri.unit_return_quantity), 0) AS qty FROM sale_return_items sri INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id WHERE sri.product_id IN @targetIds AND DATE(sr.date) > @toStr GROUP BY sri.product_id", new { targetIds, toStr });
         var purchRetInPeriod = await QueryQtyMapAsync(@"SELECT pri.product_id, COALESCE(SUM(pri.return_unit_quantity), 0) AS qty FROM purchase_return_items pri INNER JOIN purchase_returns pr ON pr.id = pri.purchase_return_id WHERE pri.product_id IN @targetIds AND DATE(pr.date) BETWEEN @fromStr AND @toStr GROUP BY pri.product_id", new { targetIds, fromStr, toStr });

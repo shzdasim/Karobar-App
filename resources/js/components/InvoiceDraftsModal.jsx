@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -27,6 +28,7 @@ export default function InvoiceDraftsModal({
   type = "sale_retail",
 }) {
   const { isDark } = useTheme();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -455,7 +457,7 @@ export default function InvoiceDraftsModal({
                                     toast.success(`Converted to Sale Invoice ${data?.posted_number || `#${data?.id}`}`);
                                     onClose();
                                     if (data?.id) {
-                                      window.location.href = `/sale-invoices/${data.id}`;
+                                      navigate(`/sale-invoices/${data.id}`);
                                     }
                                   } catch (err) {
                                     toast.error(err?.response?.data?.message || "Failed to convert quotation to invoice");

@@ -210,14 +210,23 @@ public class BackupController : ApiControllerBase
             }
         }
 
+        var allowedScheduleFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "is_enabled", "enabled", "frequency", "backup_time", "scheduled_time", "backup_type",
+            "retention_days", "retention_count", "max_backups", "destination", "custom_backup_path",
+            "destination_config", "notify_on_failure", "notification_email", "auto_backup_enabled"
+        };
         var updates = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in body)
         {
-            if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!allowedScheduleFields.Contains(kv.Key)) continue;
             updates[kv.Key] = KarobarDb.PrepareDbValue(kv.Value);
         }
 
-        await Db.UpdateAsync("backup_schedules", scheduleId, updates);
+        if (updates.Count > 0)
+        {
+            await Db.UpdateAsync("backup_schedules", scheduleId, updates);
+        }
         return Ok(new
         {
             message = "Backup schedule and storage settings updated successfully",
@@ -300,9 +309,22 @@ public class BackupController : ApiControllerBase
 
         shortcuts.Add(new { name = "Default App Storage", path = _backupService.DefaultBackupPath, type = "app" });
 
-        var currentPath = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path)
-            ? Path.GetFullPath(path)
-            : _backupService.DefaultBackupPath;
+        var currentPath = _backupService.DefaultBackupPath;
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            try
+            {
+                _backupService.AssertSafeBackupDirectory(path);
+                if (Directory.Exists(path))
+                {
+                    currentPath = Path.GetFullPath(path);
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                return Unprocessable(ex.Message);
+            }
+        }
 
         var dirs = new List<object>();
         try

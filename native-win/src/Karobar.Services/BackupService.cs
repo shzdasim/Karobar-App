@@ -137,6 +137,8 @@ public class BackupService
         return true;
     }
 
+    private const long MaxExtractedBackupBytes = 2L * 1024L * 1024L * 1024L; // 2 GB decompression bomb cap
+
     public void AssertSafeBackupDirectory(string path)
     {
         var trimmed = (path ?? "").Trim();
@@ -147,6 +149,83 @@ public class BackupService
         if (trimmed.Contains(".."))
         {
             throw new ArgumentException("Backup path cannot contain relative parent traversal segments (..).");
+        }
+        if (trimmed.StartsWith(@"\\", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Network UNC backup paths (\\\\server\\share) are not allowed. Use a mapped local drive folder.");
+        }
+        if (!Path.IsPathRooted(trimmed))
+        {
+            throw new ArgumentException("Backup path must be an absolute directory path.");
+        }
+
+        var full = Path.GetFullPath(trimmed).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedLower = full.Replace('\\', '/').ToLowerInvariant();
+
+        // Reject Windows/OS system directories
+        if (Regex.IsMatch(normalizedLower, @"^[a-z]:/(windows|program files|program files \(x86\)|programdata|system volume information|\$recycle\.bin)(/|$)") ||
+            normalizedLower is "/etc" or "/bin" or "/sbin" or "/usr" or "/system" or "/library" ||
+            normalizedLower.StartsWith("/etc/", StringComparison.Ordinal) ||
+            normalizedLower.StartsWith("/system/", StringComparison.Ordinal))
+        {
+            // Permit Karobar's own default backup path even if app lives under Program Files
+            var allowedDefault = Path.GetFullPath(_backupPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!full.Equals(allowedDefault, StringComparison.OrdinalIgnoreCase) &&
+                !full.StartsWith(allowedDefault + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("System and Program Files directories cannot be used as custom backup destinations.");
+            }
+        }
+
+        // Reject live database and public webroot directories
+        foreach (var forbidden in new[] { _db.BasePath("database"), _db.PublicPath() })
+        {
+            var forbFull = Path.GetFullPath(forbidden).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (full.Equals(forbFull, StringComparison.OrdinalIgnoreCase) ||
+                full.StartsWith(forbFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Live application database or public web directories cannot be used as backup destinations.");
+            }
+        }
+    }
+
+    private static async Task<string> ReadStreamLimitedAsync(Stream stream, long maxBytes)
+    {
+        using var ms = new MemoryStream();
+        var buf = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buf, 0, buf.Length)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidOperationException("Backup archive exceeds maximum safe uncompressed size (2 GB).");
+            }
+            ms.Write(buf, 0, read);
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    private static void ExtractZipEntryLimited(ZipArchiveEntry entry, string destPath, long maxBytes)
+    {
+        if (entry.Length > maxBytes)
+        {
+            throw new InvalidOperationException("Backup archive entry exceeds maximum safe uncompressed size (2 GB).");
+        }
+        using var src = entry.Open();
+        using var dst = File.Create(destPath);
+        var buf = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = src.Read(buf, 0, buf.Length)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidOperationException("Backup archive exceeds maximum safe uncompressed size (2 GB).");
+            }
+            dst.Write(buf, 0, read);
         }
     }
 
@@ -394,19 +473,30 @@ public class BackupService
         if (lower.EndsWith(".json"))
         {
             var json = await File.ReadAllTextAsync(path);
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("settings", out var sEl) && sEl.ValueKind == JsonValueKind.Object && await _db.HasTableAsync("settings"))
+            JsonDocument doc;
+            try
             {
-                var cur = await _db.QuerySingleOrDefaultAsync("SELECT id FROM settings ORDER BY id ASC LIMIT 1");
-                if (cur != null)
+                doc = JsonDocument.Parse(json);
+            }
+            catch (JsonException)
+            {
+                throw new InvalidOperationException("Backup JSON file is malformed or corrupted.");
+            }
+            using (doc)
+            {
+                if (doc.RootElement.TryGetProperty("settings", out var sEl) && sEl.ValueKind == JsonValueKind.Object && await _db.HasTableAsync("settings"))
                 {
-                    var upd = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var p in sEl.EnumerateObject())
+                    var cur = await _db.QuerySingleOrDefaultAsync("SELECT id FROM settings ORDER BY id ASC LIMIT 1");
+                    if (cur != null)
                     {
-                        if (p.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) continue;
-                        upd[p.Name] = KarobarDb.PrepareDbValue(p.Value);
+                        var upd = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var p in sEl.EnumerateObject())
+                        {
+                            if (p.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) continue;
+                            upd[p.Name] = KarobarDb.PrepareDbValue(p.Value);
+                        }
+                        if (upd.Count > 0) await _db.UpdateAsync("settings", Convert.ToInt64(cur["id"]), upd);
                     }
-                    if (upd.Count > 0) await _db.UpdateAsync("settings", Convert.ToInt64(cur["id"]), upd);
                 }
             }
         }
@@ -417,8 +507,7 @@ public class BackupService
             {
                 await using var fs = File.OpenRead(path);
                 await using var gz = new GZipStream(fs, CompressionMode.Decompress);
-                using var sr = new StreamReader(gz, Encoding.UTF8);
-                sqlContent = await sr.ReadToEndAsync();
+                sqlContent = await ReadStreamLimitedAsync(gz, MaxExtractedBackupBytes);
             }
             else
             {
@@ -427,6 +516,7 @@ public class BackupService
 
             await RestoreFromSqlScriptAsync(sqlContent);
             KarobarDb.FlushSchemaCache();
+            await UpgradeRestoredSchemaAsync();
         }
         else if (lower.EndsWith(".sqlite") || lower.EndsWith(".db"))
         {
@@ -435,6 +525,7 @@ public class BackupService
             try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
             try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
             KarobarDb.FlushSchemaCache();
+            await UpgradeRestoredSchemaAsync();
         }
         else if (lower.EndsWith(".zip"))
         {
@@ -450,12 +541,13 @@ public class BackupService
                 var tmpExtract = Path.Combine(Path.GetTempPath(), $"karobar_restore_{Guid.NewGuid():N}.sqlite");
                 try
                 {
-                    sqliteEntry.ExtractToFile(tmpExtract, overwrite: true);
+                    ExtractZipEntryLimited(sqliteEntry, tmpExtract, MaxExtractedBackupBytes);
                     Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
                     File.Copy(tmpExtract, _db.SqlitePath, overwrite: true);
                     try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
                     try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
                     KarobarDb.FlushSchemaCache();
+                    await UpgradeRestoredSchemaAsync();
                 }
                 finally
                 {
@@ -470,17 +562,16 @@ public class BackupService
                     if (sqlEntry.FullName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
                     {
                         await using var gz = new GZipStream(entryStream, CompressionMode.Decompress);
-                        using var sr = new StreamReader(gz, Encoding.UTF8);
-                        sqlContent = await sr.ReadToEndAsync();
+                        sqlContent = await ReadStreamLimitedAsync(gz, MaxExtractedBackupBytes);
                     }
                     else
                     {
-                        using var sr = new StreamReader(entryStream, Encoding.UTF8);
-                        sqlContent = await sr.ReadToEndAsync();
+                        sqlContent = await ReadStreamLimitedAsync(entryStream, MaxExtractedBackupBytes);
                     }
                 }
                 await RestoreFromSqlScriptAsync(sqlContent);
                 KarobarDb.FlushSchemaCache();
+                await UpgradeRestoredSchemaAsync();
             }
             else
             {
@@ -492,10 +583,28 @@ public class BackupService
             throw new InvalidOperationException($"Unsupported backup restore format: {Path.GetFileName(path)}");
         }
 
-        await _db.UpdateAsync("backup_logs", id, new Dictionary<string, object?>
+        if (await _db.HasTableAsync("backup_logs"))
         {
-            ["status"] = "restored"
-        });
+            await _db.UpdateAsync("backup_logs", id, new Dictionary<string, object?>
+            {
+                ["status"] = "restored"
+            });
+        }
+    }
+
+    private async Task UpgradeRestoredSchemaAsync()
+    {
+        try
+        {
+            var bootstrapper = new Karobar.Data.DatabaseBootstrapper(
+                new Karobar.Data.DbConnectionFactory(explicitSqlitePath: _db.SqlitePath));
+            await bootstrapper.EnsureSchemaReadyAsync();
+            KarobarDb.FlushSchemaCache();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Karobar BackupService] Post-restore schema upgrade warning: {ex.Message}");
+        }
     }
 
     public Dictionary<string, object?> ValidateUploadedBackup(IFormFile? file)

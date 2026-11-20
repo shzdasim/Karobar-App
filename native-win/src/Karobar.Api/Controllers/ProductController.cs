@@ -1097,7 +1097,7 @@ public class ProductController : ApiControllerBase
         data["brand_id"] = brandId!.Value;
         data["supplier_id"] = supplierId!.Value;
 
-        string[] strFields = ["description", "rack", "hs_code", "tax_type", "sro_schedule_no", "sro_item_serial_no", "drug_schedule", "default_dosage"];
+        string[] strFields = ["description", "rack", "hs_code", "sro_schedule_no", "sro_item_serial_no", "drug_schedule", "default_dosage"];
         foreach (var sf in strFields)
         {
             if (body.ContainsKey(sf))
@@ -1105,6 +1105,11 @@ public class ProductController : ApiControllerBase
                 var v = GetString(body, sf);
                 data[sf] = string.IsNullOrWhiteSpace(v) ? null : v.Trim();
             }
+        }
+        if (body.ContainsKey("tax_type"))
+        {
+            var tt = GetString(body, "tax_type");
+            data["tax_type"] = string.IsNullOrWhiteSpace(tt) ? "exempt" : tt.Trim();
         }
 
         string[] numFields =
@@ -1118,7 +1123,10 @@ public class ProductController : ApiControllerBase
             if (body.ContainsKey(nf))
             {
                 var raw = GetString(body, nf);
-                data[nf] = !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : null;
+                var isNotNullTaxRate = nf is "sales_tax_rate" or "further_tax_rate";
+                data[nf] = !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d)
+                    ? d
+                    : (isNotNullTaxRate ? 0.0 : (object?)null);
             }
         }
 

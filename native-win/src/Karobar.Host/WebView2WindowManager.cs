@@ -141,7 +141,18 @@ public sealed class AppWindowInstance : IDisposable
     {
         if (IsDestroyed) return;
         Url = newUrl;
-        UrlNavigator?.Invoke(newUrl);
+        if (UrlNavigator != null)
+        {
+            UrlNavigator.Invoke(newUrl);
+            // When UrlNavigator handles a full http(s)/file URL navigation (e.g. Standalone <-> Terminal origin switch
+            // or offline fallback), do not also dispatch a React Router `karobar:navigate` with a full origin URL.
+            if (newUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                newUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                newUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
         WebMessageSender?.Invoke(JsonSerializer.Serialize(new
         {
             type = "ipc-event",
@@ -243,6 +254,7 @@ public sealed class WebView2WindowManager : IDisposable
     public Func<Task>? OnRunBackupRequested { get; set; }
     public Action? OnQuitRequested { get; set; }
     public Action<AppWindowInstance>? OnWindowCreated { get; set; }
+    public Action<string, string?>? OnOpenTabRequested { get; set; }
 
     private static string ResolveSharedWebView2UserDataFolder()
     {
@@ -430,6 +442,16 @@ public sealed class WebView2WindowManager : IDisposable
 
         lock (_windowLock)
         {
+            // In single-window Waseela tab mode, route child window requests directly into a tab on the
+            // main window without creating ghost AppWindowInstance entries or stealing _mainWindow.IsFocused.
+            if (!options.IsOffscreenPrintWorker &&
+                _mainWindow is { IsDestroyed: false } &&
+                OnOpenTabRequested != null)
+            {
+                OnOpenTabRequested.Invoke(cleanRoute, options.Title);
+                return _mainWindow;
+            }
+
             var id = Interlocked.Increment(ref _nextWindowId);
             foreach (var existing in _activeWindows.Values)
             {

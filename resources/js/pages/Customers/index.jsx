@@ -210,7 +210,14 @@ export default function CustomersIndex() {
         data.results[0]?.status === "wa_me_fallback" &&
         data.results[0]?.wa_me_url
       ) {
-        window.open(data.results[0].wa_me_url, "_blank", "noopener,noreferrer");
+        const targetWaUrl = data.results[0].wa_me_url;
+        if (window.karobarDesktop?.openExternalUrl) {
+          window.karobarDesktop.openExternalUrl(targetWaUrl).catch(() => {
+            window.open(targetWaUrl, "_blank", "noopener,noreferrer");
+          });
+        } else {
+          window.open(targetWaUrl, "_blank", "noopener,noreferrer");
+        }
       }
       fetchCustomers();
     } catch (err) {

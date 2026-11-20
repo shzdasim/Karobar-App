@@ -1389,6 +1389,16 @@ public class DocumentShareController : ApiControllerBase
         }
         else if (type == "purchase_order" && docId > 0 && await Db.HasTableAsync("purchase_order_items"))
         {
+            if (await Db.HasTableAsync("purchase_orders"))
+            {
+                var po = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id = docId });
+                if (po != null)
+                {
+                    req.DocumentNumber = GetVal(po, "po_number", GetVal(po, "order_number", GetVal(po, "posted_number", $"PO-{docId}")));
+                    req.DocumentDate = GetVal(po, "order_date", GetVal(po, "date", GetVal(po, "created_at", req.DocumentDate)));
+                    req.Remarks = GetVal(po, "notes", GetVal(po, "remarks", ""));
+                }
+            }
             var items = await Db.QueryListAsync(@"
                 SELECT i.*, p.name AS product_name
                 FROM purchase_order_items i
@@ -1529,14 +1539,27 @@ public class DocumentShareController : ApiControllerBase
         {
             req.DocumentNumber = $"CL-{clCustId}";
             req.PartyHeading = "Customer";
+            var fromDay = !string.IsNullOrWhiteSpace(from) ? (from.Trim().Length > 10 ? from.Trim()[..10] : from.Trim()) : "";
+            var toDay = !string.IsNullOrWhiteSpace(to) ? (to.Trim().Length > 10 ? to.Trim()[..10] : to.Trim()) : "";
+
+            double bal = 0;
+            if (!string.IsNullOrEmpty(fromDay))
+            {
+                var prior = await Db.QuerySingleOrDefaultAsync(@"
+                    SELECT COALESCE(SUM(COALESCE(invoice_total, 0) - COALESCE(total_received, 0) - COALESCE(credited_amount, 0)), 0) AS bal
+                    FROM customer_ledgers
+                    WHERE customer_id = @cid AND substr(entry_date, 1, 10) < @fromDay",
+                    new { cid = clCustId, fromDay });
+                bal = ToDouble(prior, "bal");
+            }
+
             var rows = await Db.QueryListAsync(@"
                 SELECT entry_date, posted_number, description, invoice_total, total_received, credited_amount
                 FROM customer_ledgers
                 WHERE customer_id = @cid
-                  AND (@from IS NULL OR @from = '' OR entry_date >= @from)
-                  AND (@to IS NULL OR @to = '' OR entry_date <= @to)
-                ORDER BY entry_date ASC, id ASC
-                LIMIT 250", new { cid = clCustId, from = from ?? "", to = to ?? "" });
+                  AND (@fromDay = '' OR substr(entry_date, 1, 10) >= @fromDay)
+                  AND (@toDay = '' OR substr(entry_date, 1, 10) <= @toDay)
+                ORDER BY substr(entry_date, 1, 10) ASC, id ASC", new { cid = clCustId, fromDay, toDay });
             req.Columns =
             [
                 new PdfTableColumnDef { Header = "Date", RelativeWidth = 1.6f },
@@ -1546,7 +1569,10 @@ public class DocumentShareController : ApiControllerBase
                 new PdfTableColumnDef { Header = "Credit", RelativeWidth = 1.3f, AlignRight = true },
                 new PdfTableColumnDef { Header = "Balance", RelativeWidth = 1.5f, AlignRight = true }
             ];
-            double bal = 0;
+            if (!string.IsNullOrEmpty(fromDay) || Math.Abs(bal) > 0.001)
+            {
+                req.Rows.Add([!string.IsNullOrEmpty(fromDay) ? fromDay : "—", "B/F", "Opening Balance Brought Forward", "0.00", "0.00", bal.ToString("N2")]);
+            }
             foreach (var r in rows)
             {
                 var inv = ToDouble(r, "invoice_total");
@@ -1560,14 +1586,27 @@ public class DocumentShareController : ApiControllerBase
         {
             req.DocumentNumber = $"SL-{slSupId}";
             req.PartyHeading = "Supplier";
+            var fromDay = !string.IsNullOrWhiteSpace(from) ? (from.Trim().Length > 10 ? from.Trim()[..10] : from.Trim()) : "";
+            var toDay = !string.IsNullOrWhiteSpace(to) ? (to.Trim().Length > 10 ? to.Trim()[..10] : to.Trim()) : "";
+
+            double bal = 0;
+            if (!string.IsNullOrEmpty(fromDay))
+            {
+                var prior = await Db.QuerySingleOrDefaultAsync(@"
+                    SELECT COALESCE(SUM(COALESCE(invoice_total, 0) - COALESCE(total_paid, 0) - COALESCE(debited_amount, 0)), 0) AS bal
+                    FROM supplier_ledgers
+                    WHERE supplier_id = @sid AND substr(entry_date, 1, 10) < @fromDay",
+                    new { sid = slSupId, fromDay });
+                bal = ToDouble(prior, "bal");
+            }
+
             var rows = await Db.QueryListAsync(@"
                 SELECT entry_date, posted_number, description, invoice_total, total_paid, debited_amount
                 FROM supplier_ledgers
                 WHERE supplier_id = @sid
-                  AND (@from IS NULL OR @from = '' OR entry_date >= @from)
-                  AND (@to IS NULL OR @to = '' OR entry_date <= @to)
-                ORDER BY entry_date ASC, id ASC
-                LIMIT 250", new { sid = slSupId, from = from ?? "", to = to ?? "" });
+                  AND (@fromDay = '' OR substr(entry_date, 1, 10) >= @fromDay)
+                  AND (@toDay = '' OR substr(entry_date, 1, 10) <= @toDay)
+                ORDER BY substr(entry_date, 1, 10) ASC, id ASC", new { sid = slSupId, fromDay, toDay });
             req.Columns =
             [
                 new PdfTableColumnDef { Header = "Date", RelativeWidth = 1.6f },
@@ -1577,7 +1616,10 @@ public class DocumentShareController : ApiControllerBase
                 new PdfTableColumnDef { Header = "Paid", RelativeWidth = 1.3f, AlignRight = true },
                 new PdfTableColumnDef { Header = "Balance", RelativeWidth = 1.5f, AlignRight = true }
             ];
-            double bal = 0;
+            if (!string.IsNullOrEmpty(fromDay) || Math.Abs(bal) > 0.001)
+            {
+                req.Rows.Add([!string.IsNullOrEmpty(fromDay) ? fromDay : "—", "B/F", "Opening Balance Brought Forward", "0.00", "0.00", bal.ToString("N2")]);
+            }
             foreach (var r in rows)
             {
                 var inv = ToDouble(r, "invoice_total");
@@ -1618,7 +1660,7 @@ public class DocumentShareController : ApiControllerBase
             var dsp = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stock_disposals WHERE id = @id", new { id = docId });
             if (dsp != null)
             {
-                req.DocumentNumber = GetVal(dsp, "posted_number", $"DSP-{docId}");
+                req.DocumentNumber = GetVal(dsp, "disposal_number", GetVal(dsp, "posted_number", $"DSP-{docId}"));
                 req.DocumentDate = GetVal(dsp, "disposal_date", req.DocumentDate);
                 req.Remarks = GetVal(dsp, "notes", "");
                 var items = await Db.QueryListAsync(@"

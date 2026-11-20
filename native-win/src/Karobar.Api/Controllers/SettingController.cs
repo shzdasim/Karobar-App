@@ -177,6 +177,7 @@ public class SettingController : ApiControllerBase
             if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("logo_path", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("clear_fbr_bearer_token", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("clear_cube_groq_api_key", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("clear_cube_gemini_api_key", StringComparison.OrdinalIgnoreCase))
@@ -214,17 +215,15 @@ public class SettingController : ApiControllerBase
             var logoFile = form.Files.GetFile("logo");
             if (logoFile != null && logoFile.Length > 0)
             {
-                var logosDir = Db.StoragePath("app/public/logos");
-                if (!Directory.Exists(logosDir)) Directory.CreateDirectory(logosDir);
-                var ext = Path.GetExtension(logoFile.FileName);
-                if (string.IsNullOrEmpty(ext)) ext = ".png";
-                var fileName = $"logo_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
-                var fullPath = Path.Combine(logosDir, fileName);
-                await using (var fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write))
+                var (logoOk, logoRelPath, logoErr) = await SaveValidatedLogoAsync(logoFile);
+                if (!logoOk)
                 {
-                    await logoFile.CopyToAsync(fs);
+                    return Unprocessable(logoErr ?? "Invalid logo image.", new Dictionary<string, string[]>
+                    {
+                        ["logo"] = new[] { logoErr ?? "Invalid logo image." }
+                    });
                 }
-                updates["logo_path"] = $"logos/{fileName}";
+                updates["logo_path"] = logoRelPath;
             }
             else if (GetBool(body, "remove_logo", false))
             {
@@ -346,7 +345,8 @@ public class SettingController : ApiControllerBase
         {
             if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                 kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase))
+                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.Equals("logo_path", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -364,17 +364,15 @@ public class SettingController : ApiControllerBase
             var logoFile = form.Files.GetFile("logo");
             if (logoFile != null && logoFile.Length > 0)
             {
-                var logosDir = Db.StoragePath("app/public/logos");
-                if (!Directory.Exists(logosDir)) Directory.CreateDirectory(logosDir);
-                var ext = Path.GetExtension(logoFile.FileName);
-                if (string.IsNullOrEmpty(ext)) ext = ".png";
-                var fileName = $"logo_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
-                var fullPath = Path.Combine(logosDir, fileName);
-                await using (var fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write))
+                var (logoOk, logoRelPath, logoErr) = await SaveValidatedLogoAsync(logoFile);
+                if (!logoOk)
                 {
-                    await logoFile.CopyToAsync(fs);
+                    return Unprocessable(logoErr ?? "Invalid logo image.", new Dictionary<string, string[]>
+                    {
+                        ["logo"] = new[] { logoErr ?? "Invalid logo image." }
+                    });
                 }
-                updates["logo_path"] = $"logos/{fileName}";
+                updates["logo_path"] = logoRelPath;
             }
             else if (GetBool(body, "remove_logo", false))
             {
@@ -651,6 +649,47 @@ public class SettingController : ApiControllerBase
         return await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted);
     }
 
+    private async Task<(bool Ok, string? RelativePath, string? Error)> SaveValidatedLogoAsync(Microsoft.AspNetCore.Http.IFormFile logoFile)
+    {
+        const long maxLogoBytes = 5L * 1024 * 1024;
+        if (logoFile.Length <= 0 || logoFile.Length > maxLogoBytes)
+        {
+            return (false, null, "Logo image must be between 1 byte and 5 MB.");
+        }
+
+        var ext = (Path.GetExtension(logoFile.FileName) ?? "").Trim().ToLowerInvariant();
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+        {
+            return (false, null, "Only PNG, JPG, JPEG, and WebP logo images are allowed.");
+        }
+
+        await using var ms = new MemoryStream((int)Math.Min(logoFile.Length, maxLogoBytes));
+        await logoFile.CopyToAsync(ms);
+        var bytes = ms.ToArray();
+
+        bool isPng = bytes.Length >= 8 &&
+                     bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
+                     bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
+        bool isJpeg = bytes.Length >= 3 &&
+                      bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
+        bool isWebp = bytes.Length >= 12 &&
+                      bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                      bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
+
+        if (!isPng && !isJpeg && !isWebp)
+        {
+            return (false, null, "Uploaded logo file is not a valid PNG, JPEG, or WebP image.");
+        }
+
+        var safeExt = isPng ? ".png" : (isWebp ? ".webp" : ".jpg");
+        var logosDir = Db.StoragePath("app/public/logos");
+        if (!Directory.Exists(logosDir)) Directory.CreateDirectory(logosDir);
+        var fileName = $"logo_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{safeExt}";
+        var fullPath = Path.Combine(logosDir, fileName);
+        await System.IO.File.WriteAllBytesAsync(fullPath, bytes);
+        return (true, $"logos/{fileName}", null);
+    }
+
     [HttpGet("settings/whatsapp-agent/status")]
     public async Task<IActionResult> WhatsAppAgentStatus()
     {
@@ -659,6 +698,10 @@ public class SettingController : ApiControllerBase
         await GetOrCreateSettingAsync();
         var efSetting = await LoadEfSettingAsync();
         var res = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+        if (!await CanAsync("settings.update"))
+        {
+            res.Remove("api_key");
+        }
         return Ok(res);
     }
 
@@ -686,6 +729,10 @@ public class SettingController : ApiControllerBase
                 if (!string.IsNullOrWhiteSpace(agentUrl)) syncUpdates["whatsapp_api_url"] = agentUrl;
                 if (!string.IsNullOrWhiteSpace(apiKey)) syncUpdates["whatsapp_access_token"] = apiKey;
                 await Db.UpdateAsync("settings", settingId, syncUpdates);
+            }
+            if (!await CanAsync("settings.update"))
+            {
+                res.Remove("api_key");
             }
             return StatusCode(ok ? 200 : 422, res);
         }

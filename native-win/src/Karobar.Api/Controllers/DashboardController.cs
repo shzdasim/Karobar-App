@@ -504,8 +504,12 @@ public class DashboardController : ApiControllerBase
         var stockUnits = ToDouble(productStats, "stock_units");
         double? stockValue = canViewValuation ? ToDouble(productStats, "stock_value") : null;
 
+        var hasUserDemands = await Db.HasTableAsync("user_demands");
+        var pendingDemandsSubquery = hasUserDemands
+            ? "(SELECT COUNT(*) FROM user_demands WHERE status = 'pending')"
+            : "0";
         var threeMonthsOut = DateTime.UtcNow.AddMonths(3).ToString("yyyy-MM-dd");
-        var counts = await Db.QuerySingleOrDefaultAsync(@"
+        var counts = await Db.QuerySingleOrDefaultAsync($@"
             SELECT
                 (SELECT COUNT(*) FROM suppliers) AS suppliers,
                 (SELECT COUNT(*) FROM customers) AS customers,
@@ -513,7 +517,7 @@ public class DashboardController : ApiControllerBase
                 (SELECT COUNT(*) FROM categories) AS categories,
                 (SELECT COUNT(*) FROM users) AS users,
                 (SELECT COUNT(*) FROM stock_adjustments) AS stock_adjustments,
-                (SELECT COUNT(*) FROM user_demands WHERE status = 'pending') AS pending_demands,
+                {pendingDemandsSubquery} AS pending_demands,
                 (SELECT COUNT(*) FROM batches b WHERE b.expiry_date IS NOT NULL AND b.quantity > 0 AND DATE(b.expiry_date) > @today AND DATE(b.expiry_date) <= @threeMonthsOut) AS near_expiry",
             new { today, threeMonthsOut });
 

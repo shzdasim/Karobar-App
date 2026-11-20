@@ -80,8 +80,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Dirs]
 Name: "{app}"; Permissions: users-modify
 Name: "{app}\database"; Permissions: users-modify
+Name: "{app}\desktop"; Permissions: users-modify
 Name: "{app}\public"; Permissions: users-modify
 Name: "{app}\resources"; Permissions: users-modify
+Name: "{app}\runtime"; Permissions: users-modify
+Name: "{app}\runtime\node"; Permissions: users-modify
+Name: "{app}\runtime\whatsapp-agent"; Permissions: users-modify
+Name: "{app}\scripts"; Permissions: users-modify
 Name: "{app}\storage"; Permissions: users-modify
 Name: "{app}\storage\app"; Permissions: users-modify
 Name: "{app}\storage\app\public"; Permissions: users-modify
@@ -786,10 +791,16 @@ begin
         KeepExistingDbRadio.Checked := False;
         FreshDbRadio.Checked := False;
         TerminalModeRadio.Checked := True;
-        if Trim(ServerUrlEdit.Text) = '' then
-          ServerUrlEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'serverUrl');
-        if Trim(TerminalNameEdit.Text) = '' then
-          TerminalNameEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'terminalName');
+        if (Trim(ServerUrlEdit.Text) = '') or (Trim(ServerUrlEdit.Text) = 'http://192.168.1.10:18960') then
+        begin
+          if ExtractJsonStringField(ReadExistingNetworkModeJson(), 'serverUrl') <> '' then
+            ServerUrlEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'serverUrl');
+        end;
+        if (Trim(TerminalNameEdit.Text) = '') or (Trim(TerminalNameEdit.Text) = 'Counter 2') then
+        begin
+          if ExtractJsonStringField(ReadExistingNetworkModeJson(), 'terminalName') <> '' then
+            TerminalNameEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'terminalName');
+        end;
         if Trim(PairingTokenEdit.Text) = '' then
           PairingTokenEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'pairingToken');
       end
@@ -847,6 +858,17 @@ begin
       if (ImportPath = '') or (not FileExists(ImportPath)) then
       begin
         MsgBox('Please select a valid existing SQLite database file (.sqlite / .db) to import, or choose another option.', mbError, MB_OK);
+        Result := False;
+        Exit;
+      end;
+    end;
+
+    if Assigned(TerminalModeRadio) and TerminalModeRadio.Checked then
+    begin
+      KeyText := LowerCase(Trim(ServerUrlEdit.Text));
+      if (Length(KeyText) < 10) or ((Pos('http://', KeyText) <> 1) and (Pos('https://', KeyText) <> 1)) then
+      begin
+        MsgBox('Please enter a valid Store Server LAN URL starting with http:// or https:// (for example: http://192.168.1.10:18960).', mbError, MB_OK);
         Result := False;
         Exit;
       end;
@@ -928,7 +950,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  NetCfgJson: String;
+  NetCfgJson, ExistingTermId: String;
 begin
   if CurStep = ssInstall then
   begin
@@ -938,19 +960,23 @@ begin
   begin
     if Assigned(TerminalModeRadio) and TerminalModeRadio.Checked then
     begin
+      ExistingTermId := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'terminalId');
       NetCfgJson :=
         '{"mode":"terminal","serverUrl":"' + EscapeJsonString(Trim(ServerUrlEdit.Text)) +
         '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) +
-        '","pairingToken":"' + EscapeJsonString(Trim(PairingTokenEdit.Text)) + '"}';
+        '","pairingToken":"' + EscapeJsonString(Trim(PairingTokenEdit.Text)) + '"';
+      if ExistingTermId <> '' then
+        NetCfgJson := NetCfgJson + ',"terminalId":"' + EscapeJsonString(ExistingTermId) + '"';
+      NetCfgJson := NetCfgJson + '}';
       ForceDirectories(ExpandConstant('{app}\storage\app'));
       SaveStringToFile(ExpandConstant('{app}\storage\app\network-mode.json'), NetCfgJson, False);
       ForceDirectories(ExpandConstant('{userappdata}\Karobar-App-Native'));
       SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-mode.json'), NetCfgJson, False);
       SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-config.json'), NetCfgJson, False);
     end
-    else if not IsCliUpgradeMode() then
+    else if (not IsCliUpgradeMode()) and (not (Assigned(KeepExistingDbRadio) and KeepExistingDbRadio.Checked)) then
     begin
-      { Explicitly reset to Standalone Mode when reinstalling Standalone over a prior Terminal config }
+      { Explicitly reset to Standalone Mode only on Fresh or Import install (never wipe existing network config on In-Place Upgrade) }
       NetCfgJson := '{"mode":"standalone","serverUrl":"","terminalName":""}';
       ForceDirectories(ExpandConstant('{app}\storage\app'));
       SaveStringToFile(ExpandConstant('{app}\storage\app\network-mode.json'), NetCfgJson, False);
@@ -961,4 +987,10 @@ begin
     if FileExists(OtaUpgradeFlagPath()) then
       DeleteFile(OtaUpgradeFlagPath());
   end;
+end;
+
+procedure DeinitializeSetup();
+begin
+  if FileExists(OtaUpgradeFlagPath()) then
+    DeleteFile(OtaUpgradeFlagPath());
 end;

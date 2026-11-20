@@ -475,11 +475,14 @@ public class BatchController : ApiControllerBase
         }
 
         var batchNumber = sourceBatch["batch_number"]?.ToString() ?? "";
+        await using var moveConn = await Db.OpenConnectionAsync();
+        await using var moveTx = await moveConn.BeginTransactionAsync();
+
         var targetBatch = await Db.QuerySingleOrDefaultAsync(@"
             SELECT * FROM batches
             WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id = @toLocId AND id != @batch
             LIMIT 1",
-            new { productId, batchNumber, toLocId = toLocationId.Value, batch });
+            new { productId, batchNumber, toLocId = toLocationId.Value, batch }, moveConn, moveTx);
 
         if (targetBatch != null)
         {
@@ -487,19 +490,20 @@ public class BatchController : ApiControllerBase
             var targetNewQty = Convert.ToInt32(targetBatch["quantity"] ?? 0) + moveQty;
             var targetUpdates = new Dictionary<string, object?> { ["quantity"] = targetNewQty };
             if (targetRack != null) targetUpdates["rack"] = targetRack;
-            await Db.UpdateAsync("batches", targetId, targetUpdates);
+            await Db.UpdateAsync("batches", targetId, targetUpdates, "id", moveConn, moveTx);
 
             var remQty = sourceQty - moveQty;
-            Dictionary<string, object?>? sourceResult = null;
             if (remQty <= 0)
             {
-                await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch });
+                await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch }, moveConn, moveTx);
             }
             else
             {
-                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = remQty });
-                sourceResult = await GetBatchWithLocationAsync(batch, prodRow);
+                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = remQty }, "id", moveConn, moveTx);
             }
+
+            await moveTx.CommitAsync();
+            var sourceResult = remQty > 0 ? await GetBatchWithLocationAsync(batch, prodRow) : null;
 
             return Ok(new Dictionary<string, object?>
             {
@@ -515,7 +519,8 @@ public class BatchController : ApiControllerBase
             {
                 ["storage_location_id"] = toLocationId.Value,
                 ["rack"] = targetRack
-            });
+            }, "id", moveConn, moveTx);
+            await moveTx.CommitAsync();
 
             return Ok(new Dictionary<string, object?>
             {
@@ -525,7 +530,7 @@ public class BatchController : ApiControllerBase
             });
         }
 
-        await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = sourceQty - moveQty });
+        await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = sourceQty - moveQty }, "id", moveConn, moveTx);
         var newTargetId = await Db.InsertAsync("batches", new Dictionary<string, object?>
         {
             ["product_id"] = productId,
@@ -540,7 +545,8 @@ public class BatchController : ApiControllerBase
             ["unit_sale_price"] = sourceBatch["unit_sale_price"],
             ["whole_sale_pack_price"] = sourceBatch["whole_sale_pack_price"],
             ["whole_sale_unit_price"] = sourceBatch["whole_sale_unit_price"]
-        });
+        }, moveConn, moveTx);
+        await moveTx.CommitAsync();
 
         return Ok(new Dictionary<string, object?>
         {

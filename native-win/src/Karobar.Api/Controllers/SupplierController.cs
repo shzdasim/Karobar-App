@@ -191,7 +191,7 @@ public class SupplierController : ApiControllerBase
             ["phone"] = GetString(body, "phone"),
             ["tax_number"] = GetString(body, "tax_number"),
             ["strn"] = GetString(body, "strn"),
-            ["tax_status"] = GetString(body, "tax_status"),
+            ["tax_status"] = string.IsNullOrWhiteSpace(GetString(body, "tax_status")) ? "registered" : GetString(body, "tax_status")!.Trim(),
             ["province"] = GetString(body, "province"),
             ["email"] = GetString(body, "email"),
             ["expiry_return_policy"] = GetString(body, "expiry_return_policy"),
@@ -418,9 +418,16 @@ public class SupplierController : ApiControllerBase
             ["name"] = name
         };
 
-        foreach (var k in new[] { "address", "phone", "tax_number", "strn", "tax_status", "province", "email" })
+        foreach (var k in new[] { "address", "phone", "tax_number", "strn", "province", "email" })
         {
             if (body.ContainsKey(k)) data[k] = GetString(body, k);
+        }
+        if (body.ContainsKey("tax_status"))
+        {
+            var ts = GetString(body, "tax_status");
+            data["tax_status"] = string.IsNullOrWhiteSpace(ts)
+                ? (existing.GetValueOrDefault("tax_status")?.ToString() is { Length: > 0 } ets ? ets : "registered")
+                : ts.Trim();
         }
         if (body.ContainsKey("credit_limit"))
         {

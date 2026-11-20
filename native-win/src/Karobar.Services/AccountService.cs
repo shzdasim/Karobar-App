@@ -256,17 +256,22 @@ public class AccountService
             throw new InvalidOperationException("Deposit amount must be greater than zero.");
         }
 
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId });
+        var hasTxnTable = await _db.HasTableAsync("account_transactions");
+        await using var conn = await _db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
         if (locked == null) return null;
 
         var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
         await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
         {
             ["current_balance"] = newBalance
-        });
+        }, "id", conn, tx);
 
-        if (!await _db.HasTableAsync("account_transactions"))
+        if (!hasTxnTable)
         {
+            await tx.CommitAsync();
             return null;
         }
 
@@ -282,7 +287,8 @@ public class AccountService
             ["reference_id"] = refId,
             ["description"] = description ?? $"Deposit to {accName}",
             ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        });
+        }, conn, tx);
+        await tx.CommitAsync();
 
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM account_transactions WHERE id = @id", new { id = txnId });
     }
@@ -318,17 +324,22 @@ public class AccountService
             throw new InvalidOperationException("Withdrawal amount must be greater than zero.");
         }
 
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId });
+        var hasTxnTable = await _db.HasTableAsync("account_transactions");
+        await using var conn = await _db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
         if (locked == null) return null;
 
         var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
         await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
         {
             ["current_balance"] = newBalance
-        });
+        }, "id", conn, tx);
 
-        if (!await _db.HasTableAsync("account_transactions"))
+        if (!hasTxnTable)
         {
+            await tx.CommitAsync();
             return null;
         }
 
@@ -344,7 +355,8 @@ public class AccountService
             ["reference_id"] = refId,
             ["description"] = description ?? $"Withdrawal from {accName}",
             ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        });
+        }, conn, tx);
+        await tx.CommitAsync();
 
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM account_transactions WHERE id = @id", new { id = txnId });
     }
@@ -367,16 +379,19 @@ public class AccountService
             throw new InvalidOperationException("Transfer amount must be greater than zero.");
         }
 
-        var fromLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = fromAccountId })
+        await using var conn = await _db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var fromLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = fromAccountId }, conn, tx)
                          ?? throw new KeyNotFoundException("Source account not found.");
-        var toLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = toAccountId })
+        var toLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = toAccountId }, conn, tx)
                        ?? throw new KeyNotFoundException("Destination account not found.");
 
         var fromBalanceAfter = Math.Round(ToDecimal(fromLocked.GetValueOrDefault("current_balance")) - amount, 2);
         var toBalanceAfter = Math.Round(ToDecimal(toLocked.GetValueOrDefault("current_balance")) + amount, 2);
 
-        await _db.UpdateAsync("accounts", fromAccountId, new Dictionary<string, object?> { ["current_balance"] = fromBalanceAfter });
-        await _db.UpdateAsync("accounts", toAccountId, new Dictionary<string, object?> { ["current_balance"] = toBalanceAfter });
+        await _db.UpdateAsync("accounts", fromAccountId, new Dictionary<string, object?> { ["current_balance"] = fromBalanceAfter }, "id", conn, tx);
+        await _db.UpdateAsync("accounts", toAccountId, new Dictionary<string, object?> { ["current_balance"] = toBalanceAfter }, "id", conn, tx);
 
         var fromName = fromLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
         var toName = toLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
@@ -394,7 +409,7 @@ public class AccountService
             ["reference_id"] = toAccountId,
             ["description"] = $"Transfer to {toName}{desc}",
             ["transaction_date"] = nowStr
-        });
+        }, conn, tx);
 
         var inTxnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
         {
@@ -407,7 +422,9 @@ public class AccountService
             ["reference_id"] = fromAccountId,
             ["description"] = $"Transfer from {fromName}{desc}",
             ["transaction_date"] = nowStr
-        });
+        }, conn, tx);
+
+        await tx.CommitAsync();
 
         var cashDrawerService = new CashDrawerService(_db);
         if (IsDefaultCashDrawerAccount(fromLocked))
@@ -455,7 +472,10 @@ public class AccountService
             throw new InvalidOperationException("Adjustment amount must be greater than zero.");
         }
 
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId })
+        await using var conn = await _db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx)
                      ?? throw new KeyNotFoundException("Account not found.");
 
         var isDeposit = string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase);
@@ -475,7 +495,7 @@ public class AccountService
         await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
         {
             ["current_balance"] = newBalance
-        });
+        }, "id", conn, tx);
 
         var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
         {
@@ -488,7 +508,8 @@ public class AccountService
             ["reference_id"] = null,
             ["description"] = desc,
             ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        });
+        }, conn, tx);
+        await tx.CommitAsync();
 
         if (IsDefaultCashDrawerAccount(locked))
         {

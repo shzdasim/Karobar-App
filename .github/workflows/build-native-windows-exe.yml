@@ -111,13 +111,16 @@ jobs:
           $NotesFile = "dist/installer/native-release-notes.md"
           Set-Content -Path $NotesFile -Value $ReleaseNotes -Encoding UTF8
 
-          $ReleaseAssets = @(
+          $BinaryAssets = @(
               "dist/installer/Karobar-Native-Setup.exe",
               "dist/installer/Karobar-Native-Patch.zip",
               "dist/installer/Karobar-Native-Setup-Bundle.zip",
-              "dist/installer/latest-native-release.json",
               "dist/installer/MalikAsimShahzad-KarobarERP.cer",
               "dist/installer/Install-Karobar-Native.bat"
+          ) | Where-Object { Test-Path $_ }
+
+          $ManifestAssets = @(
+              "dist/installer/latest-native-release.json"
           ) | Where-Object { Test-Path $_ }
 
           gh release view $ReleaseTag >$null 2>&1
@@ -125,10 +128,12 @@ jobs:
               Write-Host "Updating existing Native GitHub Release $ReleaseTag..." -ForegroundColor Cyan
               gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$ReleaseTag" -f sha="$env:GITHUB_SHA" -F force=true
               gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest=false
-              gh release upload $ReleaseTag $ReleaseAssets --clobber
+              # Upload binaries BEFORE latest-native-release.json so OTA clients never observe a mid-upload SHA-256 mismatch
+              gh release upload $ReleaseTag $BinaryAssets --clobber
+              gh release upload $ReleaseTag $ManifestAssets --clobber
           } else {
               Write-Host "Creating new Native GitHub Release $ReleaseTag..." -ForegroundColor Cyan
-              gh release create $ReleaseTag $ReleaseAssets `
+              gh release create $ReleaseTag $BinaryAssets `
                   --target $env:GITHUB_SHA `
                   --title $ReleaseTitle `
                   --notes-file $NotesFile `
@@ -137,4 +142,5 @@ jobs:
                   Write-Warning "GitHub Release creation returned HTTP 403 (branch protection / token scope on non-default branch). The compiled installer Karobar-Native-Setup.exe is already uploaded to the GitHub Actions run Artifacts above!"
                   exit 0
               }
+              gh release upload $ReleaseTag $ManifestAssets --clobber
           }

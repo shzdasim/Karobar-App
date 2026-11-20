@@ -1000,6 +1000,30 @@ public class CustomerController : ApiControllerBase
             dict["is_regular"] = GetBool(body, "is_regular", false);
         }
 
+        // Coerce NOT NULL schema columns to safe defaults so non-regular customers never hit SQLite Error 19
+        if (!dict.TryGetValue("tax_status", out var tsVal) || string.IsNullOrWhiteSpace(tsVal?.ToString()))
+        {
+            dict["tax_status"] = existing?.GetValueOrDefault("tax_status")?.ToString() is { Length: > 0 } ets ? ets : "unregistered";
+        }
+        if (!dict.TryGetValue("credit_status", out var csVal) || string.IsNullOrWhiteSpace(csVal?.ToString()))
+        {
+            dict["credit_status"] = existing?.GetValueOrDefault("credit_status")?.ToString() is { Length: > 0 } ecs ? ecs : "active";
+        }
+        if (!dict.TryGetValue("refill_cycle", out var rcVal) || string.IsNullOrWhiteSpace(rcVal?.ToString()))
+        {
+            dict["refill_cycle"] = existing?.GetValueOrDefault("refill_cycle")?.ToString() is { Length: > 0 } erc ? erc : "monthly";
+        }
+        if (!dict.TryGetValue("reminder_language", out var rlVal) || string.IsNullOrWhiteSpace(rlVal?.ToString()))
+        {
+            dict["reminder_language"] = existing?.GetValueOrDefault("reminder_language")?.ToString() is { Length: > 0 } erl ? erl : "english";
+        }
+        if (!dict.TryGetValue("reminder_lead_days", out var rldVal) || rldVal == null)
+        {
+            dict["reminder_lead_days"] = existing?.GetValueOrDefault("reminder_lead_days") != null
+                ? Convert.ToInt32(existing["reminder_lead_days"])
+                : 2;
+        }
+
         return dict;
     }
 

@@ -55,6 +55,31 @@ public class TerminalController : ApiControllerBase
             ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings ORDER BY id ASC LIMIT 1")
             : null;
 
+        // Enforce LAN Network Pairing Token on remote terminals when configured on Store Server
+        var storedToken = (setting?.GetValueOrDefault("network_server_token")?.ToString() ?? "").Trim();
+        var remoteIp = HttpContext.Connection.RemoteIpAddress;
+        var isLoopback = remoteIp == null || IPAddress.IsLoopback(remoteIp.IsIPv4MappedToIPv6 ? remoteIp.MapToIPv4() : remoteIp);
+        if (!isLoopback && !string.IsNullOrEmpty(storedToken))
+        {
+            var providedToken = (Request.Headers["X-Network-Token"].FirstOrDefault()
+                                 ?? Request.Headers["X-Terminal-Token"].FirstOrDefault()
+                                 ?? Request.Query["network_token"].FirstOrDefault()
+                                 ?? "").Trim();
+            var validToken = !string.IsNullOrEmpty(providedToken) &&
+                             CryptographicOperations.FixedTimeEquals(
+                                 Encoding.UTF8.GetBytes(storedToken),
+                                 Encoding.UTF8.GetBytes(providedToken));
+            if (!validToken)
+            {
+                return StatusCode(403, new
+                {
+                    ok = false,
+                    code = "INVALID_NETWORK_TOKEN",
+                    message = "Invalid or missing Network Pairing Token. Copy the exact Pairing Token from Store Server Settings -> Network & Multi-PC Terminals."
+                });
+            }
+        }
+
         Dictionary<string, object?>? currentTerminal = null;
         if (HttpContext.Items.TryGetValue("KarobarTerminal", out var termObj) && termObj is Dictionary<string, object?> td)
         {

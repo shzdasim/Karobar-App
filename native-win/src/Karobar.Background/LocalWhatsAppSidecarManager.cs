@@ -33,6 +33,7 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
     private Process? _sidecarProcess;
     private IntPtr _jobObjectHandle = IntPtr.Zero;
     private readonly object _procLock = new();
+    private readonly object _logLock = new();
 
     public LocalWhatsAppSidecarManager(string? appRoot = null, HttpClient? httpClient = null)
     {
@@ -716,12 +717,15 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
                                 {
                                     try
                                     {
-                                        var fi = new FileInfo(logFile);
-                                        if (fi.Exists && fi.Length > 2 * 1024 * 1024)
+                                        lock (_logLock)
                                         {
-                                            File.WriteAllText(logFile, $"[{DateTime.UtcNow:O}] Log rotated (exceeded 2MB){Environment.NewLine}");
+                                            var fi = new FileInfo(logFile);
+                                            if (fi.Exists && fi.Length > 2 * 1024 * 1024)
+                                            {
+                                                File.WriteAllText(logFile, $"[{DateTime.UtcNow:O}] Log rotated (exceeded 2MB){Environment.NewLine}");
+                                            }
+                                            File.AppendAllText(logFile, $"[{tag}] {line}{Environment.NewLine}");
                                         }
-                                        await File.AppendAllTextAsync(logFile, $"[{tag}] {line}{Environment.NewLine}");
                                     }
                                     catch { }
                                 }
@@ -892,6 +896,7 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             {
                 try { _sidecarProcess.Kill(entireProcessTree: true); } catch { }
             }
+            try { _sidecarProcess?.Dispose(); } catch { }
             _sidecarProcess = null;
         }
 

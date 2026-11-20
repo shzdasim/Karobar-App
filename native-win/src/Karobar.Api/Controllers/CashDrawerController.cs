@@ -417,34 +417,48 @@ public class CashDrawerController : ApiControllerBase
             Notes = session.GetValueOrDefault("notes")?.ToString()
         };
 
-        if (summary.GetValueOrDefault("sales_summary") is Dictionary<string, object?> ss)
+        if (summary.GetValueOrDefault("shift_sales") is Dictionary<string, object?> ss)
         {
-            model.TotalInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("total_invoices"));
-            model.RetailInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("retail_invoices"));
-            model.WholesaleInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("wholesale_invoices"));
+            model.TotalInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("total_invoices_count") ?? ss.GetValueOrDefault("total_invoices"));
+            model.RetailInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("retail_invoices_count") ?? ss.GetValueOrDefault("retail_invoices"));
+            model.WholesaleInvoicesCount = (int)AccountService.ToLong(ss.GetValueOrDefault("wholesale_invoices_count") ?? ss.GetValueOrDefault("wholesale_invoices"));
             model.GrossSales = AccountService.ToDecimal(ss.GetValueOrDefault("gross_sales"));
             model.DiscountTotal = AccountService.ToDecimal(ss.GetValueOrDefault("discount_total"));
             model.TaxTotal = AccountService.ToDecimal(ss.GetValueOrDefault("tax_total"));
             model.NetSales = AccountService.ToDecimal(ss.GetValueOrDefault("net_sales"));
-            model.CashTenderSales = AccountService.ToDecimal(ss.GetValueOrDefault("cash_sales"));
-            model.NonCashSales = AccountService.ToDecimal(ss.GetValueOrDefault("non_cash_sales"));
-            model.CreditUdharSales = AccountService.ToDecimal(ss.GetValueOrDefault("credit_sales"));
+            model.CashTenderSales = AccountService.ToDecimal(ss.GetValueOrDefault("cash_tender_sales") ?? ss.GetValueOrDefault("cash_sales"));
+            model.NonCashSales = AccountService.ToDecimal(ss.GetValueOrDefault("card_bank_online_sales") ?? ss.GetValueOrDefault("non_cash_sales"));
+            model.CreditUdharSales = AccountService.ToDecimal(ss.GetValueOrDefault("credit_udhar_sales") ?? ss.GetValueOrDefault("credit_sales"));
+            model.SaleReturnsCount = (int)AccountService.ToLong(ss.GetValueOrDefault("sale_returns_count"));
+            model.SaleReturnsTotal = AccountService.ToDecimal(ss.GetValueOrDefault("sale_returns_total"));
+            model.CashRefundReturns = AccountService.ToDecimal(ss.GetValueOrDefault("cash_refund_returns"));
+            model.CreditAdjReturns = AccountService.ToDecimal(ss.GetValueOrDefault("credit_adj_returns"));
         }
 
-        if (summary.GetValueOrDefault("inflow_breakdown") is Dictionary<string, object?> inf)
-        {
-            model.CashSalesAmount = AccountService.ToDecimal(inf.GetValueOrDefault("cash_sales"));
-            model.CustomerPaymentsAmount = AccountService.ToDecimal(inf.GetValueOrDefault("customer_payments"));
-            model.ManualCashInAmount = AccountService.ToDecimal(inf.GetValueOrDefault("manual_in"));
-        }
+        model.CashSalesAmount = AccountService.ToDecimal(summary.GetValueOrDefault("cash_sales"));
+        model.CustomerPaymentsAmount = AccountService.ToDecimal(summary.GetValueOrDefault("customer_payments"));
+        model.PurchaseReturnsAmount = AccountService.ToDecimal(summary.GetValueOrDefault("purchase_returns"));
+        model.ManualCashInAmount = AccountService.ToDecimal(summary.GetValueOrDefault("manual_cash_in"));
 
-        if (summary.GetValueOrDefault("outflow_breakdown") is Dictionary<string, object?> outf)
+        model.CashPurchasesAmount = AccountService.ToDecimal(summary.GetValueOrDefault("cash_purchases"));
+        model.CashReturnsAmount = AccountService.ToDecimal(summary.GetValueOrDefault("cash_returns"));
+        model.SupplierPaymentsAmount = AccountService.ToDecimal(summary.GetValueOrDefault("supplier_payments"));
+        model.ExpensesAmount = AccountService.ToDecimal(summary.GetValueOrDefault("expenses"));
+        model.StaffAdvancesAmount = AccountService.ToDecimal(summary.GetValueOrDefault("staff_advances"));
+        model.ManualCashOutAmount = AccountService.ToDecimal(summary.GetValueOrDefault("manual_cash_out"));
+
+        if (summary.GetValueOrDefault("counts") is Dictionary<string, object?> counts)
         {
-            model.CashPurchasesAmount = AccountService.ToDecimal(outf.GetValueOrDefault("cash_purchases"));
-            model.CashReturnsAmount = AccountService.ToDecimal(outf.GetValueOrDefault("cash_returns"));
-            model.SupplierPaymentsAmount = AccountService.ToDecimal(outf.GetValueOrDefault("supplier_payments"));
-            model.ExpensesAmount = AccountService.ToDecimal(outf.GetValueOrDefault("expenses"));
-            model.ManualCashOutAmount = AccountService.ToDecimal(outf.GetValueOrDefault("manual_out"));
+            model.CashSalesCount = (int)AccountService.ToLong(counts.GetValueOrDefault("cash_sales"));
+            model.CustomerPaymentsCount = (int)AccountService.ToLong(counts.GetValueOrDefault("customer_payments"));
+            model.PurchaseReturnsCount = (int)AccountService.ToLong(counts.GetValueOrDefault("purchase_returns"));
+            model.ManualCashInCount = (int)AccountService.ToLong(counts.GetValueOrDefault("manual_cash_in"));
+            model.CashPurchasesCount = (int)AccountService.ToLong(counts.GetValueOrDefault("cash_purchases"));
+            model.CashReturnsCount = (int)AccountService.ToLong(counts.GetValueOrDefault("cash_returns"));
+            model.SupplierPaymentsCount = (int)AccountService.ToLong(counts.GetValueOrDefault("supplier_payments"));
+            model.ExpensesCount = (int)AccountService.ToLong(counts.GetValueOrDefault("expenses"));
+            model.StaffAdvancesCount = (int)AccountService.ToLong(counts.GetValueOrDefault("staff_advances"));
+            model.ManualCashOutCount = (int)AccountService.ToLong(counts.GetValueOrDefault("manual_cash_out"));
         }
 
         return _renderer.RenderCashDrawerThermalZReport(model, settingVm, PrintViewModelMapper.QueryToDict(Request.Query));

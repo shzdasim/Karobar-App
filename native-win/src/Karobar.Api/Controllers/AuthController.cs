@@ -177,12 +177,22 @@ public class AuthController : ApiControllerBase
             }
         }
 
-        if (changingPassword && !string.Equals(newPassword, passwordConfirmation, StringComparison.Ordinal))
+        if (changingPassword)
         {
-            return Unprocessable("The password field confirmation does not match.", new Dictionary<string, string[]>
+            if (newPassword!.Length < 8)
             {
-                ["password"] = new[] { "The password field confirmation does not match." }
-            });
+                return Unprocessable("The password must be at least 8 characters.", new Dictionary<string, string[]>
+                {
+                    ["password"] = new[] { "The password must be at least 8 characters." }
+                });
+            }
+            if (!string.Equals(newPassword, passwordConfirmation, StringComparison.Ordinal))
+            {
+                return Unprocessable("The password field confirmation does not match.", new Dictionary<string, string[]>
+                {
+                    ["password"] = new[] { "The password field confirmation does not match." }
+                });
+            }
         }
 
         if (changingPassword || changingEmail)

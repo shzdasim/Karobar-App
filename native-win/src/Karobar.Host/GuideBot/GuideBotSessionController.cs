@@ -172,10 +172,11 @@ public sealed class GuideBotSessionController
 
         try
         {
-            // Prefer live HTTP `/api/cube/ask` when we have the user's Sanctum token (works identically in Standalone & Terminal Mode + enforces exact user RBAC)
+            // Always route live DB/AI queries through `/api/cube/ask` with the signed-in user's Sanctum token
+            // so exact user RBAC permissions are enforced identically in Standalone & Multi-PC Terminal Mode.
             if (!string.IsNullOrWhiteSpace(AuthBearerToken))
             {
-                rawResponse = await PostCubeApiAsync("/api/cube/ask", new Dictionary<string, object?>
+                var (statusCode, apiBody) = await PostCubeApiAsync("/api/cube/ask", new Dictionary<string, object?>
                 {
                     ["question"] = cleanQ,
                     ["language"] = Language,
@@ -185,31 +186,44 @@ public sealed class GuideBotSessionController
                     ["history"] = history,
                     ["element_context"] = elementContext
                 }, ct);
-            }
 
-            // Direct in-process fallback for Standalone mode (or before login / offline)
-            if (rawResponse == null)
-            {
-                var sp = _serviceProviderAccessor?.Invoke();
-                var assistant = sp?.GetService<CubeAssistantService>();
-                var scopeFactory = sp?.GetService<IServiceScopeFactory>();
-                if (assistant != null && scopeFactory != null)
+                if (statusCode is 401 or 403)
                 {
-                    using var scope = scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<KarobarDbContext>();
-                    rawResponse = await assistant.AskAsync(db, new Dictionary<string, object?>
+                    var errMsg = apiBody?.GetValueOrDefault("message")?.ToString()
+                        ?? "You do not have permission to perform this action, or your session has expired. Please sign in again.";
+                    rawResponse = new Dictionary<string, object?>
                     {
-                        ["question"] = cleanQ,
-                        ["language"] = Language,
-                        ["current_route"] = CurrentRoute,
-                        ["explain_mode"] = explainMode,
-                        ["user_confirmed"] = userConfirmed,
-                        ["history"] = history,
-                        ["element_context"] = elementContext,
-                        ["user_id"] = 1L,
-                        ["is_admin"] = true
-                    }, ct);
+                        ["kind"] = "qa",
+                        ["title_en"] = statusCode == 401 ? "Sign In Required" : "Permission Denied",
+                        ["title_ur"] = statusCode == 401 ? "لاگ ان درکار ہے" : "اجازت نہیں ہے",
+                        ["answer_en"] = errMsg,
+                        ["answer_ur"] = errMsg,
+                        ["provider"] = "local",
+                        ["provider_status"] = statusCode == 401 ? "unauthorized" : "forbidden"
+                    };
                 }
+                else if (apiBody != null)
+                {
+                    rawResponse = apiBody;
+                }
+            }
+            else
+            {
+                // Before sign-in, never escalate to an in-process admin context; serve safe read-only documentation only.
+                var local = KnowledgeRetriever.Retrieve(cleanQ, CurrentRoute, elementContext: elementContext, explainMode: explainMode, history: history);
+                var fb = local.GetValueOrDefault("local_fallback") as Dictionary<string, object?> ?? new Dictionary<string, object?>();
+                rawResponse = new Dictionary<string, object?>
+                {
+                    ["kind"] = "qa",
+                    ["title_en"] = fb.GetValueOrDefault("title_en") ?? "Karobar ERP Guide",
+                    ["title_ur"] = fb.GetValueOrDefault("title_ur") ?? "کاروبار ایپ رہنمائی",
+                    ["answer_en"] = fb.GetValueOrDefault("answer_en") ?? "Please sign in to query live store data or run assistant tasks.",
+                    ["answer_ur"] = fb.GetValueOrDefault("answer_ur") ?? "لائیو اسٹور ڈیٹا دیکھنے یا اسسٹنٹ ٹاسک چلانے کے لیے براہِ کرم لاگ ان کریں۔",
+                    ["links"] = fb.GetValueOrDefault("links"),
+                    ["workflow_id"] = fb.GetValueOrDefault("workflow_id"),
+                    ["provider"] = "local",
+                    ["provider_status"] = "unauthenticated_docs_only"
+                };
             }
         }
         catch (Exception ex)
@@ -260,6 +274,15 @@ public sealed class GuideBotSessionController
 
     public async Task<Dictionary<string, object?>?> PreviewFormulationAutofillAsync(string filterQuery, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(AuthBearerToken))
+        {
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["message"] = "Please sign in with an authorized account to preview formulation autofill."
+            };
+        }
+
         var payload = new Dictionary<string, object?>
         {
             ["task_type"] = "bulk_autofill_missing_formulations",
@@ -268,66 +291,60 @@ public sealed class GuideBotSessionController
             ["filter_query"] = (filterQuery ?? "").Trim()
         };
 
-        if (!string.IsNullOrWhiteSpace(AuthBearerToken))
+        var (statusCode, apiRes) = await PostCubeApiAsync("/api/cube/execute-task", payload, ct);
+        if (statusCode is 401 or 403)
         {
-            var apiRes = await PostCubeApiAsync("/api/cube/execute-task", payload, ct);
-            if (apiRes != null) return apiRes;
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["message"] = apiRes?.GetValueOrDefault("message")?.ToString() ?? "You do not have permission to run formulation autofill."
+            };
         }
-
-        var sp = _serviceProviderAccessor?.Invoke();
-        var executor = sp?.GetService<CubeTaskExecutorService>();
-        var scopeFactory = sp?.GetService<IServiceScopeFactory>();
-        if (executor != null && scopeFactory != null)
-        {
-            using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<KarobarDbContext>();
-            return await executor.ExecuteBulkAutofillMissingFormulationsAsync(db, new CubeUserContext { UserId = 1, IsAdmin = true }, payload, ct: ct);
-        }
-        return null;
+        return apiRes;
     }
 
     public async Task<CubeBackgroundTaskSnapshot?> StartBackgroundAutofillAsync(string filterQuery, int batchSize = 20, CancellationToken ct = default)
     {
-        var mgr = BackgroundTaskManager;
-        if (mgr != null)
+        if (string.IsNullOrWhiteSpace(AuthBearerToken))
         {
-            return mgr.StartBulkAutofill(new CubeUserContext { UserId = 1, IsAdmin = true }, (filterQuery ?? "").Trim(), batchSize);
+            return new CubeBackgroundTaskSnapshot
+            {
+                Status = "failed",
+                Message = "Please sign in with an authorized account to start formulation autofill."
+            };
         }
 
-        // Multi-PC LAN Terminal Mode fallback via Store Server HTTP API
-        if (!string.IsNullOrWhiteSpace(AuthBearerToken))
+        var (statusCode, apiRes) = await PostCubeApiAsync("/api/cube/bg-task/start", new Dictionary<string, object?>
         {
-            await PostCubeApiAsync("/api/cube/bg-task/start", new Dictionary<string, object?>
+            ["filter_query"] = (filterQuery ?? "").Trim(),
+            ["batch_size"] = batchSize
+        }, ct);
+
+        if (statusCode is 401 or 403)
+        {
+            return new CubeBackgroundTaskSnapshot
             {
-                ["filter_query"] = (filterQuery ?? "").Trim(),
-                ["batch_size"] = batchSize
-            }, ct);
-            return await PollBackgroundTaskStatusAsync(ct);
+                Status = "failed",
+                Message = apiRes?.GetValueOrDefault("message")?.ToString() ?? "Permission denied: your account cannot run background formulation autofill."
+            };
         }
-        return null;
+
+        return await PollBackgroundTaskStatusAsync(ct);
     }
 
     public async Task<CubeBackgroundTaskSnapshot?> StopBackgroundAutofillAsync(CancellationToken ct = default)
     {
-        var mgr = BackgroundTaskManager;
-        if (mgr != null)
+        if (string.IsNullOrWhiteSpace(AuthBearerToken))
         {
-            return mgr.Stop();
+            return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(AuthBearerToken))
-        {
-            await PostCubeApiAsync("/api/cube/bg-task/stop", new Dictionary<string, object?>(), ct);
-            return await PollBackgroundTaskStatusAsync(ct);
-        }
-        return null;
+        await PostCubeApiAsync("/api/cube/bg-task/stop", new Dictionary<string, object?>(), ct);
+        return await PollBackgroundTaskStatusAsync(ct);
     }
 
     public async Task<CubeBackgroundTaskSnapshot?> PollBackgroundTaskStatusAsync(CancellationToken ct = default)
     {
-        var mgr = BackgroundTaskManager;
-        if (mgr != null) return mgr.GetSnapshot();
-
         if (string.IsNullOrWhiteSpace(AuthBearerToken)) return null;
         try
         {
@@ -370,7 +387,7 @@ public sealed class GuideBotSessionController
         }
     }
 
-    private async Task<Dictionary<string, object?>?> PostCubeApiAsync(string path, Dictionary<string, object?> payload, CancellationToken ct)
+    private async Task<(int StatusCode, Dictionary<string, object?>? Body)> PostCubeApiAsync(string path, Dictionary<string, object?> payload, CancellationToken ct)
     {
         try
         {
@@ -385,13 +402,18 @@ public sealed class GuideBotSessionController
             req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             using var res = await _http.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode) return null;
+            var statusCode = (int)res.StatusCode;
             var raw = await res.Content.ReadAsStringAsync(ct);
-            return ParseJsonToDict(raw);
+            var parsed = ParseJsonToDict(raw);
+            if (!res.IsSuccessStatusCode)
+            {
+                return (statusCode, parsed);
+            }
+            return (statusCode, parsed);
         }
         catch
         {
-            return null;
+            return (0, null);
         }
     }
 
