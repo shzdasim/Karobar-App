@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -27,6 +27,7 @@ export default function RegularRefillReminderModal({
   const [language, setLanguage] = useState("english");
   const [message, setMessage] = useState("");
   const [advanceCycle, setAdvanceCycle] = useState(false);
+  const handleSendRef = useRef(null);
   const [qrStep, setQrStep] = useState({
     open: false,
     status: "qr_ready",
@@ -89,7 +90,9 @@ export default function RegularRefillReminderModal({
 
     const timer = setInterval(async () => {
       try {
-        const { data } = await axios.get("/api/settings/whatsapp-agent/status");
+        const { data } = await axios.get("/api/settings/whatsapp-agent/status", {
+          headers: { "X-Skip-Cache": "1" },
+        });
         setQrStep((prev) => ({
           ...prev,
           status: data.status || prev.status,
@@ -100,7 +103,7 @@ export default function RegularRefillReminderModal({
           clearInterval(timer);
           setQrStep((prev) => ({ ...prev, open: false }));
           toast.success("WhatsApp linked! Sending reminder...");
-          handleSend();
+          handleSendRef.current?.();
         }
       } catch {
         // ignore polling error
@@ -136,23 +139,6 @@ export default function RegularRefillReminderModal({
 
     setSending(true);
     try {
-      if (!previewData?.whatsapp_enabled) {
-        try {
-          await axios.post("/api/settings/whatsapp-agent/start");
-          setPreviewData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  whatsapp_enabled: true,
-                  whatsapp_provider: "local_agent",
-                }
-              : prev
-          );
-        } catch {
-          // continue
-        }
-      }
-
       const { data } = await axios.post("/api/share/whatsapp", {
         type: "regular_refill_reminder",
         id: customer.id,
@@ -195,7 +181,13 @@ export default function RegularRefillReminderModal({
             )}`
           : `https://wa.me/?text=${encodeURIComponent(message.trim())}`);
 
-      window.open(waUrl, "_blank", "noopener,noreferrer");
+      if (window.karobarDesktop?.openExternalUrl) {
+        Promise.resolve(window.karobarDesktop.openExternalUrl(waUrl)).catch(() => {
+          window.open(waUrl, "_blank", "noopener,noreferrer");
+        });
+      } else {
+        window.open(waUrl, "_blank", "noopener,noreferrer");
+      }
       toast.success("Opened WhatsApp chat with the prepared refill reminder!");
 
       onSent?.(data.customer || null);
@@ -208,6 +200,7 @@ export default function RegularRefillReminderModal({
       setSending(false);
     }
   };
+  handleSendRef.current = handleSend;
 
   const items = previewData?.regular_items || customer?.regular_items || [];
   const stockReady = previewData?.stock_ready ?? customer?.stock_ready ?? true;

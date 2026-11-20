@@ -151,9 +151,28 @@ public sealed class DocumentShareEngine
         ["Please verify quantities and batch numbers upon receipt."] = "براہِ کرم مال وصول کرتے وقت تعداد اور بیچ نمبر چیک کر لیں۔"
     };
 
+    private static readonly string EphemeralSigningFallbackKey =
+        "base64:" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
     private readonly string _appRoot;
     private readonly PdfDocumentGenerator _pdfGenerator;
     private readonly HttpClient _httpClient;
+
+    private static bool IsPrivateOrLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return false;
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!IPAddress.TryParse(host, out var ip)) return false;
+        if (IPAddress.IsLoopback(ip)) return true;
+        var b = ip.GetAddressBytes();
+        if (b.Length == 4)
+        {
+            return b[0] == 10 ||
+                   (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+                   (b[0] == 192 && b[1] == 168);
+        }
+        return ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal;
+    }
 
     public DocumentShareEngine(string? appRoot = null, PdfDocumentGenerator? pdfGenerator = null, HttpClient? httpClient = null)
     {
@@ -167,7 +186,10 @@ public sealed class DocumentShareEngine
         {
             var handler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+                // Enforce strict TLS certificate verification on public cloud APIs (Meta Graph, Whapi, UltraMsg, Green-API, Wasender);
+                // only allow self-signed certificates on loopback / private LAN self-hosted gateways (WAHA / Evolution / custom LAN webhook).
+                ServerCertificateCustomValidationCallback = (req, _, _, errors) =>
+                    errors == System.Net.Security.SslPolicyErrors.None || IsPrivateOrLoopbackHost(req.RequestUri?.Host)
             };
             _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
         }
@@ -382,7 +404,9 @@ public sealed class DocumentShareEngine
 
         var effectiveKey = !string.IsNullOrWhiteSpace(appKey)
             ? appKey
-            : (Environment.GetEnvironmentVariable("APP_KEY") ?? "karobar-native-win-signed-url-secret-key-2026");
+            : (Environment.GetEnvironmentVariable("APP_KEY") is { Length: > 0 } envKey
+                ? envKey
+                : EphemeralSigningFallbackKey);
 
         var queryString = string.Join("&", filtered.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
         var unsignedUrl = $"{baseUrl.TrimEnd('/')}/print/shared-pdf/{Uri.EscapeDataString(type)}?{queryString}";
@@ -805,10 +829,285 @@ public sealed class DocumentShareEngine
         var msgBody = await msgRes.Content.ReadAsStringAsync(cancellationToken);
         if (!msgRes.IsSuccessStatusCode)
         {
+            // Optional Meta 24-hour customer service window fallback via pre-approved template
+            var tplName = (config.TemplateName ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(tplName))
+            {
+                var tplLang = string.IsNullOrWhiteSpace(config.TemplateLanguage) ? "en_US" : config.TemplateLanguage.Trim();
+                using var tplReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages");
+                tplReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                tplReq.Content = new StringContent(JsonSerializer.Serialize(new
+                {
+                    messaging_product = "whatsapp",
+                    recipient_type = "individual",
+                    to = normalizedPhone,
+                    type = "template",
+                    template = new
+                    {
+                        name = tplName,
+                        language = new { code = tplLang },
+                        components = new object[]
+                        {
+                            new
+                            {
+                                type = "header",
+                                parameters = new object[]
+                                {
+                                    new
+                                    {
+                                        type = "document",
+                                        document = new { id = mediaId, filename }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }), Encoding.UTF8, "application/json");
+
+                using var tplRes = await _httpClient.SendAsync(tplReq, cancellationToken);
+                if (tplRes.IsSuccessStatusCode)
+                {
+                    return ("meta_cloud", mediaId);
+                }
+            }
+
             throw new InvalidOperationException($"Failed to send PDF document via WhatsApp Cloud API: {msgBody}");
         }
 
         return ("meta_cloud", mediaId);
+    }
+
+    /// <summary>
+    /// Dispatch a text-only WhatsApp message (e.g. medicine refill reminders, alerts) across all 9 providers.
+    /// </summary>
+    public async Task<(string Provider, string MessageId)> DispatchTextViaWhatsAppApiAsync(
+        WhatsAppConfiguration config,
+        string normalizedPhone,
+        string messageText,
+        CancellationToken cancellationToken = default)
+    {
+        var provider = AllowedWhatsAppProviders.Contains((config.Provider ?? "").ToLowerInvariant())
+            ? (config.Provider ?? "meta_cloud").ToLowerInvariant()
+            : "meta_cloud";
+        var token = (config.AccessToken ?? "").Trim();
+        var phoneOrInstanceId = (config.PhoneNumberId ?? "").Trim();
+        var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v21.0" : config.ApiVersion.Trim();
+        var customUrl = (config.ApiUrl ?? "").Trim();
+
+        if (provider == "local_agent")
+        {
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://127.0.0.1:3001").TrimEnd('/');
+            var endpoint = baseUrl.EndsWith("/send-text", StringComparison.OrdinalIgnoreCase)
+                ? baseUrl
+                : (baseUrl.EndsWith("/send-document", StringComparison.OrdinalIgnoreCase)
+                    ? baseUrl[..^"/send-document".Length] + "/send-text"
+                    : $"{baseUrl}/send-text");
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                phone = normalizedPhone,
+                text = messageText,
+                message = messageText
+            }), Encoding.UTF8, "application/json");
+
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            var body = await res.Content.ReadAsStringAsync(cancellationToken);
+            if (!res.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {body}");
+            }
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+            if (doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.False)
+            {
+                var err = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : body;
+                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {err}");
+            }
+            var msgId = doc.RootElement.TryGetProperty("message_id", out var idProp) ? (idProp.GetString() ?? "local_agent_sent") : "local_agent_sent";
+            return ("local_agent", msgId);
+        }
+
+        if (provider == "waha")
+        {
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://localhost:3000").TrimEnd('/');
+            var endpoint = $"{baseUrl}/api/sendText";
+            var sessionName = !string.IsNullOrEmpty(phoneOrInstanceId) ? phoneOrInstanceId : "default";
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                session = sessionName,
+                chatId = $"{normalizedPhone}@c.us",
+                text = messageText
+            }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"WAHA error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("waha", "waha_sent");
+        }
+
+        if (provider == "evolution_api")
+        {
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://localhost:8080").TrimEnd('/');
+            var instance = !string.IsNullOrEmpty(phoneOrInstanceId) ? phoneOrInstanceId : "default";
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/message/sendText/{instance}");
+            if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("apikey", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                number = normalizedPhone,
+                text = messageText
+            }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"Evolution API error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("evolution_api", "evolution_sent");
+        }
+
+        if (provider == "whapi_cloud")
+        {
+            var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://gate.whapi.cloud").TrimEnd('/')}/messages/text";
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new { to = normalizedPhone, body = messageText }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"Whapi.Cloud error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("whapi_cloud", "whapi_sent");
+        }
+
+        if (provider == "wasender")
+        {
+            var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://www.wasenderapi.com").TrimEnd('/')}/api/send-message";
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new { phone = $"+{normalizedPhone}", text = messageText }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"WasenderAPI error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("wasender", "wasender_sent");
+        }
+
+        if (provider == "ultramsg")
+        {
+            var cleanInstance = Regex.Replace(phoneOrInstanceId, "^instance", "", RegexOptions.IgnoreCase);
+            var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.ultramsg.com").TrimEnd('/')}/instance{cleanInstance}/messages/chat";
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["token"] = token,
+                    ["to"] = $"+{normalizedPhone}",
+                    ["body"] = messageText
+                })
+            };
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"UltraMsg error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("ultramsg", "ultramsg_sent");
+        }
+
+        if (provider == "green_api")
+        {
+            var cleanInstance = Regex.Replace(phoneOrInstanceId, "^waInstance", "", RegexOptions.IgnoreCase);
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.green-api.com").TrimEnd('/');
+            var endpoint = $"{baseUrl}/waInstance{cleanInstance}/sendMessage/{token}";
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            req.Content = new StringContent(JsonSerializer.Serialize(new { chatId = $"{normalizedPhone}@c.us", message = messageText }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"Green-API error: {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("green_api", "green_api_sent");
+        }
+
+        if (provider == "custom_http")
+        {
+            if (string.IsNullOrEmpty(customUrl)) throw new InvalidOperationException("Custom WhatsApp API endpoint URL is not configured.");
+            using var req = new HttpRequestMessage(HttpMethod.Post, customUrl);
+            if (!string.IsNullOrEmpty(token)) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                to = normalizedPhone,
+                phone = $"+{normalizedPhone}",
+                text = messageText,
+                message = messageText
+            }), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req, cancellationToken);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"Custom WhatsApp API error (HTTP {(int)res.StatusCode}): {await res.Content.ReadAsStringAsync(cancellationToken)}");
+            return ("custom_http", "custom_sent");
+        }
+
+        // Official Meta Cloud API text message
+        using var metaReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages");
+        metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        metaReq.Content = new StringContent(JsonSerializer.Serialize(new
+        {
+            messaging_product = "whatsapp",
+            recipient_type = "individual",
+            to = normalizedPhone,
+            type = "text",
+            text = new { body = messageText }
+        }), Encoding.UTF8, "application/json");
+        using var metaRes = await _httpClient.SendAsync(metaReq, cancellationToken);
+        var metaBody = await metaRes.Content.ReadAsStringAsync(cancellationToken);
+        if (!metaRes.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Failed to send text via WhatsApp Cloud API: {metaBody}");
+        }
+        return ("meta_cloud", "meta_text_sent");
+    }
+
+    public async Task<Dictionary<string, object?>> SendOrBuildWhatsAppTextAsync(
+        string? rawPhone,
+        string messageText,
+        WhatsAppConfiguration waConfig,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedPhone = NormalizePhone(rawPhone, waConfig.DefaultCountryCode);
+        var waMeUrl = !string.IsNullOrEmpty(normalizedPhone)
+            ? $"https://wa.me/{normalizedPhone}?text={Uri.EscapeDataString(messageText)}"
+            : $"https://wa.me/?text={Uri.EscapeDataString(messageText)}";
+
+        if (waConfig.Enabled && !string.IsNullOrEmpty(normalizedPhone))
+        {
+            try
+            {
+                var (provider, msgId) = await DispatchTextViaWhatsAppApiAsync(waConfig, normalizedPhone, messageText, cancellationToken);
+                return new Dictionary<string, object?>
+                {
+                    ["status"] = "sent_via_api",
+                    ["mode"] = "cloud_api",
+                    ["provider"] = provider,
+                    ["message"] = $"WhatsApp message sent directly to +{normalizedPhone}",
+                    ["normalized_phone"] = normalizedPhone,
+                    ["whatsapp_msg_id"] = msgId,
+                    ["wa_me_url"] = waMeUrl
+                };
+            }
+            catch (Exception ex)
+            {
+                if (!waConfig.AutoFallback)
+                {
+                    throw;
+                }
+                return new Dictionary<string, object?>
+                {
+                    ["status"] = "api_fallback",
+                    ["mode"] = "wa_me_fallback",
+                    ["provider"] = waConfig.Provider,
+                    ["api_error"] = ex.Message,
+                    ["message"] = $"WhatsApp API unavailable ({ex.Message}); opening WhatsApp chat instead.",
+                    ["normalized_phone"] = normalizedPhone,
+                    ["wa_me_url"] = waMeUrl,
+                    ["caption"] = messageText
+                };
+            }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "wa_me_fallback",
+            ["mode"] = "wa_me_fallback",
+            ["provider"] = "wa_me",
+            ["message"] = $"WhatsApp message prepared for +{normalizedPhone}",
+            ["normalized_phone"] = normalizedPhone,
+            ["wa_me_url"] = waMeUrl,
+            ["caption"] = messageText
+        };
     }
 
     /// <summary>

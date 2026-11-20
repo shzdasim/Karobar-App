@@ -915,6 +915,28 @@ public sealed class KestrelHostServer : IAsyncDisposable
         }
         await _app.StartAsync(cancellationToken);
         await WaitForServerReadyAsync($"http://127.0.0.1:{ActivePort}/up", 15000, cancellationToken);
+
+        // Non-blocking auto-reconnect of previously linked Local WhatsApp Agent after Store PC boot/restart
+        if (!_networkConfig.IsTerminalMode() &&
+            !string.Equals(Environment.GetEnvironmentVariable("KAROBAR_EXIT_AFTER_BOOT"), "1", StringComparison.OrdinalIgnoreCase))
+        {
+            var services = _app.Services;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var waSidecar = services.GetService<Karobar.Background.LocalWhatsAppSidecarManager>();
+                    if (waSidecar == null || !waSidecar.HasSavedLinkedSession()) return;
+                    using var scope = services.CreateScope();
+                    var dbCtx = scope.ServiceProvider.GetService<Karobar.Data.KarobarDbContext>();
+                    if (dbCtx == null) return;
+                    var efSetting = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                        .FirstOrDefaultAsync(dbCtx.Settings.OrderBy(s => s.Id));
+                    await waSidecar.AutoStartIfLinkedAsync(dbCtx, efSetting);
+                }
+                catch { }
+            });
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)

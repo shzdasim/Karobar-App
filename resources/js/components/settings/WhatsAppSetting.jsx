@@ -190,7 +190,9 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
         setAgentState((s) => ({ ...s, loading: true }));
       }
       try {
-        const { data } = await axios.get("/api/settings/whatsapp-agent/status");
+        const { data } = await axios.get("/api/settings/whatsapp-agent/status", {
+          headers: { "X-Skip-Cache": "1" },
+        });
         setAgentState((prev) => ({
           ...prev,
           loading: false,
@@ -205,7 +207,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
           api_key: data.api_key || prev.api_key || "",
         }));
 
-        if (data.api_key && !form.whatsapp_access_token) {
+        if (activeProvider === "local_agent" && data.api_key && !form.whatsapp_access_token) {
           setForm((prev) => ({
             ...prev,
             whatsapp_access_token: data.api_key,
@@ -216,7 +218,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
         setAgentState((prev) => ({ ...prev, loading: false, starting: false }));
       }
     },
-    [form.whatsapp_access_token, setForm]
+    [activeProvider, form.whatsapp_access_token, setForm]
   );
 
   // Fetch status when local_agent is active, and poll every 3s while waiting for QR scan or connecting
@@ -759,9 +761,17 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* API Key / Access Token */}
             <div className={providerConfig.needsPhoneOrInstanceId ? "" : "md:col-span-2"}>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-slate-300 mb-1.5">
-                {providerConfig.tokenLabel}
-              </label>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-slate-300">
+                  {providerConfig.tokenLabel}
+                </label>
+                {form.has_whatsapp_access_token && !form.whatsapp_access_token && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    <CheckCircleIcon className="w-3 h-3" />
+                    Saved (leave blank to keep current)
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <GlassInput
                   type={showToken ? "text" : "password"}
@@ -773,7 +783,11 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  placeholder={providerConfig.tokenPlaceholder}
+                  placeholder={
+                    form.has_whatsapp_access_token && !form.whatsapp_access_token
+                      ? "•••••••••••••••• (saved — enter new token to replace)"
+                      : providerConfig.tokenPlaceholder
+                  }
                   className="w-full h-10 pr-10 font-mono text-xs"
                 />
                 <button

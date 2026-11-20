@@ -647,10 +647,17 @@ public class SettingController : ApiControllerBase
     {
         if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
             return Forbidden();
-        var efSetting = await LoadEfSettingAsync();
-        var res = await _waSidecar.StartAsync(_dbContext, efSetting, HttpContext.RequestAborted);
-        var ok = !res.TryGetValue("ok", out var okVal) || okVal is true;
-        return StatusCode(ok ? 200 : 422, res);
+        try
+        {
+            var efSetting = await LoadEfSettingAsync();
+            var res = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: true, cancellationToken: HttpContext.RequestAborted);
+            var ok = !res.TryGetValue("ok", out var okVal) || okVal is true;
+            return StatusCode(ok ? 200 : 422, res);
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable(ex.Message);
+        }
     }
 
     [HttpPost("settings/whatsapp-agent/pair-code")]
@@ -665,28 +672,49 @@ public class SettingController : ApiControllerBase
             return Unprocessable("Phone number is required.");
         }
 
-        var efSetting = await LoadEfSettingAsync();
-        var res = await _waSidecar.RequestPairingCodeAsync(phone, _dbContext, efSetting, HttpContext.RequestAborted);
-        var ok = res.TryGetValue("ok", out var okVal) && okVal is true;
-        return StatusCode(ok ? 200 : 422, res);
+        try
+        {
+            var efSetting = await LoadEfSettingAsync();
+            var res = await _waSidecar.RequestPairingCodeAsync(phone, _dbContext, efSetting, HttpContext.RequestAborted);
+            var ok = res.TryGetValue("ok", out var okVal) && okVal is true;
+            return StatusCode(ok ? 200 : 422, res);
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable(ex.Message);
+        }
     }
 
     [HttpPost("settings/whatsapp-agent/logout")]
     public async Task<IActionResult> WhatsAppAgentLogout()
     {
         if (!await CanAsync("settings.update")) return Forbidden();
-        var efSetting = await LoadEfSettingAsync();
-        var res = await _waSidecar.LogoutAsync(_dbContext, efSetting, HttpContext.RequestAborted);
-        return Ok(res);
+        try
+        {
+            var efSetting = await LoadEfSettingAsync();
+            var res = await _waSidecar.LogoutAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            return Ok(res);
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable(ex.Message);
+        }
     }
 
     [HttpPost("settings/whatsapp-agent/stop")]
     public async Task<IActionResult> WhatsAppAgentStop()
     {
         if (!await CanAsync("settings.update")) return Forbidden();
-        var efSetting = await LoadEfSettingAsync();
-        var res = await _waSidecar.StopAsync(_dbContext, efSetting, HttpContext.RequestAborted);
-        return Ok(res);
+        try
+        {
+            var efSetting = await LoadEfSettingAsync();
+            var res = await _waSidecar.StopAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            return Ok(res);
+        }
+        catch (Exception ex)
+        {
+            return Unprocessable(ex.Message);
+        }
     }
 
     [HttpPost("settings/test-cube-ai")]

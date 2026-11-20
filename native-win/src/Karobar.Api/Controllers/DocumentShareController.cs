@@ -114,10 +114,11 @@ public class DocumentShareController : ApiControllerBase
         if (authErr != null) return authErr;
 
         var setting = await GetSettingAsync();
+        var waConfig = BuildWhatsAppConfig(setting);
         var paperSize = ResolvePaperSize(Request.Query["size"].FirstOrDefault(), setting);
         var pdfDesign = ResolvePdfDesign(Request.Query["template"].FirstOrDefault(), setting, paperSize);
         var showLogo = ResolveShowLogo(Request.Query["show_logo"].FirstOrDefault(), setting);
-        var normalizedPhone = NormalizePhone(ctx!.RecipientPhone);
+        var normalizedPhone = _shareEngine.NormalizePhone(ctx!.RecipientPhone, waConfig.DefaultCountryCode);
 
         var availableTemplates = new List<Dictionary<string, string>>
         {
@@ -160,7 +161,6 @@ public class DocumentShareController : ApiControllerBase
 
         var settingVm = PrintViewModelMapper.MapPrintSetting(setting);
         var logoUrl = settingVm.LogoUrl;
-        var waConfig = BuildWhatsAppConfig(setting);
         var waConfigured = waConfig.Enabled && (
             waConfig.Provider == "local_agent" ||
             !string.IsNullOrWhiteSpace(waConfig.AccessToken) ||
@@ -373,7 +373,8 @@ public class DocumentShareController : ApiControllerBase
             }
         }
 
-        // If local WhatsApp agent is enabled & selected, verify live connection; return qr_required if not linked
+        // If local WhatsApp agent is enabled & selected, verify live connection; auto-start once if stopped so a linked store reconnects seamlessly
+        string? localAgentBootError = null;
         if (waConfig.Enabled && waConfig.Provider == "local_agent" && !string.IsNullOrWhiteSpace(normalizedPhone))
         {
             var efSetting = _dbContext != null
@@ -381,7 +382,28 @@ public class DocumentShareController : ApiControllerBase
                 : null;
             var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
             var stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
-            if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
+            var isRunning = agentStatus.TryGetValue("agent_running", out var runObj) && runObj is true;
+
+            if (!isRunning || string.Equals(stStr, "stopped", StringComparison.OrdinalIgnoreCase))
+            {
+                agentStatus = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
+                stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
+                isRunning = agentStatus.TryGetValue("agent_running", out var runObj2) && runObj2 is true;
+            }
+
+            if (!isRunning)
+            {
+                localAgentBootError = agentStatus.GetValueOrDefault("last_error")?.ToString()
+                    ?? agentStatus.GetValueOrDefault("message")?.ToString()
+                    ?? "Local WhatsApp Agent could not start.";
+                if (!waConfig.AutoFallback)
+                {
+                    return Unprocessable(localAgentBootError);
+                }
+                // Fall through cleanly to browser/download fallback instead of stranding the cashier on a broken QR spinner
+                waConfig.Enabled = false;
+            }
+            else if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
             {
                 return Ok(new Dictionary<string, object?>
                 {
@@ -391,42 +413,25 @@ public class DocumentShareController : ApiControllerBase
                     ["agent_status"] = stStr,
                     ["qr_data_url"] = agentStatus.GetValueOrDefault("qr_data_url"),
                     ["pairing_code"] = agentStatus.GetValueOrDefault("pairing_code"),
+                    ["last_error"] = agentStatus.GetValueOrDefault("last_error"),
                     ["normalized_phone"] = normalizedPhone
                 });
             }
         }
 
-        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx!, setting, paperSize, pdfDesign, showLogo, idStr, custStr, supStr, fromStr, toStr);
-        var signedParams = new Dictionary<string, string?>
-        {
-            ["size"] = paperSize,
-            ["template"] = pdfDesign,
-            ["show_logo"] = showLogo ? "1" : "0"
-        };
-        if (!string.IsNullOrWhiteSpace(idStr)) signedParams["id"] = idStr;
-        if (!string.IsNullOrWhiteSpace(custStr)) signedParams["customer_id"] = custStr;
-        if (!string.IsNullOrWhiteSpace(supStr)) signedParams["supplier_id"] = supStr;
-        if (!string.IsNullOrWhiteSpace(fromStr)) signedParams["from"] = fromStr;
-        if (!string.IsNullOrWhiteSpace(toStr)) signedParams["to"] = toStr;
-
-        var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
-
-        var response = await _shareEngine.SendOrBuildWhatsAppPdfAsync(
-            pdfBytes, ctx!.Filename, rawPhone, message, waConfig, signedPdfUrl, HttpContext.RequestAborted);
-        response["signed_pdf_url"] = signedPdfUrl;
-        response["mime_type"] = "application/pdf";
-        response["size_bytes"] = pdfBytes.Length;
-        response["pdf_base64"] = Convert.ToBase64String(pdfBytes);
-        response["normalized_phone"] = normalizedPhone;
-        response["caption"] = message;
-
+        Dictionary<string, object?> response;
         if (type == "regular_refill_reminder")
         {
-            response["wa_me_url"] = !string.IsNullOrEmpty(normalizedPhone)
-                ? $"https://wa.me/{normalizedPhone}?text={Uri.EscapeDataString(message)}"
-                : $"https://wa.me/?text={Uri.EscapeDataString(message)}";
+            // Regular refill reminders are text messages — dispatch cleanly via /send-text (no unnecessary PDF attachment!)
+            response = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, message, waConfig, HttpContext.RequestAborted);
+            if (!string.IsNullOrWhiteSpace(localAgentBootError))
+            {
+                response["status"] = "api_fallback";
+                response["api_error"] = localAgentBootError;
+                response["message"] = $"Local WhatsApp Agent unavailable ({localAgentBootError}); opening WhatsApp chat instead.";
+            }
 
-            var custId = ctx.PartyId ?? GetNullableLong(body, "customer_id") ?? GetNullableLong(body, "id");
+            var custId = ctx!.PartyId ?? GetNullableLong(body, "customer_id") ?? GetNullableLong(body, "id");
             if (custId.HasValue)
             {
                 var custRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = custId.Value });
@@ -476,6 +481,42 @@ public class DocumentShareController : ApiControllerBase
                     response["customer"] = freshCustomer;
                 }
             }
+
+            return Ok(response);
+        }
+
+        var pdfBytes = await GenerateRealSharedPdfAsync(type, ctx!, setting, paperSize, pdfDesign, showLogo, idStr, custStr, supStr, fromStr, toStr);
+        var signedParams = new Dictionary<string, string?>
+        {
+            ["size"] = paperSize,
+            ["template"] = pdfDesign,
+            ["show_logo"] = showLogo ? "1" : "0"
+        };
+        if (!string.IsNullOrWhiteSpace(idStr)) signedParams["id"] = idStr;
+        if (!string.IsNullOrWhiteSpace(custStr)) signedParams["customer_id"] = custStr;
+        if (!string.IsNullOrWhiteSpace(supStr)) signedParams["supplier_id"] = supStr;
+        if (!string.IsNullOrWhiteSpace(fromStr)) signedParams["from"] = fromStr;
+        if (!string.IsNullOrWhiteSpace(toStr)) signedParams["to"] = toStr;
+
+        var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
+
+        response = await _shareEngine.SendOrBuildWhatsAppPdfAsync(
+            pdfBytes, ctx!.Filename, rawPhone, message, waConfig, signedPdfUrl, HttpContext.RequestAborted);
+        if (!string.IsNullOrWhiteSpace(localAgentBootError))
+        {
+            response["status"] = "api_fallback";
+            response["api_error"] = localAgentBootError;
+            response["message"] = $"Local WhatsApp Agent unavailable ({localAgentBootError}); PDF downloaded locally & opening WhatsApp chat.";
+        }
+        response["signed_pdf_url"] = signedPdfUrl;
+        response["mime_type"] = "application/pdf";
+        response["size_bytes"] = pdfBytes.Length;
+        response["normalized_phone"] = normalizedPhone;
+        response["caption"] = message;
+        // Omit large pdf_base64 payload when direct API already delivered the PDF successfully
+        if (!string.Equals(response.GetValueOrDefault("mode")?.ToString(), "cloud_api", StringComparison.OrdinalIgnoreCase))
+        {
+            response["pdf_base64"] = Convert.ToBase64String(pdfBytes);
         }
 
         return Ok(response);
@@ -601,8 +642,68 @@ public class DocumentShareController : ApiControllerBase
                 var label = isChallan ? "Delivery Challan" : "Sale Invoice";
                 var prefix = isChallan ? "Delivery_Challan_" : "Sale_Invoice_";
 
-                var waEn = $"*{storeName}*\n────────────────────\n*{label.ToUpperInvariant()}*\nInvoice No: *{docNo}*\nDate: {dateStr}\nCustomer: {custName}\n\nInvoice Total: *Rs. {total:N2}*\nAmount Received: Rs. {received:N2}\nBalance Due: Rs. {due:N2}\n\nPlease find the official PDF attached.";
-                var waUr = $"*{storeName}*\n────────────────────\n*سیل انوائس / بل کی تفصیل*\nبل نمبر: *{docNo}*\nتاریخ: {dateStr}\nمحترم کسٹمر: {custName}\nکل بل: *Rs. {total:N2}*\nوصول شدہ رقم: Rs. {received:N2}\nبقایا رقم: Rs. {due:N2}";
+                // Compute items summary & live customer ledger balance for customizable bilingual WhatsApp templates
+                var invItems = await Db.HasTableAsync("sale_invoice_items")
+                    ? await Db.QueryListAsync(@"
+                        SELECT i.quantity, p.name AS product_name
+                        FROM sale_invoice_items i
+                        LEFT JOIN products p ON p.id = i.product_id
+                        WHERE i.sale_invoice_id = @id", new { id })
+                    : new List<Dictionary<string, object?>>();
+                var itemsCount = invItems.Count;
+                var totalUnits = invItems.Sum(r => ToDouble(r, "quantity"));
+                var itemsSummary = itemsCount > 0
+                    ? string.Join(", ", invItems.Take(5).Select(r => $"{GetVal(r, "product_name", "Item")} × {ToDouble(r, "quantity"):0.##}"))
+                      + (itemsCount > 5 ? $" (+{itemsCount - 5} more)" : "")
+                    : "";
+
+                string totalBalanceFormatted = "";
+                if (cId.HasValue && await Db.HasTableAsync("customer_ledgers"))
+                {
+                    var balRow = await Db.QuerySingleOrDefaultAsync(
+                        "SELECT COALESCE(SUM(invoice_total), 0) - COALESCE(SUM(total_received), 0) - COALESCE(SUM(credited_amount), 0) AS net_bal FROM customer_ledgers WHERE customer_id = @cId",
+                        new { cId = cId.Value });
+                    var netBal = ToDouble(balRow, "net_bal");
+                    if (Math.Abs(netBal) > 0.009)
+                    {
+                        totalBalanceFormatted = $"Rs. {netBal:N2}";
+                    }
+                }
+
+                var customTplEn = GetVal(setting, "whatsapp_message_en", "").Trim();
+                var customTplUr = GetVal(setting, "whatsapp_message_ur", "").Trim();
+                var closingNoteEn = GetVal(setting, "note_en", GetVal(setting, "note", "")).Trim();
+                var closingNoteUr = GetVal(setting, "note_ur", closingNoteEn).Trim();
+
+                var tplVarsEn = new Dictionary<string, string?>
+                {
+                    ["store_name"] = storeName,
+                    ["store_address"] = storeAddr,
+                    ["store_phone"] = storePhone,
+                    ["invoice_no"] = docNo,
+                    ["date"] = dateStr,
+                    ["customer_name"] = custName,
+                    ["items"] = itemsSummary,
+                    ["items_count"] = itemsCount.ToString(CultureInfo.InvariantCulture),
+                    ["total_units"] = totalUnits.ToString("0.##", CultureInfo.InvariantCulture),
+                    ["total"] = $"Rs. {total:N2}",
+                    ["received"] = $"Rs. {received:N2}",
+                    ["balance_due"] = $"Rs. {due:N2}",
+                    ["total_balance"] = totalBalanceFormatted,
+                    ["note"] = closingNoteEn
+                };
+                var tplVarsUr = new Dictionary<string, string?>(tplVarsEn)
+                {
+                    ["note"] = !string.IsNullOrEmpty(closingNoteUr) ? closingNoteUr : closingNoteEn
+                };
+
+                var waEn = !isChallan && !string.IsNullOrWhiteSpace(customTplEn)
+                    ? _shareEngine.RenderWhatsAppInvoiceTemplate(customTplEn, tplVarsEn)
+                    : $"*{storeName}*\n────────────────────\n*{label.ToUpperInvariant()}*\nInvoice No: *{docNo}*\nDate: {dateStr}\nCustomer: {custName}\n\nInvoice Total: *Rs. {total:N2}*\nAmount Received: Rs. {received:N2}\nBalance Due: Rs. {due:N2}\n\nPlease find the official PDF attached.";
+
+                var waUr = !isChallan && !string.IsNullOrWhiteSpace(customTplUr)
+                    ? _shareEngine.RenderWhatsAppInvoiceTemplate(customTplUr, tplVarsUr)
+                    : $"*{storeName}*\n────────────────────\n*سیل انوائس / بل کی تفصیل*\nبل نمبر: *{docNo}*\nتاریخ: {dateStr}\nمحترم کسٹمر: {custName}\nکل بل: *Rs. {total:N2}*\nوصول شدہ رقم: Rs. {received:N2}\nبقایا رقم: Rs. {due:N2}";
 
                 return new ResolvedDocContext
                 {

@@ -53,6 +53,7 @@ let pairingCode = null;
 let connectedUser = null;
 let lastError = null;
 let reconnectTimer = null;
+let reconnectAttempt = 0;
 let isStartingSocket = false;
 
 function writeRuntimeMeta() {
@@ -182,6 +183,7 @@ async function initWhatsAppSocket() {
         qrDataUrl = null;
         pairingCode = null;
         lastError = null;
+        reconnectAttempt = 0;
         connectionStatus = "connected";
 
         const rawId = sock?.user?.id || "";
@@ -207,9 +209,30 @@ async function initWhatsAppSocket() {
         const reasonMsg =
           lastDisconnect?.error?.message || "Connection closed";
 
-        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isLoggedOut =
+          statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403;
+        const isRestartRequired =
+          statusCode === DisconnectReason.restartRequired || statusCode === 515;
+        const isReplaced =
+          statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
 
-        if (isLoggedOut) {
+        if (isRestartRequired) {
+          // Normal post-QR / pairing handshake restart requested by WhatsApp servers
+          connectionStatus = "connecting";
+          lastError = null;
+          writeRuntimeMeta();
+          reconnectTimer = setTimeout(() => {
+            initWhatsAppSocket();
+          }, 350);
+        } else if (isReplaced) {
+          connectedUser = null;
+          qrRaw = null;
+          qrDataUrl = null;
+          pairingCode = null;
+          connectionStatus = "disconnected";
+          lastError = "WhatsApp session was opened in another location (replaced). Click Refresh QR / Reconnect to resume here.";
+          writeRuntimeMeta();
+        } else if (isLoggedOut) {
           connectedUser = null;
           qrRaw = null;
           qrDataUrl = null;
@@ -218,16 +241,20 @@ async function initWhatsAppSocket() {
           lastError = "Device was unlinked from WhatsApp. Generating a fresh QR code...";
           clearAuthDirectory();
           writeRuntimeMeta();
+          reconnectAttempt = Math.min(reconnectAttempt + 1, 4);
+          const delayMs = [1500, 3000, 8000, 15000, 30000][reconnectAttempt - 1] || 3000;
           reconnectTimer = setTimeout(() => {
             initWhatsAppSocket();
-          }, 1500);
+          }, delayMs);
         } else {
+          reconnectAttempt = Math.min(reconnectAttempt + 1, 5);
+          const delayMs = [2000, 5000, 10000, 20000, 30000][reconnectAttempt - 1] || 5000;
           connectionStatus = "connecting";
           lastError = reasonMsg;
           writeRuntimeMeta();
           reconnectTimer = setTimeout(() => {
             initWhatsAppSocket();
-          }, 2500);
+          }, delayMs);
         }
       }
     });
@@ -319,7 +346,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Health & Status endpoint
-  if (req.method === "GET" && (pathname === "/status" || pathname === "/")) {
+  if (req.method === "GET" && (pathname === "/status" || pathname === "/health" || pathname === "/")) {
     sendJson(res, 200, {
       ok: true,
       status: connectionStatus,
@@ -359,8 +386,21 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      if (!sock) {
+      if (sock?.authState?.creds?.registered) {
+        // Stale creds present while disconnected -> reset auth so WhatsApp accepts a fresh pairing code
+        clearAuthDirectory();
+        isStartingSocket = false;
         await initWhatsAppSocket();
+      } else if (!sock) {
+        await initWhatsAppSocket();
+      }
+
+      // Wait briefly for socket handshake / QR readiness (up to 5 seconds)
+      for (let waitIdx = 0; waitIdx < 20; waitIdx++) {
+        if (sock && typeof sock.requestPairingCode === "function" && (qrRaw || connectionStatus === "qr_ready" || waitIdx >= 8)) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 250));
       }
 
       if (!sock || typeof sock.requestPairingCode !== "function") {
@@ -377,6 +417,7 @@ const server = http.createServer(async (req, res) => {
           ? `${code.slice(0, 4)}-${code.slice(4)}`
           : code;
       pairingCode = formatted;
+      lastError = null;
 
       sendJson(res, 200, {
         ok: true,
@@ -437,7 +478,15 @@ const server = http.createServer(async (req, res) => {
       let targetJid = `${rawPhone}@s.whatsapp.net`;
 
       try {
-        const [lookup] = await sock.onWhatsApp(rawPhone);
+        const results = await sock.onWhatsApp(rawPhone);
+        const lookup = Array.isArray(results) ? results[0] : null;
+        if (lookup && lookup.exists === false) {
+          sendJson(res, 422, {
+            ok: false,
+            message: `The number +${rawPhone} is not registered on WhatsApp.`,
+          });
+          return;
+        }
         if (lookup?.exists && lookup?.jid) {
           targetJid = lookup.jid;
         }
@@ -504,7 +553,15 @@ const server = http.createServer(async (req, res) => {
       let targetJid = `${rawPhone}@s.whatsapp.net`;
 
       try {
-        const [lookup] = await sock.onWhatsApp(rawPhone);
+        const results = await sock.onWhatsApp(rawPhone);
+        const lookup = Array.isArray(results) ? results[0] : null;
+        if (lookup && lookup.exists === false) {
+          sendJson(res, 422, {
+            ok: false,
+            message: `The number +${rawPhone} is not registered on WhatsApp.`,
+          });
+          return;
+        }
         if (lookup?.exists && lookup?.jid) {
           targetJid = lookup.jid;
         }

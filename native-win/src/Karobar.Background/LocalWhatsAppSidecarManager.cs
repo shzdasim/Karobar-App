@@ -367,19 +367,104 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         };
     }
 
+    public string? ResolveAgentScriptPath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(_appRoot, "runtime", "whatsapp-agent", "whatsapp-agent.mjs"),
+            Path.Combine(AppContext.BaseDirectory, "runtime", "whatsapp-agent", "whatsapp-agent.mjs"),
+            Path.Combine(_appRoot, "scripts", "whatsapp-agent.mjs"),
+            Path.Combine(AppContext.BaseDirectory, "scripts", "whatsapp-agent.mjs")
+        };
+
+        foreach (var c in candidates)
+        {
+            if (File.Exists(c))
+            {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    public bool HasSavedLinkedSession()
+    {
+        var credsFile = Path.Combine(_appRoot, "storage", "app", "whatsapp-agent", "auth", "creds.json");
+        return File.Exists(credsFile);
+    }
+
+    public bool IsSidecarRunningInProcess()
+    {
+        lock (_procLock)
+        {
+            return _sidecarProcess is { HasExited: false };
+        }
+    }
+
+    public async Task AutoStartIfLinkedAsync(
+        KarobarDbContext? db,
+        Setting? setting,
+        CancellationToken cancellationToken = default)
+    {
+        if (setting == null || !setting.WhatsappEnabled)
+        {
+            return;
+        }
+        var provider = (setting.WhatsappProvider ?? "").Trim().ToLowerInvariant();
+        if (provider != "local_agent" || !HasSavedLinkedSession())
+        {
+            return;
+        }
+
+        try
+        {
+            await StartAsync(db, setting, enableInSettings: false, cancellationToken: cancellationToken);
+        }
+        catch
+        {
+            // Never crash app startup if WhatsApp sidecar fails to auto-start
+        }
+    }
+
+    private static bool IsNodeBinaryExecutable(string nodeBinary)
+    {
+        if (string.IsNullOrWhiteSpace(nodeBinary)) return false;
+        if (Path.IsPathRooted(nodeBinary)) return File.Exists(nodeBinary);
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+        var sep = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ';' : ':';
+        foreach (var dir in pathEnv.Split(sep, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                var candidate = Path.Combine(dir.Trim(), nodeBinary);
+                if (File.Exists(candidate)) return true;
+            }
+            catch { }
+        }
+        return false;
+    }
+
     /// <summary>
-    /// Start the built-in Node.js WhatsApp Agent sidecar (`scripts/whatsapp-agent.mjs`) in the background
-    /// and attach it to the Windows Job Object.
+    /// Start the built-in Node.js WhatsApp Agent sidecar (`runtime/whatsapp-agent/whatsapp-agent.mjs` or `scripts/whatsapp-agent.mjs`)
+    /// in the background and attach it to the Windows Job Object.
     /// </summary>
     public async Task<Dictionary<string, object?>> StartAsync(
         KarobarDbContext? db = null,
         Setting? setting = null,
         CancellationToken cancellationToken = default)
+        => await StartAsync(db, setting, enableInSettings: true, cancellationToken: cancellationToken);
+
+    public async Task<Dictionary<string, object?>> StartAsync(
+        KarobarDbContext? db,
+        Setting? setting,
+        bool enableInSettings,
+        CancellationToken cancellationToken = default)
     {
         var baseUrl = ResolveAgentUrl(setting);
         var apiKey = await EnsureApiKeyAsync(db, setting, cancellationToken);
 
-        if (setting != null && db != null)
+        if (enableInSettings && setting != null && db != null)
         {
             try
             {
@@ -406,7 +491,7 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
                     using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/restart");
                     req.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
                     await _httpClient.SendAsync(req, cancellationToken);
-                    await Task.Delay(400, cancellationToken);
+                    await Task.Delay(500, cancellationToken);
                 }
                 catch
                 {
@@ -416,13 +501,36 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             return await StatusAsync(db, setting, cancellationToken);
         }
 
-        var scriptPath = Path.Combine(_appRoot, "scripts", "whatsapp-agent.mjs");
-        if (!File.Exists(scriptPath))
+        var scriptPath = ResolveAgentScriptPath();
+        if (string.IsNullOrWhiteSpace(scriptPath))
         {
-            throw new FileNotFoundException($"Built-in WhatsApp Agent script not found at {scriptPath}");
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["agent_running"] = false,
+                ["status"] = "error",
+                ["last_error"] = "Built-in WhatsApp Agent script (whatsapp-agent.mjs) was not found in this installation. Please reinstall Karobar-App Native.",
+                ["message"] = "Built-in WhatsApp Agent script was not found in this installation.",
+                ["agent_url"] = baseUrl,
+                ["api_key"] = apiKey
+            };
         }
 
         var nodeBinary = ResolveNodeBinary();
+        if (!IsNodeBinaryExecutable(nodeBinary))
+        {
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["agent_running"] = false,
+                ["status"] = "error",
+                ["last_error"] = $"Portable Node.js runtime ({nodeBinary}) is missing. Please reinstall Karobar-App Native or install Node.js 22 LTS.",
+                ["message"] = "Portable Node.js runtime is missing on this PC. Please reinstall Karobar-App Native or install Node.js 22 LTS.",
+                ["agent_url"] = baseUrl,
+                ["api_key"] = apiKey
+            };
+        }
+
         var uri = new Uri(baseUrl);
         var port = uri.Port > 0 ? uri.Port : DefaultPort;
         var host = uri.Host;
@@ -441,26 +549,75 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             // Ignore
         }
 
-        SpawnSidecarProcess(nodeBinary, scriptPath, logFile, storageDir, host, port, apiKey);
+        var spawnError = SpawnSidecarProcess(nodeBinary, scriptPath, logFile, storageDir, host, port, apiKey);
+        if (!string.IsNullOrWhiteSpace(spawnError))
+        {
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["agent_running"] = false,
+                ["status"] = "error",
+                ["last_error"] = spawnError,
+                ["message"] = spawnError,
+                ["agent_url"] = baseUrl,
+                ["api_key"] = apiKey
+            };
+        }
 
-        for (var i = 0; i < 16; i++)
+        for (var i = 0; i < 32; i++)
         {
             await Task.Delay(250, cancellationToken);
+
+            // Detect immediate Node.js / Baileys startup crash instead of waiting 8 seconds
+            bool exitedEarly = false;
+            int? earlyExitCode = null;
+            lock (_procLock)
+            {
+                if (_sidecarProcess is { HasExited: true })
+                {
+                    exitedEarly = true;
+                    earlyExitCode = _sidecarProcess.ExitCode;
+                }
+            }
+
             var check = await StatusAsync(db, setting, cancellationToken);
             if (check.TryGetValue("agent_running", out var isRun) && isRun is true)
             {
                 var st = check.TryGetValue("status", out var s) ? s?.ToString() : "";
-                if (st is "qr_ready" or "connected" || i >= 8)
+                if (st is "qr_ready" or "connected" || i >= 12)
                 {
                     return check;
                 }
             }
+            else if (exitedEarly && i >= 2)
+            {
+                var recentErr = ReadRecentAgentError() ?? $"WhatsApp Agent process exited immediately (exit code {earlyExitCode}).";
+                return new Dictionary<string, object?>
+                {
+                    ["ok"] = false,
+                    ["agent_running"] = false,
+                    ["status"] = "error",
+                    ["last_error"] = recentErr,
+                    ["message"] = recentErr,
+                    ["agent_url"] = baseUrl,
+                    ["api_key"] = apiKey
+                };
+            }
         }
 
-        return await StatusAsync(db, setting, cancellationToken);
+        var finalStatus = await StatusAsync(db, setting, cancellationToken);
+        if (!finalStatus.TryGetValue("agent_running", out var finalRun) || finalRun is not true)
+        {
+            var err = ReadRecentAgentError() ?? "WhatsApp Agent did not respond on port " + port + " within 8 seconds.";
+            finalStatus["ok"] = false;
+            finalStatus["status"] = "error";
+            finalStatus["last_error"] = err;
+            finalStatus["message"] = err;
+        }
+        return finalStatus;
     }
 
-    private void SpawnSidecarProcess(
+    private string? SpawnSidecarProcess(
         string nodeBinary,
         string scriptPath,
         string logFile,
@@ -473,13 +630,14 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         {
             if (_sidecarProcess is { HasExited: false })
             {
-                return;
+                return null;
             }
 
+            var scriptDir = Path.GetDirectoryName(scriptPath) ?? _appRoot;
             var psi = new ProcessStartInfo
             {
                 FileName = nodeBinary,
-                WorkingDirectory = _appRoot,
+                WorkingDirectory = Directory.Exists(Path.Combine(scriptDir, "node_modules")) ? scriptDir : _appRoot,
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -533,18 +691,23 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
                     }
                     StartLineDrain(proc.StandardOutput, "OUT");
                     StartLineDrain(proc.StandardError, "ERR");
+                    return null;
                 }
+
+                return $"Failed to start Node.js process ({nodeBinary}).";
             }
             catch (Exception ex)
             {
+                var errMsg = $"Failed to spawn Node binary ({nodeBinary}): {ex.Message}";
                 try
                 {
-                    File.AppendAllText(logFile, $"Failed to spawn Node binary ({nodeBinary}): {ex.Message}{Environment.NewLine}");
+                    File.AppendAllText(logFile, errMsg + Environment.NewLine);
                 }
                 catch
                 {
                     // Ignore
                 }
+                return errMsg;
             }
         }
     }
@@ -621,9 +784,17 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         var authDir = Path.Combine(_appRoot, "storage", "app", "whatsapp-agent", "auth");
         if (Directory.Exists(authDir))
         {
-            foreach (var file in Directory.GetFiles(authDir))
+            try
             {
-                try { File.Delete(file); } catch { }
+                Directory.Delete(authDir, recursive: true);
+                Directory.CreateDirectory(authDir);
+            }
+            catch
+            {
+                foreach (var file in Directory.GetFiles(authDir, "*", SearchOption.AllDirectories))
+                {
+                    try { File.Delete(file); } catch { }
+                }
             }
         }
 

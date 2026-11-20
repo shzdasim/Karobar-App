@@ -166,6 +166,71 @@ New-Item -ItemType Directory -Force -Path `
     (Join-Path $StageDir "storage\backups"), `
     (Join-Path $StageDir "storage\logs") | Out-Null
 
+# Provision portable Node.js 22 Win64 binary + isolated minimal WhatsApp Agent ESM runtime (@whiskeysockets/baileys, qrcode, pino)
+# Placed inside runtime\whatsapp-agent\ so Node ESM resolves runtime\whatsapp-agent\node_modules natively with zero Vite/React bloat.
+Write-Host "==> [3b/6] Provisioning Portable Node.js + Local WhatsApp Agent Runtime..." -ForegroundColor Cyan
+$NodeRuntimeDir = Join-Path $StageDir "runtime\node"
+New-Item -ItemType Directory -Force -Path $NodeRuntimeDir | Out-Null
+$BundledNodeExe = Join-Path $NodeRuntimeDir "node.exe"
+
+$LocalNodeCmd = Get-Command "node.exe" -ErrorAction SilentlyContinue
+if ($LocalNodeCmd -and (Test-Path $LocalNodeCmd.Source)) {
+    Write-Host "    Using host Node.js binary from: $($LocalNodeCmd.Source)" -ForegroundColor Gray
+    Copy-Item -Path $LocalNodeCmd.Source -Destination $BundledNodeExe -Force
+} else {
+    $NodeZipUrl = "https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip"
+    $NodeZipPath = Join-Path $CacheDir "node-v22-win-x64.zip"
+    if (-not (Test-Path $NodeZipPath)) {
+        Invoke-WebRequest -Uri $NodeZipUrl -OutFile $NodeZipPath -UseBasicParsing
+    }
+    $NodeExtractTmp = Join-Path $CacheDir "node-extract"
+    if (Test-Path $NodeExtractTmp) { Remove-Item -Recurse -Force $NodeExtractTmp }
+    Expand-Archive -Path $NodeZipPath -DestinationPath $NodeExtractTmp -Force
+    $NodeBinFile = Get-ChildItem -Path $NodeExtractTmp -Filter "node.exe" -Recurse | Select-Object -First 1
+    Copy-Item -Path $NodeBinFile.FullName -Destination $BundledNodeExe -Force
+}
+
+$WaRuntimeDir = Join-Path $StageDir "runtime\whatsapp-agent"
+New-Item -ItemType Directory -Force -Path $WaRuntimeDir | Out-Null
+$RootPkg = Get-Content (Join-Path $RepoRoot "package.json") -Raw | ConvertFrom-Json
+$BaileysVer = if ($RootPkg.dependencies.'@whiskeysockets/baileys') { $RootPkg.dependencies.'@whiskeysockets/baileys' } else { "^7.0.0-rc14" }
+$QrcodeVer  = if ($RootPkg.dependencies.qrcode) { $RootPkg.dependencies.qrcode } else { "^1.5.4" }
+$PinoVer    = if ($RootPkg.dependencies.pino) { $RootPkg.dependencies.pino } else { "^10.4.0" }
+
+$WaManifest = [ordered]@{
+    name         = "karobar-whatsapp-agent"
+    private      = $true
+    type         = "module"
+    dependencies = [ordered]@{
+        "@whiskeysockets/baileys" = $BaileysVer
+        "qrcode"                  = $QrcodeVer
+        "pino"                    = $PinoVer
+    }
+}
+Set-Content -Path (Join-Path $WaRuntimeDir "package.json") -Value ($WaManifest | ConvertTo-Json -Depth 4) -Encoding UTF8
+Copy-Item -Path (Join-Path $RepoRoot "scripts\whatsapp-agent.mjs") -Destination (Join-Path $WaRuntimeDir "whatsapp-agent.mjs") -Force
+
+Push-Location $WaRuntimeDir
+try {
+    npm install --omit=dev --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install for isolated WhatsApp Agent runtime failed with exit code $LASTEXITCODE"
+    }
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        & $BundledNodeExe --check (Join-Path $WaRuntimeDir "whatsapp-agent.mjs")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Bundled node.exe syntax check failed for whatsapp-agent.mjs"
+        }
+        $ImportCheck = & $BundledNodeExe --input-type=module -e "import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion, Browsers } from '@whiskeysockets/baileys'; import QRCode from 'qrcode'; import pino from 'pino'; if (typeof makeWASocket !== 'function' || typeof QRCode.toDataURL !== 'function' || typeof pino !== 'function') process.exit(1); console.log('WA_AGENT_RUNTIME_OK');"
+        if ($LASTEXITCODE -ne 0 -or ($ImportCheck -notmatch "WA_AGENT_RUNTIME_OK")) {
+            throw "Bundled WhatsApp Agent ESM runtime verification failed: $ImportCheck"
+        }
+        Write-Host "    Verified Portable Node.js + Baileys/QRCode/Pino ESM Runtime (WA_AGENT_RUNTIME_OK)!" -ForegroundColor Green
+    }
+} finally {
+    Pop-Location
+}
+
 # Compute deterministic third-party DLL fingerprint BEFORE Inno Setup & OTA patch packaging
 # so public/version.json inside BOTH the installer and patch carries the exact deps_fingerprint
 $ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
@@ -395,6 +460,13 @@ foreach ($relDir in @("public", "resources\views", "resources\assistant", "scrip
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dstSub) | Out-Null
         Copy-Item -Path $srcSub -Destination $dstSub -Recurse -Force
     }
+}
+# Also include the tiny (~20KB) runtime\whatsapp-agent\whatsapp-agent.mjs script in OTA patches (excluding node.exe & node_modules)
+$StagedWaScript = Join-Path $StageDir "runtime\whatsapp-agent\whatsapp-agent.mjs"
+if (Test-Path $StagedWaScript) {
+    $PatchWaDir = Join-Path $PatchStageDir "runtime\whatsapp-agent"
+    New-Item -ItemType Directory -Force -Path $PatchWaDir | Out-Null
+    Copy-Item -Path $StagedWaScript -Destination (Join-Path $PatchWaDir "whatsapp-agent.mjs") -Force
 }
 
 $PatchZipPath = Join-Path $InstallerOutDir "Karobar-Native-Patch.zip"

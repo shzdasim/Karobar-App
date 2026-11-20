@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -71,6 +72,18 @@ export default function ShareDocumentModal({
   initialTab = "whatsapp", // 'whatsapp' | 'email'
 }) {
   const { isDark, theme } = useTheme();
+  const navigate = useNavigate();
+  const sendWhatsAppPdfRef = useRef(null);
+
+  const openExternalWhatsAppUrl = (waUrl) => {
+    if (window.karobarDesktop?.openExternalUrl) {
+      Promise.resolve(window.karobarDesktop.openExternalUrl(waUrl)).catch(() => {
+        window.open(waUrl, "_blank", "noopener,noreferrer");
+      });
+    } else {
+      window.open(waUrl, "_blank", "noopener,noreferrer");
+    }
+  };
 
   const themeColors = useMemo(() => {
     if (!theme) {
@@ -127,6 +140,7 @@ export default function ShareDocumentModal({
     qr_data_url: null,
     pairing_code: null,
     pairing_phone: "",
+    last_error: null,
     requesting_code: false,
   });
 
@@ -172,25 +186,28 @@ export default function ShareDocumentModal({
 
   // Poll Built-in Free WhatsApp Agent while the inline QR code step is open;
   // as soon as the user scans the QR code on their phone (status === 'connected'),
-  // automatically send the actual PDF attachment.
+  // automatically send the actual PDF attachment using the latest form state via ref.
   useEffect(() => {
     if (!isOpen || !qrStep.open) return;
 
     const timer = setInterval(async () => {
       try {
-        const { data } = await axios.get("/api/settings/whatsapp-agent/status");
+        const { data } = await axios.get("/api/settings/whatsapp-agent/status", {
+          headers: { "X-Skip-Cache": "1" },
+        });
         setQrStep((prev) => ({
           ...prev,
           status: data.status || prev.status,
           qr_data_url: data.qr_data_url || prev.qr_data_url,
           pairing_code: data.pairing_code || prev.pairing_code,
+          last_error: data.last_error || null,
         }));
 
         if (data.status === "connected") {
           clearInterval(timer);
-          setQrStep((prev) => ({ ...prev, open: false }));
+          setQrStep((prev) => ({ ...prev, open: false, last_error: null }));
           toast.success("WhatsApp linked. Dispatching PDF attachment...");
-          handleSendWhatsAppPdf();
+          sendWhatsAppPdfRef.current?.();
         }
       } catch {
         // ignore polling error
@@ -289,32 +306,16 @@ export default function ShareDocumentModal({
 
   /**
    * Build the actual PDF file via backend and send it on WhatsApp as a real PDF attachment.
+   * Respects the user's configured mode: Direct API (Local Agent / Cloud Gateway) vs Standard Browser Mode.
    */
   const handleSendWhatsAppPdf = async () => {
-    if (!phoneInput.trim()) {
+    if (!phoneInput.trim() && meta?.whatsapp_api_configured) {
       toast.error("Please enter a recipient WhatsApp phone number");
       return;
     }
 
     setSendingWhatsApp(true);
     try {
-      if (!meta?.whatsapp_api_configured) {
-        try {
-          await axios.post("/api/settings/whatsapp-agent/start");
-          setMeta((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  whatsapp_api_configured: true,
-                  whatsapp_provider: "local_agent",
-                }
-              : prev
-          );
-        } catch {
-          // continue
-        }
-      }
-
       const payload = {
         ...buildRequestParams(selectedDesign),
         phone: phoneInput.trim(),
@@ -336,6 +337,8 @@ export default function ShareDocumentModal({
           open: true,
           status: data.agent_status || "qr_ready",
           qr_data_url: data.qr_data_url || prev.qr_data_url,
+          pairing_code: data.pairing_code || prev.pairing_code,
+          last_error: data.last_error || null,
         }));
         toast("Scan the WhatsApp QR code below once to link your device and send the PDF automatically.", {
           duration: 5000,
@@ -361,7 +364,7 @@ export default function ShareDocumentModal({
         ? `https://wa.me/${targetPhone}?text=${encodedCaption}`
         : `https://wa.me/?text=${encodedCaption}`;
 
-      window.open(waUrl, "_blank", "noopener,noreferrer");
+      openExternalWhatsAppUrl(waUrl);
       if (data.status === "api_fallback") {
         toast(data.message || `Direct API unavailable — downloaded ${filename} and opened WhatsApp chat.`, {
           duration: 6000,
@@ -377,6 +380,7 @@ export default function ShareDocumentModal({
       setSendingWhatsApp(false);
     }
   };
+  sendWhatsAppPdfRef.current = handleSendWhatsAppPdf;
 
   const handleRequestInlinePairCode = async () => {
     if (!qrStep.pairing_phone.trim()) {
@@ -409,7 +413,7 @@ export default function ShareDocumentModal({
     const waUrl = normalizedPhone
       ? `https://wa.me/${normalizedPhone}?text=${encodedCaption}`
       : `https://wa.me/?text=${encodedCaption}`;
-    window.open(waUrl, "_blank", "noopener,noreferrer");
+    openExternalWhatsAppUrl(waUrl);
     toast.success(`Downloaded ${filename} and opened WhatsApp`);
   };
 
@@ -642,14 +646,18 @@ export default function ShareDocumentModal({
                 <span>{showInlinePreview ? "Hide Preview" : "Preview"}</span>
               </button>
             )}
-            <a
-              href="/settings#sharing"
+            <button
+              type="button"
+              onClick={() => {
+                onClose?.();
+                navigate("/settings#sharing");
+              }}
               className={`font-medium hover:underline ${
                 isDark ? "text-slate-400 hover:text-slate-200" : "text-gray-500 hover:text-gray-800"
               }`}
             >
               Change in Settings
-            </a>
+            </button>
           </div>
         </div>
 
@@ -745,12 +753,16 @@ export default function ShareDocumentModal({
                             : "Browser WhatsApp Mode"}
                         </span>
                       </div>
-                      <a
-                        href="/settings#whatsapp"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose?.();
+                          navigate("/settings#whatsapp");
+                        }}
                         className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                       >
                         Configure
-                      </a>
+                      </button>
                     </div>
                     <p className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                       {meta?.whatsapp_api_configured
@@ -915,6 +927,21 @@ export default function ShareDocumentModal({
                           </div>
                         )}
                       </div>
+                      {qrStep.last_error && (
+                        <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-[11px] text-amber-800 dark:text-amber-300 break-words">
+                          <strong>Status Note:</strong> {qrStep.last_error}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQrStep((s) => ({ ...s, open: false }));
+                          handleManualDownloadAndOpenWhatsApp();
+                        }}
+                        className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        Or download PDF &amp; open WhatsApp Desktop / Web instead →
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -97,7 +97,7 @@ Source: "..\..\desktop\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Full staged Native C#/.NET 9 + WebView2 + React 19 SPA bundle (+ portable Node.js for optional WhatsApp sidecar)
 ; CRITICAL ZERO-DATA-LOSS EXCLUSIONS: Never overwrite existing SQLite database, .env, machine-id, license-clock, WhatsApp session, uploaded logos/files, or backups!
 Source: "{#BuildStageDir}\*"; DestDir: "{app}"; \
-  Excludes: "database\database.sqlite*,storage\app\.machine-id,storage\app\.license-clock,storage\app\whatsapp-auth\*,storage\app\public\*,storage\app\backups\*,storage\backups\*,.env"; \
+  Excludes: "database\database.sqlite*,storage\app\.machine-id,storage\app\.license-clock,storage\app\.app-key,storage\app\whatsapp-auth\*,storage\app\whatsapp-agent\*,storage\app\public\*,storage\app\backups\*,storage\backups\*,.env"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

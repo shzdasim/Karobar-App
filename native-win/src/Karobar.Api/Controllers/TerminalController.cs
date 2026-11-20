@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
+using Karobar.Background;
 using Karobar.Data;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
@@ -28,18 +29,21 @@ public class TerminalController : ApiControllerBase
     private readonly SqliteExportService _sqliteExportService;
     private readonly BackupService _backupService;
     private readonly DocumentSequenceService _sequenceService;
+    private readonly LocalWhatsAppSidecarManager? _waSidecar;
 
     public TerminalController(
         KarobarDb db,
         LicenseService licenseService,
         SqliteExportService sqliteExportService,
         BackupService backupService,
-        DocumentSequenceService sequenceService) : base(db)
+        DocumentSequenceService sequenceService,
+        LocalWhatsAppSidecarManager? waSidecar = null) : base(db)
     {
         _licenseService = licenseService;
         _sqliteExportService = sqliteExportService;
         _backupService = backupService;
         _sequenceService = sequenceService;
+        _waSidecar = waSidecar;
     }
 
     [HttpGet("terminals/ping")]
@@ -800,7 +804,7 @@ public class TerminalController : ApiControllerBase
             {
                 database = true,
                 cache = true,
-                whatsapp_agent = false
+                whatsapp_agent = _waSidecar?.IsSidecarRunningInProcess() ?? false
             }
         };
     }
