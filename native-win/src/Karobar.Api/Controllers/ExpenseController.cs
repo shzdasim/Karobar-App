@@ -162,7 +162,7 @@ public class ExpenseController : ApiControllerBase
 
         try
         {
-            var expense = await _expenseService.CreateExpenseAsync(data, CurrentUserId);
+            var expense = await _expenseService.CreateExpenseAsync(data, CurrentUserId, CurrentTerminalId);
             return StatusCode(201, new Dictionary<string, object?>
             {
                 ["message"] = "Expense recorded successfully.",
@@ -241,7 +241,7 @@ public class ExpenseController : ApiControllerBase
 
         try
         {
-            var updated = await _expenseService.UpdateExpenseAsync(id, data, CurrentUserId);
+            var updated = await _expenseService.UpdateExpenseAsync(id, data, CurrentUserId, CurrentTerminalId);
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = "Expense updated successfully.",
@@ -265,7 +265,7 @@ public class ExpenseController : ApiControllerBase
 
         try
         {
-            await _expenseService.DeleteExpenseAsync(id, CurrentUserId);
+            await _expenseService.DeleteExpenseAsync(id, CurrentUserId, CurrentTerminalId);
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = "Expense deleted and financial balances reversed successfully."

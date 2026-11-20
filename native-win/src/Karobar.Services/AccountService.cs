@@ -28,8 +28,12 @@ public class AccountService
         if (account != null)
         {
             var type = account.TryGetValue("type", out var t) ? t?.ToString() ?? "" : "";
+            var code = account.TryGetValue("code", out var c) ? c?.ToString() ?? "" : "";
             var isDef = IsTruthy(account.TryGetValue("is_default", out var d) ? d : null);
-            return type.Equals("cash", StringComparison.OrdinalIgnoreCase) && isDef;
+            return type.Equals("cash", StringComparison.OrdinalIgnoreCase) &&
+                   (isDef ||
+                    code.Equals("cash_drawer", StringComparison.OrdinalIgnoreCase) ||
+                    code.Equals("CASH-DRAWER", StringComparison.OrdinalIgnoreCase));
         }
 
         return string.IsNullOrWhiteSpace(fallbackMethod) || fallbackMethod.Equals("cash", StringComparison.OrdinalIgnoreCase);
@@ -332,7 +336,8 @@ public class AccountService
         long toAccountId,
         decimal amount,
         string? notes = null,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         if (fromAccountId == toAccountId)
         {
@@ -402,7 +407,8 @@ public class AccountService
                 "account_transfer",
                 outTxnId,
                 $"Transfer to {toName}{desc}",
-                userId);
+                userId,
+                terminalId);
         }
         if (IsDefaultCashDrawerAccount(toLocked))
         {
@@ -413,7 +419,8 @@ public class AccountService
                 "account_transfer",
                 inTxnId,
                 $"Transfer from {fromName}{desc}",
-                userId);
+                userId,
+                terminalId);
         }
 
         return new Dictionary<string, object?>
@@ -430,7 +437,8 @@ public class AccountService
         string type,
         decimal amount,
         string reason,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         amount = Math.Round(amount, 2);
         if (amount <= 0m)
@@ -482,11 +490,11 @@ public class AccountService
             var cashDrawerService = new CashDrawerService(_db);
             if (isDeposit)
             {
-                await cashDrawerService.RecordTransactionAsync(null, "cash_in", amount, "account_adjustment", txnId, desc, userId);
+                await cashDrawerService.RecordTransactionAsync(null, "cash_in", amount, "account_adjustment", txnId, desc, userId, terminalId);
             }
             else
             {
-                await cashDrawerService.RecordTransactionAsync(null, "cash_out", amount, "account_adjustment", txnId, desc, userId);
+                await cashDrawerService.RecordTransactionAsync(null, "cash_out", amount, "account_adjustment", txnId, desc, userId, terminalId);
             }
         }
 

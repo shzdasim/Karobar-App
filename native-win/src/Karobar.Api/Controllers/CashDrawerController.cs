@@ -301,9 +301,26 @@ public class CashDrawerController : ApiControllerBase
         if (!await CanAsync("cash-drawer.view", "account.view")) return Forbidden();
 
         var cashAccount = await _accountService.SyncCashDrawerBalanceAsync();
+        var cashAccountId = cashAccount != null ? AccountService.ToLong(cashAccount["id"]) : 0L;
         var cashAccountBalance = cashAccount != null
             ? Math.Round(AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance")), 2)
             : 0m;
+
+        decimal accountLedgerSum = 0m;
+        if (cashAccountId > 0 && await Db.HasTableAsync("account_transactions"))
+        {
+            accountLedgerSum = Math.Round(await Db.ExecuteScalarAsync<decimal?>(
+                @"SELECT COALESCE(SUM(
+                      CASE
+                          WHEN type IN ('deposit', 'transfer_in', 'opening_balance') THEN amount
+                          WHEN type = 'adjustment' THEN amount
+                          ELSE -amount
+                      END
+                  ), 0)
+                  FROM account_transactions
+                  WHERE account_id = @cashAccountId",
+                new { cashAccountId }) ?? 0m, 2);
+        }
 
         var openSessions = await Db.HasTableAsync("cash_drawer_sessions")
             ? await Db.QueryListAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id ASC")
@@ -312,12 +329,16 @@ public class CashDrawerController : ApiControllerBase
         decimal openStoredTotal = 0m;
         decimal openCalcTotal = 0m;
         var sessionDiagnostics = new List<Dictionary<string, object?>>();
+        var staleSessionsCount = 0;
 
         foreach (var sess in openSessions)
         {
             var sid = AccountService.ToLong(sess["id"]);
             var stored = Math.Round(AccountService.ToDecimal(sess.GetValueOrDefault("closing_balance_expected")), 2);
             var calc = await _cashDrawerService.RecalculateExpectedBalanceAsync(sid, syncAccount: false);
+            var staleDelta = Math.Round(stored - calc, 2);
+            if (Math.Abs(staleDelta) > 0.001m) staleSessionsCount++;
+
             openStoredTotal = Math.Round(openStoredTotal + stored, 2);
             openCalcTotal = Math.Round(openCalcTotal + calc, 2);
 
@@ -326,11 +347,62 @@ public class CashDrawerController : ApiControllerBase
                 ["session_id"] = sid,
                 ["terminal_id"] = sess.GetValueOrDefault("terminal_id"),
                 ["user_id"] = sess.GetValueOrDefault("user_id"),
+                ["opened_at"] = sess.GetValueOrDefault("opened_at"),
                 ["opening_balance"] = Math.Round(AccountService.ToDecimal(sess.GetValueOrDefault("opening_balance")), 2),
                 ["stored_expected_before_refresh"] = stored,
                 ["calculated_expected"] = calc,
-                ["stale_delta"] = Math.Round(stored - calc, 2)
+                ["stale_delta"] = staleDelta
             });
+        }
+
+        // Forensic comparison of active open-shift window: detect any account_transactions missing from drawer (or vice-versa)
+        var unmatchedAccountTxns = new List<Dictionary<string, object?>>();
+        if (cashAccountId > 0 && openSessions.Count > 0 &&
+            await Db.HasTableAsync("account_transactions") &&
+            await Db.HasTableAsync("cash_drawer_transactions"))
+        {
+            var earliestOpenedAt = openSessions
+                .Select(s => s.GetValueOrDefault("opened_at")?.ToString())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .FirstOrDefault();
+
+            if (!string.IsNullOrWhiteSpace(earliestOpenedAt))
+            {
+                var openIds = openSessions.Select(s => AccountService.ToLong(s["id"])).ToArray();
+                var openDrawerTxns = await Db.QueryListAsync(
+                    "SELECT id, session_id, type, amount, reference_type, reference_id, notes, created_at FROM cash_drawer_transactions WHERE session_id IN @openIds",
+                    new { openIds });
+                var accTxnsInWindow = await Db.QueryListAsync(
+                    @"SELECT id, type, amount, reference_type, reference_id, description, transaction_date
+                      FROM account_transactions
+                      WHERE account_id = @cashAccountId
+                        AND transaction_date >= @earliestOpenedAt
+                        AND COALESCE(reference_type, '') NOT IN ('cash_drawer_open', 'cash_drawer_variance', 'cash_drawer_reconcile', 'cash_drawer_manual', 'opening_balance')
+                      ORDER BY id ASC",
+                    new { cashAccountId, earliestOpenedAt });
+
+                foreach (var at in accTxnsInWindow)
+                {
+                    var refType = (at.GetValueOrDefault("reference_type")?.ToString() ?? "").ToLowerInvariant();
+                    var refId = AccountService.ToLong(at.GetValueOrDefault("reference_id"));
+                    var amt = Math.Abs(AccountService.ToDecimal(at.GetValueOrDefault("amount")));
+
+                    var matched = openDrawerTxns.Any(dt =>
+                    {
+                        var dRefId = AccountService.ToLong(dt.GetValueOrDefault("reference_id"));
+                        var dAmt = Math.Abs(AccountService.ToDecimal(dt.GetValueOrDefault("amount")));
+                        if (refId > 0 && dRefId == refId) return true;
+                        if (refType is "transfer" or "manual" && Math.Abs(dAmt - amt) < 0.01m) return true;
+                        return false;
+                    });
+
+                    if (!matched)
+                    {
+                        unmatchedAccountTxns.Add(at);
+                    }
+                }
+            }
         }
 
         var diff = Math.Round(cashAccountBalance - openCalcTotal, 2);
@@ -340,12 +412,92 @@ public class CashDrawerController : ApiControllerBase
             ["cash_account_id"] = cashAccount?.GetValueOrDefault("id"),
             ["cash_account_name"] = cashAccount?.GetValueOrDefault("name"),
             ["cash_account_balance"] = cashAccountBalance,
+            ["account_ledger_sum"] = accountLedgerSum,
+            ["account_balance_vs_ledger_diff"] = Math.Round(cashAccountBalance - accountLedgerSum, 2),
             ["open_sessions_count"] = openSessions.Count,
+            ["stale_open_sessions_count"] = staleSessionsCount,
             ["open_drawers_expected_total"] = openCalcTotal,
             ["open_drawers_stored_before_refresh"] = openStoredTotal,
             ["difference"] = diff,
+            ["unassigned_safe_pool"] = Math.Max(0m, diff),
             ["is_balanced"] = openSessions.Count > 0 ? Math.Abs(diff) < 0.01m : true,
+            ["unmatched_open_shift_account_txns"] = unmatchedAccountTxns,
             ["open_sessions"] = sessionDiagnostics
+        });
+    }
+
+    [HttpPost("api/cash-drawer/reconcile")]
+    public async Task<IActionResult> ReconcileCashAccount()
+    {
+        if (!await CanAsync("cash-drawer.close", "account.adjust", "account.update")) return Forbidden();
+
+        var body = await ReadJsonBodyAsync();
+        var reason = GetString(body, "reason")?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            reason = "Manual Cash Drawer to Cash in Hand reconciliation";
+        }
+
+        var cashAccount = await _accountService.SyncCashDrawerBalanceAsync();
+        if (cashAccount == null)
+        {
+            return Unprocessable("Default Cash in Hand account not found.");
+        }
+
+        var openSessions = await Db.HasTableAsync("cash_drawer_sessions")
+            ? await Db.QueryListAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id ASC")
+            : new List<Dictionary<string, object?>>();
+
+        if (openSessions.Count == 0)
+        {
+            return Unprocessable("No open cash drawer session found to reconcile against.");
+        }
+
+        decimal openTotal = 0m;
+        foreach (var sess in openSessions)
+        {
+            openTotal = Math.Round(openTotal + await _cashDrawerService.RecalculateExpectedBalanceAsync(AccountService.ToLong(sess["id"]), syncAccount: false), 2);
+        }
+
+        var cashId = AccountService.ToLong(cashAccount["id"]);
+        var currentBal = Math.Round(AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance")), 2);
+        var delta = Math.Round(openTotal - currentBal, 2);
+
+        if (Math.Abs(delta) < 0.01m)
+        {
+            return Ok(new Dictionary<string, object?>
+            {
+                ["ok"] = true,
+                ["reconciled"] = false,
+                ["message"] = "Cash in Hand is already balanced with open Cash Drawer(s).",
+                ["cash_account_balance"] = currentBal,
+                ["open_drawers_expected_total"] = openTotal,
+                ["adjustment_amount"] = 0m
+            });
+        }
+
+        if (delta > 0m)
+        {
+            await _accountService.DepositAsync(cashAccount, delta, "cash_drawer_reconcile", null, reason, CurrentUserId);
+        }
+        else
+        {
+            await _accountService.WithdrawAsync(cashAccount, Math.Abs(delta), "cash_drawer_reconcile", null, reason, CurrentUserId);
+        }
+
+        SyncPulseService.Bump("drawer");
+        var refreshedAcc = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = cashId });
+        var newBal = Math.Round(AccountService.ToDecimal(refreshedAcc?.GetValueOrDefault("current_balance")), 2);
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["ok"] = true,
+            ["reconciled"] = true,
+            ["message"] = $"Reconciled Cash in Hand by {delta:+0.00;-0.00;0.00} to match open Cash Drawer total ({openTotal:N2}).",
+            ["previous_balance"] = currentBal,
+            ["cash_account_balance"] = newBal,
+            ["open_drawers_expected_total"] = openTotal,
+            ["adjustment_amount"] = delta
         });
     }
 

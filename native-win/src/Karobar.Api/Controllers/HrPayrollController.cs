@@ -669,7 +669,7 @@ public class HrPayrollController : ApiControllerBase
 
         try
         {
-            var advance = await _hrService.RecordAdvanceTransactionAsync(data, CurrentUserId);
+            var advance = await _hrService.RecordAdvanceTransactionAsync(data, CurrentUserId, CurrentTerminalId);
             return StatusCode(201, advance);
         }
         catch (HrPayrollValidationException ex)
@@ -792,7 +792,7 @@ public class HrPayrollController : ApiControllerBase
 
         try
         {
-            var paid = await _hrService.PayPayrollItemAsync(payrollItem, data, CurrentUserId);
+            var paid = await _hrService.PayPayrollItemAsync(payrollItem, data, CurrentUserId, CurrentTerminalId);
             return Ok(paid);
         }
         catch (KeyNotFoundException)
@@ -823,7 +823,7 @@ public class HrPayrollController : ApiControllerBase
 
         try
         {
-            var run = await _hrService.PayAllInRunAsync(payrollRun, data, CurrentUserId);
+            var run = await _hrService.PayAllInRunAsync(payrollRun, data, CurrentUserId, CurrentTerminalId);
             return Ok(run);
         }
         catch (KeyNotFoundException)

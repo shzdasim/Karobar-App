@@ -918,9 +918,12 @@ public class SaleInvoiceController : ApiControllerBase
                     updateDrawerFlag = IsTruthy(udpObj);
 
                 var termId = CurrentTerminalId;
-                var removedOpenRows = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
-                var isPreShift = removedOpenRows == 0 && await _settlementService.IsPreShiftDocumentInTxAsync(
+                var isPreShift = await _settlementService.IsPreShiftDocumentInTxAsync(
                     "sale_invoice", id, existing.GetValueOrDefault("created_at")?.ToString(), conn, tx, operatorUserId, termId);
+                if (!isPreShift)
+                {
+                    await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
+                }
                 var skipDrawerCash = isPreShift && updateDrawerFlag == false;
 
                 // 1. Reconstruct prior net per-account legs from account_transactions (covering split legs & prior updates)
@@ -1434,9 +1437,13 @@ public class SaleInvoiceController : ApiControllerBase
                         }
                     }
 
-                    // Remove any open-shift drawer rows AND recalculate expected balance; if this was a pre-shift cash sale,
-                    // record a cash_return refund in the active open shift so Account and Cash Drawer stay 100% in parity.
-                    var removedOpen = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
+                    // Detect pre-shift BEFORE touching open-shift rows so deleting a pre-shift sale that was
+                    // previously edited in this shift still refunds the full cash amount symmetrically with Account.
+                    var isPreShiftDelete = await _settlementService.IsPreShiftDocumentInTxAsync(
+                        "sale_invoice", id, freshInv.GetValueOrDefault("created_at")?.ToString(), conn, tx, CurrentUserId, termId);
+                    var removedOpen = isPreShiftDelete
+                        ? 0
+                        : await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
                     if (removedOpen == 0 && cashDrawerRefunded > 0.001)
                     {
                         await _settlementService.RecordCashDrawerTransactionAsync(

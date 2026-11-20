@@ -396,7 +396,7 @@ public class AccountController : ApiControllerBase
 
         try
         {
-            var res = await _accountService.TransferAsync(fromId, toId, amount, notes, CurrentUserId);
+            var res = await _accountService.TransferAsync(fromId, toId, amount, notes, CurrentUserId, CurrentTerminalId);
             var fromName = (res["from_account"] as Dictionary<string, object?>)?.GetValueOrDefault("name")?.ToString() ?? "Account";
             var toName = (res["to_account"] as Dictionary<string, object?>)?.GetValueOrDefault("name")?.ToString() ?? "Account";
             return Ok(new Dictionary<string, object?>
@@ -435,7 +435,7 @@ public class AccountController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(reason))
             return Unprocessable("Reason is required.", new() { ["reason"] = new[] { "The reason field is required." } });
 
-        var txn = await _accountService.AdjustAsync(id, type, amount, reason, CurrentUserId);
+        var txn = await _accountService.AdjustAsync(id, type, amount, reason, CurrentUserId, CurrentTerminalId);
         var updatedAccount = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id });
 
         return Ok(new Dictionary<string, object?>

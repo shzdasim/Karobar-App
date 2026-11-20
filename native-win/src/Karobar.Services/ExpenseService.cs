@@ -32,7 +32,7 @@ public class ExpenseService
             "expense_number");
     }
 
-    public async Task<Dictionary<string, object?>> CreateExpenseAsync(Dictionary<string, object?> data, long? userId = null)
+    public async Task<Dictionary<string, object?>> CreateExpenseAsync(Dictionary<string, object?> data, long? userId = null, long? terminalId = null)
     {
         var amount = Math.Round(AccountService.ToDecimal(data.GetValueOrDefault("amount")), 2);
         if (amount <= 0m)
@@ -61,7 +61,7 @@ public class ExpenseService
         Dictionary<string, object?>? drawerSession = null;
         if (_accountService.IsDefaultCashDrawerAccount(account, paymentMethod))
         {
-            drawerSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false);
+            drawerSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false, terminalId);
         }
 
         var isRecurring = AccountService.IsTruthy(data.GetValueOrDefault("is_recurring"));
@@ -112,7 +112,8 @@ public class ExpenseService
                 "App\\Models\\Expense",
                 expenseId,
                 $"Expense: {catName}{payeeSuffix}",
-                userId);
+                userId,
+                terminalId);
             await _accountService.SyncCashDrawerBalanceAsync(drawerSession);
         }
 
@@ -120,7 +121,7 @@ public class ExpenseService
         return await EnrichExpenseAsync(created);
     }
 
-    public async Task<Dictionary<string, object?>> UpdateExpenseAsync(long expenseId, Dictionary<string, object?> data, long? userId = null)
+    public async Task<Dictionary<string, object?>> UpdateExpenseAsync(long expenseId, Dictionary<string, object?> data, long? userId = null, long? terminalId = null)
     {
         var expense = await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id AND deleted_at IS NULL", new { id = expenseId })
                       ?? throw new KeyNotFoundException("Expense not found.");
@@ -150,12 +151,20 @@ public class ExpenseService
         var category = await _db.QuerySingleOrDefaultAsync("SELECT * FROM expense_categories WHERE id = @categoryId", new { categoryId })
                        ?? throw new KeyNotFoundException("Expense category not found.");
 
+        // Preserve non-cash write-off expenses (e.g. Stock Adjustment/Disposal with payment_method='other' & account_id=NULL)
+        // so editing them never hijacks Cash in Hand / Cash Drawer.
+        var isNonCashWriteOff = oldAccountId == 0 && newAccountId == 0 &&
+                                string.Equals(newMethod, "other", StringComparison.OrdinalIgnoreCase);
+
         Dictionary<string, object?>? newAccount = null;
-        if (newAccountId > 0 && (newMethod.Equals(oldMethod, StringComparison.OrdinalIgnoreCase) || data.ContainsKey("account_id")))
+        if (!isNonCashWriteOff)
         {
-            newAccount = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = newAccountId });
+            if (newAccountId > 0 && (newMethod.Equals(oldMethod, StringComparison.OrdinalIgnoreCase) || data.ContainsKey("account_id")))
+            {
+                newAccount = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = newAccountId });
+            }
+            newAccount ??= await _accountService.GetDefaultAccountAsync(newMethod);
         }
-        newAccount ??= await _accountService.GetDefaultAccountAsync(newMethod);
 
         // 1. Unwind old financial effects
         Dictionary<string, object?>? oldAcc = oldAccountId > 0
@@ -174,11 +183,10 @@ public class ExpenseService
         }
 
         var oldIsDrawerCash = _accountService.IsDefaultCashDrawerAccount(oldAcc, oldMethod);
-        var newIsDrawerCash = _accountService.IsDefaultCashDrawerAccount(newAccount, newMethod);
+        var newIsDrawerCash = !isNonCashWriteOff && _accountService.IsDefaultCashDrawerAccount(newAccount, newMethod);
 
         // 2. Resolve active drawer session
-        var activeSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false);
-        var newSession = newIsDrawerCash ? activeSession : null;
+        var activeSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false, terminalId);
 
         Dictionary<string, object?>? oldOpenSession = null;
         Dictionary<string, object?>? oldOpenTx = null;
@@ -212,12 +220,24 @@ public class ExpenseService
         var dateStr = data.GetValueOrDefault("date")?.ToString() ?? expense.GetValueOrDefault("date")?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
         if (dateStr.Length >= 10) dateStr = dateStr[..10];
 
+        // Preserve original closed/null session ID on pre-shift expenses so subsequent edits or deletes
+        // never confuse a pre-shift delta adjustment row with an original same-shift expense.
         long? resolvedSessionId = null;
         if (newIsDrawerCash)
         {
-            resolvedSessionId = oldOpenSession != null
-                ? AccountService.ToLong(oldOpenSession["id"])
-                : (newSession != null ? AccountService.ToLong(newSession["id"]) : (oldSessionId > 0 ? oldSessionId : null));
+            if (oldOpenSession != null)
+            {
+                resolvedSessionId = AccountService.ToLong(oldOpenSession["id"]);
+            }
+            else if (oldSessionId > 0)
+            {
+                resolvedSessionId = oldSessionId;
+            }
+            else if (!oldIsDrawerCash && activeSession != null)
+            {
+                // Switched from non-cash (e.g. bank) into active cash drawer for the first time
+                resolvedSessionId = AccountService.ToLong(activeSession["id"]);
+            }
         }
 
         await _db.UpdateAsync("expenses", expenseId, new Dictionary<string, object?>
@@ -285,7 +305,8 @@ public class ExpenseService
                     "App\\Models\\Expense",
                     expenseId,
                     $"{drawerNote} (adjustment +{cashDelta})",
-                    userId);
+                    userId,
+                    terminalId);
             }
             else if (cashDelta < -0.001m)
             {
@@ -296,7 +317,8 @@ public class ExpenseService
                     "App\\Models\\Expense",
                     expenseId,
                     $"{drawerNote} (reduction reimbursement {Math.Abs(cashDelta)})",
-                    userId);
+                    userId,
+                    terminalId);
             }
         }
 
@@ -304,7 +326,7 @@ public class ExpenseService
         return await EnrichExpenseAsync(updated);
     }
 
-    public async Task<bool> DeleteExpenseAsync(long expenseId, long? userId = null)
+    public async Task<bool> DeleteExpenseAsync(long expenseId, long? userId = null, long? terminalId = null)
     {
         var expense = await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id AND deleted_at IS NULL", new { id = expenseId })
                       ?? throw new KeyNotFoundException("Expense not found.");
@@ -354,7 +376,7 @@ public class ExpenseService
 
             if (!handledInOpenOriginalSession)
             {
-                var activeSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false);
+                var activeSession = await _cashDrawerService.GetCurrentSessionAsync(userId, false, terminalId);
                 if (activeSession != null)
                 {
                     await _cashDrawerService.RecordTransactionAsync(
@@ -364,7 +386,8 @@ public class ExpenseService
                         "App\\Models\\Expense",
                         expenseId,
                         $"Expense Reversal: {expNo} reimbursement",
-                        userId);
+                        userId,
+                        terminalId);
                 }
             }
         }

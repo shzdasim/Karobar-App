@@ -616,4 +616,228 @@ public class CashDrawerAccountParityTests
         }
         finally { Cleanup(p); }
     }
+
+    [Fact]
+    public async Task S16_To_S19_PreShiftDoubleEdit_And_EditThenDelete_SalesPurchasesReturnsExpenses_MaintainsExactParity()
+    {
+        var (db, p, cashId, _) = await SetupFreshAsync();
+        try
+        {
+            var drawer = new CashDrawerService(db);
+            var s1 = await drawer.OpenSessionAsync(1, 5000m);
+            var s1Id = AccountService.ToLong(s1["id"]);
+
+            // Shift #1: Create Sale (+500), Purchase (-1000), Sale Return (-200), Purchase Return (+300), Expense (-400)
+            // Expected end of Shift #1 = 5000 + 500 - 1000 - 200 + 300 - 400 = 4,200
+            var sale500 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, invoice_type = "debit", sale_type = "retail", payment_method = "cash",
+                date = "2026-11-20", total_receive = 500,
+                items = new[] { new { product_id = 1, quantity = 5, price = 100, sub_total = 500 } }
+            });
+            var saleId = ExtractId(await AttachAdmin(new SaleInvoiceController(db), 1, sale500).Store());
+
+            var purch1000 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, invoice_number = "PRE-P1", invoice_type = "debit", payment_method = "cash",
+                posted_date = "2026-11-20", total_paid = 1000,
+                items = new[] { new { product_id = 1, pack_quantity = 2, pack_size = 10, unit_quantity = 20, quantity = 20, pack_purchase_price = 500, unit_purchase_price = 50, sub_total = 1000 } }
+            });
+            var piId = ExtractId(await AttachAdmin(new PurchaseInvoiceController(db), 1, purch1000).Store());
+
+            var sr200 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, unit_return_quantity = 2, unit_sale_price = 100, item_discount_percentage = 0, item_tax_percentage = 0 } }
+            });
+            var srId = ExtractId(await AttachAdmin(new SaleReturnController(db), 1, sr200).Store());
+
+            var pr300 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, return_unit_quantity = 6, unit_purchase_price = 50, item_discount_percentage = 0 } }
+            });
+            var prId = ExtractId(await AttachAdmin(new PurchaseReturnController(db), 1, pr300).Store());
+
+            var expSvc = new ExpenseService(db);
+            var exp = await expSvc.CreateExpenseAsync(new Dictionary<string, object?>
+            {
+                ["expense_category_id"] = 1, ["account_id"] = cashId, ["amount"] = 400m,
+                ["date"] = "2026-11-20", ["payment_method"] = "cash", ["description"] = "Fuel"
+            }, 1);
+            var expId = AccountService.ToLong(exp["id"]);
+
+            await AssertParityAsync(db, cashId, s1Id, 4200m, "Shift #1 before close");
+            await drawer.CloseSessionAsync(s1Id, 4200m, "Close S1", null, 1);
+
+            // Open Shift #2 with 4,200
+            var s2 = await drawer.OpenSessionAsync(1, 4200m);
+            var s2Id = AccountService.ToLong(s2["id"]);
+
+            // S16: Double-edit pre-shift Sale (500 -> 700 -> 800), then DELETE it!
+            // 4200 + 200 = 4400 -> +100 = 4500 -> delete (-800) = 3700
+            var sale700 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, invoice_type = "debit", sale_type = "retail", payment_method = "cash",
+                date = "2026-11-20", total_receive = 700,
+                items = new[] { new { product_id = 1, quantity = 7, price = 100, sub_total = 700 } }
+            });
+            await AttachAdmin(new SaleInvoiceController(db), 1, sale700).Update(saleId);
+            await AssertParityAsync(db, cashId, s2Id, 4400m, "S16a pre-shift sale edit #1 (500->700)");
+
+            var sale800 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, invoice_type = "debit", sale_type = "retail", payment_method = "cash",
+                date = "2026-11-20", total_receive = 800,
+                items = new[] { new { product_id = 1, quantity = 8, price = 100, sub_total = 800 } }
+            });
+            await AttachAdmin(new SaleInvoiceController(db), 1, sale800).Update(saleId);
+            await AssertParityAsync(db, cashId, s2Id, 4500m, "S16b pre-shift sale edit #2 (700->800)");
+
+            await AttachAdmin(new SaleInvoiceController(db), 1, "{}").Destroy(saleId, "refund");
+            await AssertParityAsync(db, cashId, s2Id, 3700m, "S16c pre-shift sale edit-then-delete (-800)");
+
+            // S17: Double-edit pre-shift Purchase (1000 -> 1200 -> 900), then DELETE it!
+            // 3700 - 200 = 3500 -> +300 = 3800 -> delete (+900) = 4700
+            var purch1200 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, invoice_number = "PRE-P1", invoice_type = "debit", payment_method = "cash",
+                posted_date = "2026-11-20", total_paid = 1200,
+                items = new[] { new { product_id = 1, pack_quantity = 2, pack_size = 10, unit_quantity = 24, quantity = 24, pack_purchase_price = 500, unit_purchase_price = 50, sub_total = 1200 } }
+            });
+            await AttachAdmin(new PurchaseInvoiceController(db), 1, purch1200).Update(piId);
+            await AssertParityAsync(db, cashId, s2Id, 3500m, "S17a pre-shift purchase edit #1 (1000->1200)");
+
+            var purch900 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, invoice_number = "PRE-P1", invoice_type = "debit", payment_method = "cash",
+                posted_date = "2026-11-20", total_paid = 900,
+                items = new[] { new { product_id = 1, pack_quantity = 1, pack_size = 10, unit_quantity = 18, quantity = 18, pack_purchase_price = 500, unit_purchase_price = 50, sub_total = 900 } }
+            });
+            await AttachAdmin(new PurchaseInvoiceController(db), 1, purch900).Update(piId);
+            await AssertParityAsync(db, cashId, s2Id, 3800m, "S17b pre-shift purchase edit #2 (1200->900)");
+
+            await AttachAdmin(new PurchaseInvoiceController(db), 1).Destroy(piId);
+            await AssertParityAsync(db, cashId, s2Id, 4700m, "S17c pre-shift purchase edit-then-delete (+900)");
+
+            // S18: Double-edit pre-shift Sale Return WITHOUT passing update_drawer_if_pre_shift (200 -> 300 -> 100), then DELETE it!
+            // 4700 - 100 = 4600 -> +200 = 4800 -> delete (+100) = 4900
+            var sr300 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, unit_return_quantity = 3, unit_sale_price = 100, item_discount_percentage = 0, item_tax_percentage = 0 } }
+            });
+            await AttachAdmin(new SaleReturnController(db), 1, sr300).Update(srId);
+            await AssertParityAsync(db, cashId, s2Id, 4600m, "S18a pre-shift sale return edit #1 omitted flag (200->300)");
+
+            var sr100 = JsonSerializer.Serialize(new
+            {
+                customer_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, unit_return_quantity = 1, unit_sale_price = 100, item_discount_percentage = 0, item_tax_percentage = 0 } }
+            });
+            await AttachAdmin(new SaleReturnController(db), 1, sr100).Update(srId);
+            await AssertParityAsync(db, cashId, s2Id, 4800m, "S18b pre-shift sale return edit #2 (300->100)");
+
+            await AttachAdmin(new SaleReturnController(db), 1).Destroy(srId);
+            await AssertParityAsync(db, cashId, s2Id, 4900m, "S18c pre-shift sale return edit-then-delete (+100)");
+
+            // S18d: Double-edit pre-shift Purchase Return WITHOUT passing flag (300 -> 400 -> 250), then DELETE it!
+            // 4900 + 100 = 5000 -> -150 = 4850 -> delete (-250) = 4600
+            var pr400 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, return_unit_quantity = 8, unit_purchase_price = 50, item_discount_percentage = 0 } }
+            });
+            await AttachAdmin(new PurchaseReturnController(db), 1, pr400).Update(prId);
+            await AssertParityAsync(db, cashId, s2Id, 5000m, "S18d pre-shift purchase return edit #1 (300->400)");
+
+            var pr250 = JsonSerializer.Serialize(new
+            {
+                supplier_id = 1, date = "2026-11-20", settlement_mode = "cash_refund", payment_method = "cash",
+                items = new[] { new { product_id = 1, return_unit_quantity = 5, unit_purchase_price = 50, item_discount_percentage = 0 } }
+            });
+            await AttachAdmin(new PurchaseReturnController(db), 1, pr250).Update(prId);
+            await AssertParityAsync(db, cashId, s2Id, 4850m, "S18e pre-shift purchase return edit #2 (400->250)");
+
+            await AttachAdmin(new PurchaseReturnController(db), 1).Destroy(prId);
+            await AssertParityAsync(db, cashId, s2Id, 4600m, "S18f pre-shift purchase return edit-then-delete (-250)");
+
+            // S19: Double-edit pre-shift Expense (400 -> 250 -> 350), then DELETE it!
+            // 4600 + 150 = 4750 -> -100 = 4650 -> delete (+350) = 5000
+            await expSvc.UpdateExpenseAsync(expId, new Dictionary<string, object?> { ["amount"] = 250m }, 1);
+            await AssertParityAsync(db, cashId, s2Id, 4750m, "S19a pre-shift expense edit #1 (400->250)");
+
+            await expSvc.UpdateExpenseAsync(expId, new Dictionary<string, object?> { ["amount"] = 350m }, 1);
+            await AssertParityAsync(db, cashId, s2Id, 4650m, "S19b pre-shift expense edit #2 (250->350)");
+
+            await expSvc.DeleteExpenseAsync(expId, 1);
+            await AssertParityAsync(db, cashId, s2Id, 5000m, "S19c pre-shift expense edit-then-delete (+350)");
+        }
+        finally { Cleanup(p); }
+    }
+
+    [Fact]
+    public async Task S20_To_S23_NonCashWriteOff_LegacyCashDrawerCode_MultiTerminalOps_And_SafeReconcile()
+    {
+        var (db, p, cashId, bankId) = await SetupFreshAsync();
+        try
+        {
+            var drawer = new CashDrawerService(db);
+            var s1 = await drawer.OpenSessionAsync(1, 3000m, "Counter 1", terminalId: 1);
+            var s1Id = AccountService.ToLong(s1["id"]);
+            var s2 = await drawer.OpenSessionAsync(2, 2000m, "Counter 2", terminalId: 2);
+            var s2Id = AccountService.ToLong(s2["id"]);
+
+            // S20: Editing a non-cash Stock Write-Off expense (payment_method='other', account_id=NULL) must NOT touch Cash in Hand or Drawer
+            var writeOffId = await db.InsertAsync("expenses", new Dictionary<string, object?>
+            {
+                ["expense_number"] = "EXP-WO-1", ["expense_category_id"] = 1, ["account_id"] = null,
+                ["cash_drawer_session_id"] = null, ["user_id"] = 1, ["amount"] = 750m,
+                ["date"] = "2026-11-20", ["payment_method"] = "other", ["description"] = "Stock Shrinkage"
+            });
+            await new ExpenseService(db).UpdateExpenseAsync(writeOffId, new Dictionary<string, object?> { ["amount"] = 900m, ["payment_method"] = "other" }, 1, terminalId: 1);
+            var balAfterWo = await db.ExecuteScalarAsync<decimal>("SELECT current_balance FROM accounts WHERE id = @id", new { id = cashId });
+            balAfterWo.Should().Be(5000m, "Non-cash stock write-off edit must never withdraw from Cash in Hand");
+
+            // S21: Legacy/imported DB where Cash in Hand has code='cash_drawer' & is_default=0 still mirrors in Cash Drawer
+            await db.ExecuteAsync("UPDATE accounts SET is_default = 0 WHERE id = @id", new { id = cashId });
+            var acctSvc = new AccountService(db);
+            var cashRow = (await db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = cashId }))!;
+            acctSvc.IsDefaultCashDrawerAccount(cashRow, "cash").Should().BeTrue("code='cash_drawer' must be recognized even if is_default=0");
+
+            // S22: Multi-terminal Expense, Transfer, Adjust on Counter 1 hit Counter 1 ONLY (Counter 2 untouched at 2,000)
+            await new ExpenseService(db).CreateExpenseAsync(new Dictionary<string, object?>
+            {
+                ["expense_category_id"] = 1, ["account_id"] = cashId, ["amount"] = 200m,
+                ["date"] = "2026-11-20", ["payment_method"] = "cash", ["description"] = "C1 Tea"
+            }, 1, terminalId: 1);
+            await acctSvc.TransferAsync(cashId, bankId, 500m, "C1 Bank drop", 1, terminalId: 1);
+            await acctSvc.AdjustAsync(cashId, "deposit", 100m, "C1 Float topup", 1, terminalId: 1);
+
+            var c1Exp = await db.ExecuteScalarAsync<decimal>("SELECT closing_balance_expected FROM cash_drawer_sessions WHERE id = @id", new { id = s1Id });
+            var c2Exp = await db.ExecuteScalarAsync<decimal>("SELECT closing_balance_expected FROM cash_drawer_sessions WHERE id = @id", new { id = s2Id });
+            var cashBal = await db.ExecuteScalarAsync<decimal>("SELECT current_balance FROM accounts WHERE id = @id", new { id = cashId });
+            c1Exp.Should().Be(2400m, "Counter 1: 3000 - 200 - 500 + 100 = 2400");
+            c2Exp.Should().Be(2000m, "Counter 2 must remain untouched");
+            cashBal.Should().Be(4400m, "Cash in Hand must equal C1 (2400) + C2 (2000) = 4400");
+
+            // S23: Simulate pre-existing legacy drift (+350 in Cash in Hand), detect via ReconciliationCheck, then fix via POST /api/cash-drawer/reconcile
+            await db.ExecuteAsync("UPDATE accounts SET current_balance = 4750 WHERE id = @id", new { id = cashId });
+            var checkRes = await AttachAdmin(new CashDrawerController(db), 1).ReconciliationCheck();
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize((checkRes as ObjectResult)!.Value)))
+            {
+                doc.RootElement.GetProperty("is_balanced").GetBoolean().Should().BeFalse();
+                doc.RootElement.GetProperty("difference").GetDecimal().Should().Be(350m);
+            }
+
+            var recRes = await AttachAdmin(new CashDrawerController(db), 1, JsonSerializer.Serialize(new { reason = "Fix legacy drift" })).ReconcileCashAccount();
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize((recRes as ObjectResult)!.Value)))
+            {
+                doc.RootElement.GetProperty("reconciled").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("cash_account_balance").GetDecimal().Should().Be(4400m);
+                doc.RootElement.GetProperty("adjustment_amount").GetDecimal().Should().Be(-350m);
+            }
+        }
+        finally { Cleanup(p); }
+    }
 }

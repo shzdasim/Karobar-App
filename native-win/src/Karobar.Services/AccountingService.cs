@@ -190,7 +190,7 @@ public class AccountingService
             "entry_number");
     }
 
-    public async Task<Dictionary<string, object?>> CreateJournalEntryAsync(Dictionary<string, object?> data, long? userId = null)
+    public async Task<Dictionary<string, object?>> CreateJournalEntryAsync(Dictionary<string, object?> data, long? userId = null, long? terminalId = null)
     {
         await EnsureDefaultsAsync();
 
@@ -340,7 +340,8 @@ public class AccountingService
                         "journal_entry",
                         entryId,
                         $"JV {entryNumber}: {description}",
-                        userId);
+                        userId,
+                        terminalId);
                 }
             }
         }
@@ -349,7 +350,7 @@ public class AccountingService
         return await EnrichJournalEntryAsync(entry);
     }
 
-    public async Task<Dictionary<string, object?>> ReverseJournalEntryAsync(long entryId, string reason, long? userId = null)
+    public async Task<Dictionary<string, object?>> ReverseJournalEntryAsync(long entryId, string reason, long? userId = null, long? terminalId = null)
     {
         var entry = await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId })
                     ?? throw new KeyNotFoundException("Journal entry not found.");
@@ -417,7 +418,8 @@ public class AccountingService
                             "journal_entry_reversal",
                             entryId,
                             $"Reversal of JV {entryNumber}: {reason}",
-                            userId);
+                            userId,
+                            terminalId);
                     }
                 }
             }

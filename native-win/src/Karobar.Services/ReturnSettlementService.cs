@@ -171,11 +171,15 @@ public class ReturnSettlementService
         var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
         var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
 
-        // Remove open-shift drawer rows for ALL legacy & current sale_return types (cash_refund, cash_return, cash_in)
-        var removedOpenRows = await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
-        var hadDrawerInOpenShift = removedOpenRows > 0;
-        var isPreShift = !hadDrawerInOpenShift && await IsPreShiftDocumentInTxAsync(
+        // Detect pre-shift BEFORE modifying open-shift drawer rows so double-editing a pre-shift return
+        // never misclassifies it as same-shift and never double-posts the full amount.
+        var isPreShift = await IsPreShiftDocumentInTxAsync(
             "sale_return", srId, saleReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+        if (!isPreShift)
+        {
+            // Remove open-shift drawer rows for ALL legacy & current sale_return types (cash_refund, cash_return, cash_in)
+            await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
+        }
         var skipDrawerCash = isPreShift && updateDrawerIfPreShift == false;
 
         // 1. Resolve old & target accounts
@@ -261,7 +265,7 @@ public class ReturnSettlementService
                     await RecordCashDrawerTransactionAsync("cash_refund", newTotal, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx, terminalId);
                 }
             }
-            else if (updateDrawerIfPreShift == true)
+            else if (updateDrawerIfPreShift != false)
             {
                 var delta = Math.Round((newIsDrawer ? newTotal : 0.0) - (oldWasDrawer ? oldAccAmount : 0.0), 2);
                 if (delta > 0)
@@ -293,8 +297,8 @@ public class ReturnSettlementService
                 await DeleteCustomerLedgerForSaleReturnAsync(srId, conn, tx);
             }
 
-            // If a pre-shift cash refund switched to credit note and user opted to update drawer, reimburse cash_in
-            if (isPreShift && updateDrawerIfPreShift == true && oldWasDrawer && oldAccAmount > 0)
+            // If a pre-shift cash refund switched to credit note and drawer update wasn't declined, reimburse cash_in
+            if (isPreShift && updateDrawerIfPreShift != false && oldWasDrawer && oldAccAmount > 0)
             {
                 var postedNumber = saleReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"SR-{srId}";
                 await RecordCashDrawerTransactionAsync("cash_in", oldAccAmount, "sale_return", srId, $"Switched pre-shift sale return #{postedNumber} to {newMode}", userId, conn, tx, terminalId);
@@ -369,11 +373,15 @@ public class ReturnSettlementService
 
             if (IsDefaultCashDrawerAccount(refundedAcc, payMethod))
             {
-                // Remove ALL matching open-shift drawer rows (handles both 'cash_refund' and legacy Laravel 'cash_return')
-                var removed = await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
+                var isPreShift = await IsPreShiftDocumentInTxAsync(
+                    "sale_return", srId, saleReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+                var removed = isPreShift
+                    ? 0
+                    : await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
                 if (removed == 0 && refundedAmount > 0)
                 {
-                    // Pre-shift return deleted while a drawer is open: record compensating cash_in to keep Account & Drawer in parity
+                    // Pre-shift return deleted while a drawer is open (even if edited earlier in this shift):
+                    // record full compensating cash_in to keep Account & Drawer in 100% parity
                     await RecordCashDrawerTransactionAsync(
                         "cash_in",
                         refundedAmount,
@@ -476,10 +484,12 @@ public class ReturnSettlementService
         var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
         var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
 
-        var removedOpenRows = await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
-        var hadDrawerInOpenShift = removedOpenRows > 0;
-        var isPreShift = !hadDrawerInOpenShift && await IsPreShiftDocumentInTxAsync(
+        var isPreShift = await IsPreShiftDocumentInTxAsync(
             "purchase_return", prId, purchaseReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+        if (!isPreShift)
+        {
+            await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
+        }
         var skipDrawerCash = isPreShift && updateDrawerIfPreShift == false;
 
         Dictionary<string, object?>? existingAccTxn = null;
@@ -563,7 +573,7 @@ public class ReturnSettlementService
                     await RecordCashDrawerTransactionAsync("purchase_return", newTotal, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx, terminalId);
                 }
             }
-            else if (updateDrawerIfPreShift == true)
+            else if (updateDrawerIfPreShift != false)
             {
                 var delta = Math.Round((newIsDrawer ? newTotal : 0.0) - (oldWasDrawer ? oldAccAmount : 0.0), 2);
                 if (delta > 0)
@@ -595,7 +605,7 @@ public class ReturnSettlementService
                 await DeleteSupplierLedgerForPurchaseReturnAsync(prId, conn, tx);
             }
 
-            if (isPreShift && updateDrawerIfPreShift == true && oldWasDrawer && oldAccAmount > 0)
+            if (isPreShift && updateDrawerIfPreShift != false && oldWasDrawer && oldAccAmount > 0)
             {
                 var postedNumber = purchaseReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"PR-{prId}";
                 await RecordCashDrawerTransactionAsync("cash_out", oldAccAmount, "purchase_return", prId, $"Switched pre-shift purchase return #{postedNumber} to {newMode}", userId, conn, tx, terminalId);
@@ -670,7 +680,11 @@ public class ReturnSettlementService
 
             if (IsDefaultCashDrawerAccount(refundedAcc, payMethod))
             {
-                var removed = await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
+                var isPreShift = await IsPreShiftDocumentInTxAsync(
+                    "purchase_return", prId, purchaseReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+                var removed = isPreShift
+                    ? 0
+                    : await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
                 if (removed == 0 && refundedAmount > 0)
                 {
                     await RecordCashDrawerTransactionAsync(
@@ -1640,7 +1654,19 @@ public class ReturnSettlementService
     {
         if (!await _db.HasTableAsync("cash_drawer_sessions") || !await _db.HasTableAsync("cash_drawer_transactions")) return false;
 
-        if (await HasAnyCashDrawerTransactionForRefAsync(referenceType, referenceId, conn, tx))
+        // Check ONLY closed/historical drawer sessions so prior open-shift adjustment rows for a pre-shift doc
+        // never trick subsequent edits or deletions into treating it as same-shift.
+        var hasClosedShiftRow = await _db.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(1)
+              FROM cash_drawer_transactions cdt
+              INNER JOIN cash_drawer_sessions cds ON cds.id = cdt.session_id
+              WHERE cdt.reference_type = @refType
+                AND cdt.reference_id = @refId
+                AND LOWER(COALESCE(cds.status, '')) != 'open'",
+            new { refType = referenceType, refId = referenceId },
+            conn,
+            tx) > 0;
+        if (hasClosedShiftRow)
         {
             return true;
         }

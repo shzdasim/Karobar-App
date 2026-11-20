@@ -216,7 +216,7 @@ public class AccountingController : ApiControllerBase
 
         try
         {
-            var entry = await _accountingService.CreateJournalEntryAsync(data, CurrentUserId);
+            var entry = await _accountingService.CreateJournalEntryAsync(data, CurrentUserId, CurrentTerminalId);
             return StatusCode(201, new Dictionary<string, object?>
             {
                 ["message"] = $"Journal Voucher {entry.GetValueOrDefault("entry_number")} posted successfully.",
@@ -247,7 +247,7 @@ public class AccountingController : ApiControllerBase
 
         try
         {
-            var reversed = await _accountingService.ReverseJournalEntryAsync(journalEntry, reason, CurrentUserId);
+            var reversed = await _accountingService.ReverseJournalEntryAsync(journalEntry, reason, CurrentUserId, CurrentTerminalId);
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = $"Journal Voucher {reversed.GetValueOrDefault("entry_number")} reversed.",

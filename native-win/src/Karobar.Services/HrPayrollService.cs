@@ -562,7 +562,8 @@ public class HrPayrollService
 
     public async Task<Dictionary<string, object?>> RecordAdvanceTransactionAsync(
         Dictionary<string, object?> data,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         await EnsureTablesAsync();
 
@@ -682,7 +683,8 @@ public class HrPayrollService
                     "employee_advance",
                     advanceId,
                     txDesc,
-                    userId);
+                    userId,
+                    terminalId);
             }
         }
 
@@ -957,7 +959,8 @@ public class HrPayrollService
     public async Task<Dictionary<string, object?>> PayPayrollItemAsync(
         long itemId,
         Dictionary<string, object?>? paymentData = null,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         await EnsureTablesAsync();
 
@@ -1095,7 +1098,7 @@ public class HrPayrollService
             var accountSvc = new AccountService(_db);
             var cashDrawerSvc = new CashDrawerService(_db);
             var isDrawerCash = accountSvc.IsDefaultCashDrawerAccount(account, expensePaymentMethod);
-            var drawerSession = isDrawerCash ? await cashDrawerSvc.GetCurrentSessionAsync(userId, false) : null;
+            var drawerSession = isDrawerCash ? await cashDrawerSvc.GetCurrentSessionAsync(userId, false, terminalId) : null;
 
             var expensePayload = new Dictionary<string, object?>
             {
@@ -1133,7 +1136,8 @@ public class HrPayrollService
                     "expense",
                     expenseId.Value,
                     payrollDesc,
-                    userId);
+                    userId,
+                    terminalId);
             }
         }
 
@@ -1166,7 +1170,8 @@ public class HrPayrollService
     public async Task<Dictionary<string, object?>> PayAllInRunAsync(
         long runId,
         Dictionary<string, object?>? paymentData = null,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         await EnsureTablesAsync();
 
@@ -1180,7 +1185,7 @@ public class HrPayrollService
         foreach (var item in unpaidItems)
         {
             var itemId = Convert.ToInt64(item["id"]);
-            await PayPayrollItemAsync(itemId, paymentData, userId);
+            await PayPayrollItemAsync(itemId, paymentData, userId, terminalId);
         }
 
         return await RecalculateRunTotalsAsync(runId);

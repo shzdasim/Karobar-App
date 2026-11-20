@@ -1137,7 +1137,7 @@ public class CustomerLedgerController : ApiControllerBase
     {
         var paymentId = Convert.ToInt64(payment["id"]);
         var paymentService = new PaymentService(Db);
-        await paymentService.ReversePaymentAsync(paymentId, "Deleted from Customer Ledger", CurrentUserId);
+        await paymentService.ReversePaymentAsync(paymentId, "Deleted from Customer Ledger", CurrentUserId, CurrentTerminalId);
     }
 
     private async Task<string> RenderCustomerLedgerHtmlAsync(

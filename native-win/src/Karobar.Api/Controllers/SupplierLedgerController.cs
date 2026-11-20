@@ -1102,7 +1102,7 @@ public class SupplierLedgerController : ApiControllerBase
     {
         var paymentId = Convert.ToInt64(payment["id"]);
         var paymentService = new PaymentService(Db);
-        await paymentService.ReversePaymentAsync(paymentId, "Deleted from Supplier Ledger", CurrentUserId);
+        await paymentService.ReversePaymentAsync(paymentId, "Deleted from Supplier Ledger", CurrentUserId, CurrentTerminalId);
     }
 
     private async Task<string> RenderSupplierLedgerHtmlAsync(
