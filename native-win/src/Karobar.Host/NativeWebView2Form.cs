@@ -1064,7 +1064,7 @@ public sealed class NativeWebView2Form : Form
 
                 // In Multi-PC Terminal Mode, if the Store Server becomes unreachable mid-session,
                 // navigate cleanly to the local offline recovery page instead of showing Edge's raw error page.
-                if (!navArgs.IsSuccess && _bridge.NetworkConfig.IsTerminalMode())
+                if (!navArgs.IsSuccess && _windowManager.NetworkConfig.IsTerminalMode())
                 {
                     var currentUri = core.Source ?? "";
                     if (!currentUri.Contains("terminal-offline.html", StringComparison.OrdinalIgnoreCase) &&
