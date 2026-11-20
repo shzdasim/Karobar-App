@@ -1389,6 +1389,52 @@ public sealed class KarobarDesktopBridge
         return host == "github.com" || host.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
     }
 
+    public static (bool CanPatch, string? Reason) EvaluatePatchEligibility(
+        LocalVersionMeta local,
+        string? patchUrl,
+        string? remoteLayout,
+        string? remoteDeps,
+        IReadOnlyCollection<string>? compatibleDepsFingerprints,
+        string? minPatchVer,
+        bool hasBundledWaRuntime)
+    {
+        if (string.IsNullOrWhiteSpace(patchUrl))
+        {
+            return (false, "missing_patch_url");
+        }
+
+        var layoutCompatible = string.IsNullOrEmpty(remoteLayout) ||
+                               string.Equals(remoteLayout, local.RuntimeLayout, StringComparison.OrdinalIgnoreCase);
+        if (!layoutCompatible)
+        {
+            return (false, "runtime_layout_mismatch");
+        }
+
+        var depsCompatible = string.IsNullOrEmpty(remoteDeps) ||
+                             (!string.IsNullOrEmpty(local.DepsFingerprint) &&
+                              (string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase) ||
+                               (compatibleDepsFingerprints != null &&
+                                compatibleDepsFingerprints.Any(fp =>
+                                    !string.IsNullOrWhiteSpace(fp) &&
+                                    string.Equals(fp.Trim(), local.DepsFingerprint, StringComparison.OrdinalIgnoreCase)))));
+        if (!depsCompatible)
+        {
+            return (false, "deps_fingerprint_mismatch");
+        }
+
+        if (!hasBundledWaRuntime)
+        {
+            return (false, "missing_whatsapp_runtime");
+        }
+
+        if (CompareSemverNewer(minPatchVer ?? "2.0.0", local.Version))
+        {
+            return (false, "below_min_patch_version");
+        }
+
+        return (true, null);
+    }
+
     public async Task<object> CheckForUpdatesAsync(JsonElement? payload = null, CancellationToken cancellationToken = default)
     {
         var local = ReadLocalVersionMeta();
@@ -1405,6 +1451,7 @@ public sealed class KarobarDesktopBridge
         };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Karobar-App-Desktop-Updater/2.0");
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
 
         // 1. Primary manifest: dedicated `native-latest` rolling channel (never collides with Electron `latest`)
         string[] manifestCandidates =
@@ -1440,15 +1487,19 @@ public sealed class KarobarDesktopBridge
                     var remoteLayout = remote.TryGetProperty("runtime_layout", out var rlProp) && rlProp.ValueKind == JsonValueKind.String
                         ? rlProp.GetString() ?? ""
                         : "";
-                    var layoutCompatible = string.IsNullOrEmpty(remoteLayout) ||
-                                           string.Equals(remoteLayout, local.RuntimeLayout, StringComparison.OrdinalIgnoreCase);
 
                     var remoteDeps = remote.TryGetProperty("deps_fingerprint", out var rdProp) && rdProp.ValueKind == JsonValueKind.String
                         ? rdProp.GetString() ?? ""
                         : "";
-                    var depsCompatible = string.IsNullOrEmpty(remoteDeps) ||
-                                         (!string.IsNullOrEmpty(local.DepsFingerprint) &&
-                                          string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase));
+
+                    List<string>? compatibleDeps = null;
+                    if (remote.TryGetProperty("compatible_deps_fingerprints", out var cdfProp) && cdfProp.ValueKind == JsonValueKind.Array)
+                    {
+                        compatibleDeps = cdfProp.EnumerateArray()
+                            .Where(e => e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString()))
+                            .Select(e => e.GetString()!.Trim())
+                            .ToList();
+                    }
 
                     // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
                     // require a one-time zero-data-loss full installer upgrade instead of a differential patch.
@@ -1456,17 +1507,21 @@ public sealed class KarobarDesktopBridge
                         (File.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "node", "node.exe")) &&
                          Directory.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys")));
 
-                    var canPatch = !string.IsNullOrWhiteSpace(patchUrl) &&
-                                   layoutCompatible &&
-                                   depsCompatible &&
-                                   hasBundledWaRuntime &&
-                                   !CompareSemverNewer(minPatchVer, local.Version);
+                    var (canPatch, patchIneligibleReason) = EvaluatePatchEligibility(
+                        local,
+                        patchUrl,
+                        remoteLayout,
+                        remoteDeps,
+                        compatibleDeps,
+                        minPatchVer,
+                        hasBundledWaRuntime);
 
                     return new
                     {
                         ok = true,
                         update_available = isNewer,
                         is_patch = canPatch,
+                        patch_ineligible_reason = patchIneligibleReason,
                         app_name = "Karobar-App Native",
                         current_version = local.Version,
                         current_build = local.BuildNumber,
@@ -1497,6 +1552,7 @@ public sealed class KarobarDesktopBridge
                             ? iSha.GetString()
                             : null,
                         deps_fingerprint = remoteDeps,
+                        local_deps_fingerprint = local.DepsFingerprint,
                         min_patch_version = minPatchVer,
                         release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
                             ? ru.GetString()

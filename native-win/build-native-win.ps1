@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Automated Native Windows Single-Binary (.NET 9 + Kestrel + WebView2) Build,
     Authenticode Code Signing & Zero-Data-Loss Inno Setup Release Pipeline for Karobar-App Native.
@@ -232,18 +232,49 @@ try {
     Pop-Location
 }
 
-# Compute deterministic third-party DLL (including native runtimes/) + bundled WhatsApp Node/Baileys runtime fingerprint BEFORE Inno Setup & OTA patch packaging
-# so older installs lacking runtime\node\node.exe or runtime\whatsapp-agent\node_modules or native runtimes automatically receive the full installer once.
-$ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" -Recurse | Where-Object {
-    $_.Name -notlike "Karobar*" -and
-    $_.FullName -notlike "*\runtime\whatsapp-agent\*"
-} | Sort-Object FullName | ForEach-Object {
-    $rel = $_.FullName.Substring($StageDir.Length).TrimStart('\', '/')
-    "${rel}:$($_.Length)"
+# Compute deterministic DECLARATIVE runtime dependency fingerprint BEFORE Inno Setup & OTA patch packaging.
+# IMPORTANT: Hash ONLY intentional dependency declarations (TargetFrameworks, pinned NuGet PackageReferences,
+# major Node.js version, and WhatsApp Agent package versions) — NEVER volatile byte sizes of .NET 9.0.x framework
+# DLLs or node.exe, which shift on routine GitHub Actions runner servicing updates and would otherwise force
+# unnecessary 120 MB full installer downloads instead of the ~4 MB differential OTA patch.
+$TargetFrameworks = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+$NuGetPackages    = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+
+$ProjectXmlPaths = @()
+$DirBuildProps = Join-Path $RepoRoot "native-win\Directory.Build.props"
+if (Test-Path $DirBuildProps) { $ProjectXmlPaths += $DirBuildProps }
+$ProjectXmlPaths += Get-ChildItem -Path (Join-Path $RepoRoot "native-win\src") -Filter "*.csproj" -Recurse |
+    Where-Object { $_.BaseName -ne "Karobar.Precheck" } |
+    Sort-Object FullName |
+    Select-Object -ExpandProperty FullName
+
+foreach ($xmlPath in $ProjectXmlPaths) {
+    [xml]$projXml = Get-Content -Path $xmlPath -Raw
+    foreach ($tfNode in $projXml.SelectNodes("//TargetFramework")) {
+        $tfVal = ($tfNode.InnerText).Trim()
+        if ($tfVal) { [void]$TargetFrameworks.Add($tfVal.ToLowerInvariant()) }
+    }
+    foreach ($pkgNode in $projXml.SelectNodes("//PackageReference")) {
+        $inc = $pkgNode.GetAttribute("Include")
+        $ver = $pkgNode.GetAttribute("Version")
+        if ($inc) {
+            [void]$NuGetPackages.Add("$($inc.Trim().ToLowerInvariant())=$($ver.Trim().ToLowerInvariant())")
+        }
+    }
+}
+
+$NodeMajor = "v22"
+if (Test-Path $BundledNodeExe) {
+    $detectedNodeVer = (& $BundledNodeExe -v 2>$null)
+    if ($detectedNodeVer -match '^(v\d+)\.') { $NodeMajor = $Matches[1].ToLowerInvariant() }
+}
+$WaDepEntries = @($WaManifest.dependencies.GetEnumerator() | Sort-Object Key | ForEach-Object {
+    "$($_.Key.ToLowerInvariant())=$($_.Value.ToString().Trim().ToLowerInvariant())"
 }) -join "|"
-$NodeExeSize = if (Test-Path $BundledNodeExe) { (Get-Item $BundledNodeExe).Length } else { 0 }
-$WaPkgRaw = if (Test-Path (Join-Path $WaRuntimeDir "package.json")) { (Get-Content (Join-Path $WaRuntimeDir "package.json") -Raw).Trim() } else { "" }
-$FingerprintSeed = "$ThirdPartyDllList|wa-node:$NodeExeSize|wa-pkg:$WaPkgRaw"
+
+$SortedTfms = ($TargetFrameworks | Sort-Object) -join ","
+$SortedPkgs = ($NuGetPackages | Sort-Object) -join "|"
+$FingerprintSeed = "v2-decl|tfm:$SortedTfms|nuget:$SortedPkgs|wa-node:$NodeMajor|wa-pkg:$WaDepEntries"
 $Sha = [System.Security.Cryptography.SHA256]::Create()
 $DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($FingerprintSeed))
 $DepsHash8 = ([System.BitConverter]::ToString($DepsHashBytes) -replace "-", "").ToLower().Substring(0, 8)
@@ -254,7 +285,7 @@ $VersionMeta["deps_fingerprint"] = $DepsHash8
 $VersionMetaJson = $VersionMeta | ConvertTo-Json -Depth 4
 Set-Content -Path (Join-Path $RepoRoot "public\version.json") -Value $VersionMetaJson -Encoding UTF8
 Set-Content -Path (Join-Path $StageDir "public\version.json") -Value $VersionMetaJson -Encoding UTF8
-Write-Host "    Stamped deps_fingerprint=$DepsHash8 into public\version.json (layout=$RuntimeLayoutTag)" -ForegroundColor Gray
+Write-Host "    Stamped stable declarative deps_fingerprint=$DepsHash8 into public\version.json (layout=$RuntimeLayoutTag)" -ForegroundColor Gray
 
 Write-Host "==> [4/6] Verifying Native CLI Pre-Install Machine ID & License Engine (Isolated {tmp} Simulation)..." -ForegroundColor Cyan
 if ($IsWindows -or $env:OS -eq "Windows_NT") {
@@ -501,8 +532,9 @@ $LatestReleaseManifest = [ordered]@{
     release_name      = "Karobar-App Native v$AppVersion (Build #$BuildNumber)"
     released_at       = $ReleasedAt
     notes             = "Native Windows C#/.NET 9 + Kestrel + Waseela Multi-Tab WebView2 Release (Fast Differential Patch: ${PatchSizeMB} MB)."
-    runtime_layout    = "split-v2"
-    deps_fingerprint  = $DepsHash8
+    runtime_layout             = "split-v2"
+    deps_fingerprint           = $DepsHash8
+    compatible_deps_fingerprints = @($DepsHash8, "5397589b")
     download_url      = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup.exe"
     installer_size    = $InstallerSize
     installer_sha256  = $InstallerSha256

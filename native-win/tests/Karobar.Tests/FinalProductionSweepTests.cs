@@ -347,4 +347,48 @@ public class FinalProductionSweepTests
             await CleanupAsync(app, client, tempRoot, prevRoot);
         }
     }
+
+    [Fact]
+    public void WaveF6_OtaPatchEligibility_MatchesDeclarativeAndCompatibleDepsFingerprints()
+    {
+        var patchUrl = "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Patch.zip";
+        var local = new LocalVersionMeta
+        {
+            Version = "2.0.39",
+            BuildNumber = 39,
+            RuntimeLayout = "split-v2",
+            DepsFingerprint = "abcd1234"
+        };
+
+        // 1. Exact declarative deps_fingerprint match => fast ~4MB differential patch
+        var exact = KarobarDesktopBridge.EvaluatePatchEligibility(
+            local, patchUrl, "split-v2", "abcd1234", null, "2.0.0", hasBundledWaRuntime: true);
+        exact.CanPatch.Should().BeTrue();
+        exact.Reason.Should().BeNull();
+
+        // 2. Compatible previous deps_fingerprint listed in manifest => still eligible for fast patch
+        var compat = KarobarDesktopBridge.EvaluatePatchEligibility(
+            local, patchUrl, "split-v2", "efgh5678", ["efgh5678", "ABCD1234"], "2.0.0", hasBundledWaRuntime: true);
+        compat.CanPatch.Should().BeTrue();
+        compat.Reason.Should().BeNull();
+
+        // 3. Genuine mismatch => full installer with clear diagnostic reason
+        var mismatch = KarobarDesktopBridge.EvaluatePatchEligibility(
+            local, patchUrl, "split-v2", "99999999", ["88888888"], "2.0.0", hasBundledWaRuntime: true);
+        mismatch.CanPatch.Should().BeFalse();
+        mismatch.Reason.Should().Be("deps_fingerprint_mismatch");
+
+        // 4. Missing WhatsApp bundled Node/Baileys runtime => full installer once
+        var missingWa = KarobarDesktopBridge.EvaluatePatchEligibility(
+            local, patchUrl, "split-v2", "abcd1234", null, "2.0.0", hasBundledWaRuntime: false);
+        missingWa.CanPatch.Should().BeFalse();
+        missingWa.Reason.Should().Be("missing_whatsapp_runtime");
+
+        // 5. Legacy layout mismatch => full installer
+        var badLayout = KarobarDesktopBridge.EvaluatePatchEligibility(
+            new LocalVersionMeta { Version = "2.0.20", RuntimeLayout = "single-file", DepsFingerprint = "abcd1234" },
+            patchUrl, "split-v2", "abcd1234", null, "2.0.0", hasBundledWaRuntime: true);
+        badLayout.CanPatch.Should().BeFalse();
+        badLayout.Reason.Should().Be("runtime_layout_mismatch");
+    }
 }
