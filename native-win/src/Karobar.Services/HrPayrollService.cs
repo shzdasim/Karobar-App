@@ -1092,7 +1092,12 @@ public class HrPayrollService
                 "expenses",
                 "expense_number");
 
-            expenseId = await _db.InsertAsync("expenses", new Dictionary<string, object?>
+            var accountSvc = new AccountService(_db);
+            var cashDrawerSvc = new CashDrawerService(_db);
+            var isDrawerCash = accountSvc.IsDefaultCashDrawerAccount(account, expensePaymentMethod);
+            var drawerSession = isDrawerCash ? await cashDrawerSvc.GetCurrentSessionAsync(userId, false) : null;
+
+            var expensePayload = new Dictionary<string, object?>
             {
                 ["expense_number"] = expNo,
                 ["expense_category_id"] = catId,
@@ -1105,20 +1110,24 @@ public class HrPayrollService
                 ["payee"] = empName,
                 ["description"] = $"Payroll ({periodMonth}) for {empName} ({empCode})",
                 ["is_recurring"] = 0
-            });
+            };
+            if (drawerSession != null && await _db.HasColumnAsync("expenses", "cash_drawer_session_id"))
+            {
+                expensePayload["cash_drawer_session_id"] = AccountService.ToLong(drawerSession["id"]);
+            }
 
-            var accountSvc = new AccountService(_db);
+            expenseId = await _db.InsertAsync("expenses", expensePayload);
+
             var payrollDesc = $"Payroll ({periodMonth}) for {empName} ({empCode})";
             if (account != null && accountId.HasValue)
             {
                 await accountSvc.WithdrawAsync(account, netPayable, "expense", expenseId.Value, payrollDesc, userId);
             }
 
-            if (accountSvc.IsDefaultCashDrawerAccount(account, expensePaymentMethod))
+            if (isDrawerCash)
             {
-                var cashDrawerSvc = new CashDrawerService(_db);
                 await cashDrawerSvc.RecordTransactionAsync(
-                    null,
+                    drawerSession,
                     "expense",
                     netPayable,
                     "expense",

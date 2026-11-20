@@ -34,7 +34,8 @@ public class PaymentService
     public async Task<Dictionary<string, object?>> RecordCustomerPaymentAsync(
         long customerId,
         Dictionary<string, object?> data,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         var customer = await _db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = customerId })
                        ?? throw new KeyNotFoundException("Customer not found.");
@@ -219,7 +220,7 @@ public class PaymentService
             }
         }
 
-        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && !isCheque)
+        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared"))
         {
             var cashDrawerService = new CashDrawerService(_db);
             await cashDrawerService.RecordTransactionAsync(
@@ -229,7 +230,8 @@ public class PaymentService
                 "payment",
                 paymentId,
                 $"Customer payment {paymentNumber}",
-                userId);
+                userId,
+                terminalId);
         }
 
         var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
@@ -239,7 +241,8 @@ public class PaymentService
     public async Task<Dictionary<string, object?>> RecordSupplierPaymentAsync(
         long supplierId,
         Dictionary<string, object?> data,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         var supplier = await _db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id = supplierId })
                        ?? throw new KeyNotFoundException("Supplier not found.");
@@ -445,7 +448,7 @@ public class PaymentService
             }
         }
 
-        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && !isCheque && netCashDisbursed > 0m)
+        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared") && netCashDisbursed > 0m)
         {
             var whtNote = whtAmount > 0m ? $" [Net of WHT: {whtAmount}]" : "";
             var cashDrawerService = new CashDrawerService(_db);
@@ -456,14 +459,15 @@ public class PaymentService
                 "payment",
                 paymentId,
                 $"Supplier payment {paymentNumber}{whtNote}",
-                userId);
+                userId,
+                terminalId);
         }
 
         var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(finalPayment);
     }
 
-    public async Task<Dictionary<string, object?>> ReversePaymentAsync(long paymentId, string reason, long? userId = null)
+    public async Task<Dictionary<string, object?>> ReversePaymentAsync(long paymentId, string reason, long? userId = null, long? terminalId = null)
     {
         var payment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })
                       ?? throw new KeyNotFoundException("Payment not found.");
@@ -590,7 +594,7 @@ public class PaymentService
             if (accountService.IsDefaultCashDrawerAccount(account, payMethod))
             {
                 var cashDrawerService = new CashDrawerService(_db);
-                await cashDrawerService.HandlePaymentReversalAsync(payment, reason, userId);
+                await cashDrawerService.HandlePaymentReversalAsync(payment, reason, userId, null, terminalId);
             }
         }
 
@@ -605,7 +609,8 @@ public class PaymentService
         string newStatus,
         long? accountId = null,
         string? reason = null,
-        long? userId = null)
+        long? userId = null,
+        long? terminalId = null)
     {
         var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })
                      ?? throw new KeyNotFoundException("Payment not found.");
@@ -691,6 +696,22 @@ public class PaymentService
                     var pName = sup?.GetValueOrDefault("name")?.ToString() ?? "Supplier";
                     await accountService.WithdrawAsync(account, amount, "supplier_payment", paymentId, $"Cheque cleared {payNo} ({pName})", userId);
                 }
+
+                // If the cheque resolved to the default Cash Drawer account (e.g., no active bank account exists), mirror in Cash Drawer
+                if (accountService.IsDefaultCashDrawerAccount(account, "cheque") && amount > 0m)
+                {
+                    var cashDrawerService = new CashDrawerService(_db);
+                    var drawerType = partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) ? "customer_payment" : "supplier_payment";
+                    await cashDrawerService.RecordTransactionAsync(
+                        null,
+                        drawerType,
+                        amount,
+                        "payment",
+                        paymentId,
+                        $"Cheque cleared {payNo}",
+                        userId,
+                        terminalId);
+                }
             }
 
             await _db.UpdateAsync("payments", paymentId, upd);
@@ -702,7 +723,7 @@ public class PaymentService
         var bounceReason = !string.IsNullOrWhiteSpace(reason) ? reason : "Cheque Dishonoured / Bounced";
         if (!status.Equals("reversed", StringComparison.OrdinalIgnoreCase))
         {
-            await ReversePaymentAsync(paymentId, bounceReason, userId);
+            await ReversePaymentAsync(paymentId, bounceReason, userId, terminalId);
         }
 
         await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?>

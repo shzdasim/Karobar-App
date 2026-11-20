@@ -515,7 +515,8 @@ public class SaleInvoiceController : ApiControllerBase
                                 $"Cash sale {postedNumber} (split)",
                                 CurrentUserId,
                                 conn,
-                                tx);
+                                tx,
+                                terminalId);
                         }
                     }
 
@@ -560,7 +561,8 @@ public class SaleInvoiceController : ApiControllerBase
                                 $"Cash sale {postedNumber}",
                                 CurrentUserId,
                                 conn,
-                                tx);
+                                tx,
+                                terminalId);
                         }
                     }
                 }
@@ -770,9 +772,13 @@ public class SaleInvoiceController : ApiControllerBase
                 var postedNumber = rawData.GetValueOrDefault("posted_number")?.ToString() ?? existing.GetValueOrDefault("posted_number")?.ToString() ?? $"SI-{id:D6}";
                 var newSaleType = (rawData.GetValueOrDefault("sale_type")?.ToString() ?? existing.GetValueOrDefault("sale_type")?.ToString() ?? "retail").ToLowerInvariant();
                 var newPayMethod = rawData.GetValueOrDefault("payment_method")?.ToString() ?? existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-
-                var resolvedAccountId = ToNullableLong(rawData.GetValueOrDefault("account_id"))
-                                        ?? ToNullableLong(existing.GetValueOrDefault("account_id"));
+                var oldPayMethodRaw = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var explicitUpdateAccId = ToNullableLong(rawData.GetValueOrDefault("account_id"));
+                // When payment_method changes without an explicit account_id, resolve default account for the new method instead of keeping the old Cash in Hand account_id
+                var resolvedAccountId = explicitUpdateAccId
+                                        ?? (string.Equals(newPayMethod, oldPayMethodRaw, StringComparison.OrdinalIgnoreCase)
+                                            ? ToNullableLong(existing.GetValueOrDefault("account_id"))
+                                            : null);
                 var updateData = new Dictionary<string, object?>
                 {
                     ["customer_id"] = customerId,
@@ -904,82 +910,156 @@ public class SaleInvoiceController : ApiControllerBase
                     }
                 }
 
-                // Sync financial accounts & cash drawer on sale invoice update
-                var oldCashRecv = string.Equals(existing.GetValueOrDefault("invoice_type")?.ToString(), "credit", StringComparison.OrdinalIgnoreCase)
-                    ? ToDouble(existing.GetValueOrDefault("total_receive"))
-                    : (ToDouble(existing.GetValueOrDefault("total_receive")) > 0 ? ToDouble(existing.GetValueOrDefault("total_receive")) : ToDouble(existing.GetValueOrDefault("total")));
-                var newCashRecv = newInvoiceType == "credit"
-                    ? submittedTotalReceive
-                    : (submittedTotalReceive > 0 ? submittedTotalReceive : serverTotal);
-                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                var oldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
-                var newAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
-                var oldAccId = oldAcc != null ? ToLong(oldAcc["id"]) : 0L;
-                var newAccId = newAcc != null ? ToLong(newAcc["id"]) : 0L;
-
-                if (oldAccId == newAccId && newAcc != null)
-                {
-                    var accDelta = Math.Round(newCashRecv - oldCashRecv, 2);
-                    if (accDelta > 0)
-                    {
-                        await _settlementService.DepositToAccountAsync(newAcc, accDelta, "sale_invoice", id, $"Edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                    else if (accDelta < 0)
-                    {
-                        await _settlementService.WithdrawFromAccountAsync(newAcc, Math.Abs(accDelta), "sale_invoice", id, $"Edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                }
-                else
-                {
-                    if (oldAcc != null && oldCashRecv > 0)
-                    {
-                        await _settlementService.WithdrawFromAccountAsync(oldAcc, oldCashRecv, "sale_invoice", id, $"Reassigned account for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                    if (newAcc != null && newCashRecv > 0)
-                    {
-                        await _settlementService.DepositToAccountAsync(newAcc, newCashRecv, "sale_invoice", id, $"Payment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                }
-
-                // Sync cash drawer honoring update_drawer / update_drawer_if_pre_shift without mutating closed shifts
+                // Sync financial accounts & cash drawer on sale invoice update (handling split legs, allocated credit payments, pre-shift edits & recalculation)
                 bool? updateDrawerFlag = null;
                 if (rawData.TryGetValue("update_drawer", out var udObj) && udObj != null)
                     updateDrawerFlag = IsTruthy(udObj);
                 else if (rawData.TryGetValue("update_drawer_if_pre_shift", out var udpObj) && udpObj != null)
                     updateDrawerFlag = IsTruthy(udpObj);
 
-                if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
+                var termId = CurrentTerminalId;
+                var removedOpenRows = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
+                var isPreShift = removedOpenRows == 0 && await _settlementService.IsPreShiftDocumentInTxAsync(
+                    "sale_invoice", id, existing.GetValueOrDefault("created_at")?.ToString(), conn, tx, operatorUserId, termId);
+                var skipDrawerCash = isPreShift && updateDrawerFlag == false;
+
+                // 1. Reconstruct prior net per-account legs from account_transactions (covering split legs & prior updates)
+                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var oldRawRecv = string.Equals(existing.GetValueOrDefault("invoice_type")?.ToString(), "credit", StringComparison.OrdinalIgnoreCase)
+                    ? ToDouble(existing.GetValueOrDefault("total_receive"))
+                    : (ToDouble(existing.GetValueOrDefault("total_receive")) > 0 ? ToDouble(existing.GetValueOrDefault("total_receive")) : ToDouble(existing.GetValueOrDefault("total")));
+                var oldDirectRecv = Math.Max(0.0, Math.Round(oldRawRecv - allocatedOnInvoice, 2));
+
+                var newRawRecv = newInvoiceType == "credit"
+                    ? submittedTotalReceive
+                    : (submittedTotalReceive > 0 ? submittedTotalReceive : serverTotal);
+                var newDirectRecv = Math.Max(0.0, Math.Round(newRawRecv - allocatedOnInvoice, 2));
+
+                var priorNetByAccount = new Dictionary<long, double>();
+                var accCache = new Dictionary<long, Dictionary<string, object?>>();
+
+                if (await Db.HasTableAsync("account_transactions"))
                 {
-                    var removedOpenRows = await Db.ExecuteAsync(
-                        @"DELETE FROM cash_drawer_transactions
-                          WHERE reference_type = 'sale_invoice'
-                            AND reference_id = @id
-                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+                    var priorTxns = await Db.QueryListAsync(
+                        "SELECT account_id, type, amount FROM account_transactions WHERE reference_type IN ('sale_invoice', 'sale_invoice_update') AND reference_id = @id ORDER BY id ASC",
                         new { id }, conn, tx);
-                    var hadHistorical = removedOpenRows == 0 &&
-                        await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM cash_drawer_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id", new { id }, conn, tx) > 0;
-
-                    var oldWasDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(oldAcc, oldPayMethodStr);
-                    var newIsDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(newAcc, newPayMethod);
-
-                    if (removedOpenRows > 0 || !hadHistorical)
+                    foreach (var at in priorTxns)
                     {
-                        if (newIsDrawer && newCashRecv > 0 && !(hadHistorical == false && updateDrawerFlag == false && oldWasDrawer))
+                        var aid = ToLong(at.GetValueOrDefault("account_id"));
+                        if (aid <= 0) continue;
+                        var aType = (at.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                        var amt = ToDouble(at.GetValueOrDefault("amount"));
+                        var signed = aType is "deposit" or "credit" or "transfer_in" ? amt : -amt;
+                        priorNetByAccount[aid] = Math.Round(priorNetByAccount.GetValueOrDefault(aid) + signed, 2);
+                    }
+                }
+
+                if (priorNetByAccount.Count == 0 && oldDirectRecv > 0)
+                {
+                    var fallbackOldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
+                    if (fallbackOldAcc != null)
+                    {
+                        var oid = ToLong(fallbackOldAcc["id"]);
+                        accCache[oid] = fallbackOldAcc;
+                        priorNetByAccount[oid] = oldDirectRecv;
+                    }
+                }
+
+                // 2. Compute target net per-account legs (preserving split_payments if submitted)
+                var targetNetByAccount = new Dictionary<long, double>();
+                var validUpdateSplitLegs = splitPayments.Where(l => Math.Round(ToDouble(l.GetValueOrDefault("amount")), 2) > 0).ToList();
+                long? primaryResolvedAccId = null;
+
+                if (validUpdateSplitLegs.Count > 0)
+                {
+                    foreach (var leg in validUpdateSplitLegs)
+                    {
+                        var legAmount = Math.Round(ToDouble(leg.GetValueOrDefault("amount")), 2);
+                        var legMethod = leg.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                        var legAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(leg.GetValueOrDefault("account_id")), legMethod, conn, tx);
+                        if (legAcc != null)
                         {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", newCashRecv, "sale_invoice", id, $"Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                            var lid = ToLong(legAcc["id"]);
+                            accCache[lid] = legAcc;
+                            primaryResolvedAccId ??= lid;
+                            targetNetByAccount[lid] = Math.Round(targetNetByAccount.GetValueOrDefault(lid) + legAmount, 2);
                         }
                     }
-                    else if (updateDrawerFlag == true)
+                }
+                else
+                {
+                    var targetAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
+                    if (targetAcc != null)
                     {
-                        var drawerDelta = Math.Round((newIsDrawer ? newCashRecv : 0.0) - (oldWasDrawer ? oldCashRecv : 0.0), 2);
-                        if (drawerDelta > 0)
+                        var tidAcc = ToLong(targetAcc["id"]);
+                        accCache[tidAcc] = targetAcc;
+                        primaryResolvedAccId = tidAcc;
+                        if (newDirectRecv > 0)
                         {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", drawerDelta, "sale_invoice", id, $"Pre-shift edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                            targetNetByAccount[tidAcc] = newDirectRecv;
                         }
-                        else if (drawerDelta < 0)
-                        {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_refund", Math.Abs(drawerDelta), "sale_invoice", id, $"Pre-shift edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
-                        }
+                    }
+                }
+
+                if (primaryResolvedAccId.HasValue && ToNullableLong(updateData.GetValueOrDefault("account_id")) != primaryResolvedAccId)
+                {
+                    await Db.UpdateAsync("sale_invoices", id, new Dictionary<string, object?> { ["account_id"] = primaryResolvedAccId.Value }, "id", conn, tx);
+                }
+
+                // 3. Apply per-account deltas (skipping default Cash in Hand when pre-shift drawer update was explicitly declined)
+                double oldDrawerCash = 0.0;
+                double newDrawerCash = 0.0;
+                var allAccIds = priorNetByAccount.Keys.Union(targetNetByAccount.Keys).Distinct().ToList();
+
+                foreach (var aid in allAccIds)
+                {
+                    if (!accCache.TryGetValue(aid, out var accRow))
+                    {
+                        accRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid }, conn, tx);
+                        if (accRow != null) accCache[aid] = accRow;
+                    }
+                    if (accRow == null) continue;
+
+                    var priorAmt = priorNetByAccount.GetValueOrDefault(aid, 0.0);
+                    var targetAmt = targetNetByAccount.GetValueOrDefault(aid, 0.0);
+                    var isDrawerAcc = ReturnSettlementService.IsDefaultCashDrawerAccount(accRow, null);
+
+                    if (isDrawerAcc)
+                    {
+                        oldDrawerCash = Math.Round(oldDrawerCash + priorAmt, 2);
+                        newDrawerCash = Math.Round(newDrawerCash + targetAmt, 2);
+                        if (skipDrawerCash) continue;
+                    }
+
+                    var delta = Math.Round(targetAmt - priorAmt, 2);
+                    if (delta > 0.001)
+                    {
+                        await _settlementService.DepositToAccountAsync(accRow, delta, "sale_invoice_update", id, $"Edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    else if (delta < -0.001)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(accRow, Math.Abs(delta), "sale_invoice_update", id, $"Edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+
+                // 4. Sync Cash Drawer symmetrically with Financial Account
+                if (!isPreShift)
+                {
+                    if (newDrawerCash > 0.001)
+                    {
+                        await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", newDrawerCash, "sale_invoice", id, $"Sale Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
+                    }
+                }
+                else if (updateDrawerFlag != false)
+                {
+                    var drawerDelta = Math.Round(newDrawerCash - oldDrawerCash, 2);
+                    if (drawerDelta > 0.001)
+                    {
+                        await _settlementService.RecordCashDrawerTransactionAsync("cash_sale", drawerDelta, "sale_invoice", id, $"Pre-shift edit adjustment for Sale Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
+                    }
+                    else if (drawerDelta < -0.001)
+                    {
+                        await _settlementService.RecordCashDrawerTransactionAsync("cash_refund", Math.Abs(drawerDelta), "sale_invoice", id, $"Pre-shift edit reduction for Sale Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
                     }
                 }
 
@@ -1095,9 +1175,10 @@ public class SaleInvoiceController : ApiControllerBase
 
             if (revAmount > 0)
             {
+                var termId = CurrentTerminalId;
                 var priorTxns = await Db.HasTableAsync("account_transactions")
                     ? await Db.QueryListAsync(
-                        "SELECT account_id, type, amount FROM account_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id ORDER BY id ASC",
+                        "SELECT account_id, type, amount FROM account_transactions WHERE reference_type IN ('sale_invoice', 'sale_invoice_update') AND reference_id = @id ORDER BY id ASC",
                         new { id }, conn, tx)
                     : new List<Dictionary<string, object?>>();
 
@@ -1112,7 +1193,7 @@ public class SaleInvoiceController : ApiControllerBase
                     netByAccount[aid] = Math.Round(netByAccount.GetValueOrDefault(aid) + signed, 2);
                 }
 
-                var positiveLegs = netByAccount.Where(kv => kv.Value > 0).ToList();
+                var positiveLegs = netByAccount.Where(kv => kv.Value > 0.001).ToList();
                 if (positiveLegs.Count > 0)
                 {
                     foreach (var leg in positiveLegs)
@@ -1139,7 +1220,8 @@ public class SaleInvoiceController : ApiControllerBase
                                     $"Reversal of Sale Invoice #{postedNumber}: {reason}",
                                     CurrentUserId,
                                     conn,
-                                    tx);
+                                    tx,
+                                    termId);
                             }
                         }
                     }
@@ -1170,7 +1252,8 @@ public class SaleInvoiceController : ApiControllerBase
                             $"Reversal of Sale Invoice #{postedNumber}: {reason}",
                             CurrentUserId,
                             conn,
-                            tx);
+                            tx,
+                            termId);
                     }
                 }
             }
@@ -1278,6 +1361,8 @@ public class SaleInvoiceController : ApiControllerBase
 
                 if (effectiveMode != "credit")
                 {
+                    var termId = CurrentTerminalId;
+                    double cashDrawerRefunded = 0.0;
                     var delAmount = received;
                     if (!isCreditInvoice && delAmount <= 0)
                     {
@@ -1287,7 +1372,7 @@ public class SaleInvoiceController : ApiControllerBase
                     {
                         var priorTxns = await Db.HasTableAsync("account_transactions")
                             ? await Db.QueryListAsync(
-                                "SELECT account_id, type, amount FROM account_transactions WHERE reference_type = 'sale_invoice' AND reference_id = @id ORDER BY id ASC",
+                                "SELECT account_id, type, amount FROM account_transactions WHERE reference_type IN ('sale_invoice', 'sale_invoice_update') AND reference_id = @id ORDER BY id ASC",
                                 new { id }, conn, tx)
                             : new List<Dictionary<string, object?>>();
 
@@ -1302,7 +1387,7 @@ public class SaleInvoiceController : ApiControllerBase
                             netByAccount[aid] = Math.Round(netByAccount.GetValueOrDefault(aid) + signed, 2);
                         }
 
-                        var positiveLegs = netByAccount.Where(kv => kv.Value > 0).ToList();
+                        var positiveLegs = netByAccount.Where(kv => kv.Value > 0.001).ToList();
                         if (positiveLegs.Count > 0)
                         {
                             foreach (var leg in positiveLegs)
@@ -1319,6 +1404,10 @@ public class SaleInvoiceController : ApiControllerBase
                                         CurrentUserId,
                                         conn,
                                         tx);
+                                    if (ReturnSettlementService.IsDefaultCashDrawerAccount(legAcc, null))
+                                    {
+                                        cashDrawerRefunded = Math.Round(cashDrawerRefunded + leg.Value, 2);
+                                    }
                                 }
                             }
                         }
@@ -1337,20 +1426,29 @@ public class SaleInvoiceController : ApiControllerBase
                                     CurrentUserId,
                                     conn,
                                     tx);
+                                if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                                {
+                                    cashDrawerRefunded = Math.Round(cashDrawerRefunded + delAmount, 2);
+                                }
                             }
                         }
                     }
 
-                    if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
+                    // Remove any open-shift drawer rows AND recalculate expected balance; if this was a pre-shift cash sale,
+                    // record a cash_return refund in the active open shift so Account and Cash Drawer stay 100% in parity.
+                    var removedOpen = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("sale_invoice", id, conn, tx);
+                    if (removedOpen == 0 && cashDrawerRefunded > 0.001)
                     {
-                        await Db.ExecuteAsync(
-                            @"DELETE FROM cash_drawer_transactions
-                              WHERE reference_type = 'sale_invoice'
-                                AND reference_id = @id
-                                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
-                            new { id },
+                        await _settlementService.RecordCashDrawerTransactionAsync(
+                            "cash_return",
+                            cashDrawerRefunded,
+                            "sale_invoice_deleted",
+                            id,
+                            $"Cash refund for deleted pre-shift sale invoice #{postedNumber}",
+                            CurrentUserId,
                             conn,
-                            tx);
+                            tx,
+                            termId);
                     }
                 }
             }

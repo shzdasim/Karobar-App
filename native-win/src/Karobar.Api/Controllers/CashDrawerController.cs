@@ -26,19 +26,6 @@ public class CashDrawerController : ApiControllerBase
         _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
-    private long? CurrentTerminalId
-    {
-        get
-        {
-            if (HttpContext.Items.TryGetValue("KarobarTerminal", out var termObj) && termObj is Dictionary<string, object?> dict)
-            {
-                var tid = AccountService.ToLong(dict.GetValueOrDefault("id"));
-                if (tid > 0) return tid;
-            }
-            return null;
-        }
-    }
-
     [HttpGet("api/cash-drawer/current")]
     public async Task<IActionResult> Current()
     {
@@ -287,7 +274,7 @@ public class CashDrawerController : ApiControllerBase
             SELECT cds.*,
                    (SELECT COUNT(1) FROM cash_drawer_transactions cdt WHERE cdt.session_id = cds.id) as transactions_count,
                    (SELECT COALESCE(SUM(cdt.amount), 0) FROM cash_drawer_transactions cdt WHERE cdt.session_id = cds.id AND cdt.type IN ('cash_sale', 'customer_payment', 'purchase_return', 'cash_in')) as total_cash_in,
-                   (SELECT COALESCE(SUM(cdt.amount), 0) FROM cash_drawer_transactions cdt WHERE cdt.session_id = cds.id AND cdt.type IN ('cash_purchase', 'supplier_payment', 'cash_return', 'expense', 'cash_out')) as total_cash_out
+                   (SELECT COALESCE(SUM(cdt.amount), 0) FROM cash_drawer_transactions cdt WHERE cdt.session_id = cds.id AND cdt.type IN ('cash_purchase', 'supplier_payment', 'cash_return', 'cash_refund', 'expense', 'cash_out')) as total_cash_out
             FROM cash_drawer_sessions cds
             ORDER BY cds.id DESC";
 
@@ -306,6 +293,60 @@ public class CashDrawerController : ApiControllerBase
         });
 
         return Ok(paged);
+    }
+
+    [HttpGet("api/cash-drawer/reconciliation-check")]
+    public async Task<IActionResult> ReconciliationCheck()
+    {
+        if (!await CanAsync("cash-drawer.view", "account.view")) return Forbidden();
+
+        var cashAccount = await _accountService.SyncCashDrawerBalanceAsync();
+        var cashAccountBalance = cashAccount != null
+            ? Math.Round(AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance")), 2)
+            : 0m;
+
+        var openSessions = await Db.HasTableAsync("cash_drawer_sessions")
+            ? await Db.QueryListAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id ASC")
+            : new List<Dictionary<string, object?>>();
+
+        decimal openStoredTotal = 0m;
+        decimal openCalcTotal = 0m;
+        var sessionDiagnostics = new List<Dictionary<string, object?>>();
+
+        foreach (var sess in openSessions)
+        {
+            var sid = AccountService.ToLong(sess["id"]);
+            var stored = Math.Round(AccountService.ToDecimal(sess.GetValueOrDefault("closing_balance_expected")), 2);
+            var calc = await _cashDrawerService.RecalculateExpectedBalanceAsync(sid, syncAccount: false);
+            openStoredTotal = Math.Round(openStoredTotal + stored, 2);
+            openCalcTotal = Math.Round(openCalcTotal + calc, 2);
+
+            sessionDiagnostics.Add(new Dictionary<string, object?>
+            {
+                ["session_id"] = sid,
+                ["terminal_id"] = sess.GetValueOrDefault("terminal_id"),
+                ["user_id"] = sess.GetValueOrDefault("user_id"),
+                ["opening_balance"] = Math.Round(AccountService.ToDecimal(sess.GetValueOrDefault("opening_balance")), 2),
+                ["stored_expected_before_refresh"] = stored,
+                ["calculated_expected"] = calc,
+                ["stale_delta"] = Math.Round(stored - calc, 2)
+            });
+        }
+
+        var diff = Math.Round(cashAccountBalance - openCalcTotal, 2);
+        return Ok(new Dictionary<string, object?>
+        {
+            ["ok"] = true,
+            ["cash_account_id"] = cashAccount?.GetValueOrDefault("id"),
+            ["cash_account_name"] = cashAccount?.GetValueOrDefault("name"),
+            ["cash_account_balance"] = cashAccountBalance,
+            ["open_sessions_count"] = openSessions.Count,
+            ["open_drawers_expected_total"] = openCalcTotal,
+            ["open_drawers_stored_before_refresh"] = openStoredTotal,
+            ["difference"] = diff,
+            ["is_balanced"] = openSessions.Count > 0 ? Math.Abs(diff) < 0.01m : true,
+            ["open_sessions"] = sessionDiagnostics
+        });
     }
 
     [HttpGet("api/cash-drawer/session/{id:long}")]

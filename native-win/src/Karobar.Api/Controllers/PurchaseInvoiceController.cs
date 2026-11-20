@@ -467,7 +467,8 @@ public class PurchaseInvoiceController : ApiControllerBase
                             $"Cash purchase {nextCode}",
                             CurrentUserId,
                             conn,
-                            tx);
+                            tx,
+                            CurrentTerminalId);
                     }
                 }
 
@@ -603,9 +604,19 @@ public class PurchaseInvoiceController : ApiControllerBase
                 await ApplyPurchaseStockDiffAsync(oldItems, calcItems, supplierId, conn, tx);
 
                 var dueDate = await ResolveDueDateAsync(rawData, supplierId, postedDate, conn, tx);
-                var newPayMethod = rawData.GetValueOrDefault("payment_method")?.ToString() ?? existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                var resolvedAccountId = ToNullableLong(rawData.GetValueOrDefault("account_id"))
-                                        ?? ToNullableLong(existing.GetValueOrDefault("account_id"));
+                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+                var newPayMethod = rawData.GetValueOrDefault("payment_method")?.ToString() ?? oldPayMethodStr;
+                var explicitAccountId = rawData.ContainsKey("account_id") ? ToNullableLong(rawData.GetValueOrDefault("account_id")) : null;
+                var resolvedAccountId = explicitAccountId
+                    ?? (string.Equals(newPayMethod, oldPayMethodStr, StringComparison.OrdinalIgnoreCase)
+                        ? ToNullableLong(existing.GetValueOrDefault("account_id"))
+                        : null);
+
+                var newAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
+                if (newAcc != null)
+                {
+                    resolvedAccountId = ToLong(newAcc["id"]);
+                }
 
                 var updatePayload = new Dictionary<string, object?>
                 {
@@ -755,43 +766,6 @@ public class PurchaseInvoiceController : ApiControllerBase
                 }
 
                 // Sync financial accounts & cash drawer on purchase invoice update
-                var oldCashPaid = string.Equals(oldInvoiceType, "credit", StringComparison.OrdinalIgnoreCase)
-                    ? ToDouble(existing.GetValueOrDefault("total_paid"))
-                    : (ToDouble(existing.GetValueOrDefault("total_paid")) > 0 ? ToDouble(existing.GetValueOrDefault("total_paid")) : ToDouble(existing.GetValueOrDefault("total_amount")));
-                var newCashPaid = newInvoiceType == "credit"
-                    ? totalPaid
-                    : (totalPaid > 0 ? totalPaid : totalAmount);
-                var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                var oldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
-                var newAcc = await _settlementService.ResolveAccountAsync(resolvedAccountId, newPayMethod, conn, tx);
-                var oldAccId = oldAcc != null ? ToLong(oldAcc["id"]) : 0L;
-                var newAccId = newAcc != null ? ToLong(newAcc["id"]) : 0L;
-
-                if (oldAccId == newAccId && newAcc != null)
-                {
-                    var accDelta = Math.Round(newCashPaid - oldCashPaid, 2);
-                    if (accDelta > 0)
-                    {
-                        await _settlementService.WithdrawFromAccountAsync(newAcc, accDelta, "purchase_invoice", id, $"Edit payment increase for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                    else if (accDelta < 0)
-                    {
-                        await _settlementService.DepositToAccountAsync(newAcc, Math.Abs(accDelta), "purchase_invoice", id, $"Edit payment reduction for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                }
-                else
-                {
-                    if (oldAcc != null && oldCashPaid > 0)
-                    {
-                        await _settlementService.DepositToAccountAsync(oldAcc, oldCashPaid, "purchase_invoice", id, $"Reassigned account for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                    if (newAcc != null && newCashPaid > 0)
-                    {
-                        await _settlementService.WithdrawFromAccountAsync(newAcc, newCashPaid, "purchase_invoice", id, $"Payment for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
-                    }
-                }
-
-                // Sync cash drawer honoring update_drawer / update_drawer_if_pre_shift without mutating closed shifts
                 static bool ParseFlag(object? v) => v is true or 1 or 1L || (v?.ToString()?.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on");
                 bool? updateDrawerFlag = null;
                 if (rawData.TryGetValue("update_drawer", out var udObj) && udObj != null)
@@ -799,37 +773,126 @@ public class PurchaseInvoiceController : ApiControllerBase
                 else if (rawData.TryGetValue("update_drawer_if_pre_shift", out var udpObj) && udpObj != null)
                     updateDrawerFlag = ParseFlag(udpObj);
 
+                var termId = CurrentTerminalId;
+                var oldRawPaid = string.Equals(oldInvoiceType, "credit", StringComparison.OrdinalIgnoreCase)
+                    ? ToDouble(existing.GetValueOrDefault("total_paid"))
+                    : (ToDouble(existing.GetValueOrDefault("total_paid")) > 0 ? ToDouble(existing.GetValueOrDefault("total_paid")) : ToDouble(existing.GetValueOrDefault("total_amount")));
+                var newRawPaid = newInvoiceType == "credit"
+                    ? totalPaid
+                    : (totalPaid > 0 ? totalPaid : totalAmount);
+                var oldDirectPaid = Math.Max(0.0, Math.Round(oldRawPaid - allocatedOnInvoice, 2));
+                var newDirectPaid = Math.Max(0.0, Math.Round(newRawPaid - allocatedOnInvoice, 2));
+
+                var oldAcc = await _settlementService.ResolveAccountAsync(ToNullableLong(existing.GetValueOrDefault("account_id")), oldPayMethodStr, conn, tx);
+                var oldAccId = oldAcc != null ? ToLong(oldAcc["id"]) : 0L;
+                var newAccId = newAcc != null ? ToLong(newAcc["id"]) : 0L;
+
+                // Remove same-shift cash drawer rows and recalculate expected balance before detecting pre-shift
+                var removedOpenRows = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("purchase_invoice", id, conn, tx);
+                var isPreShift = removedOpenRows == 0 && await _settlementService.IsPreShiftDocumentInTxAsync(
+                    "purchase_invoice",
+                    id,
+                    existing.GetValueOrDefault("created_at")?.ToString(),
+                    conn,
+                    tx,
+                    operatorUserId,
+                    termId);
+
+                // Reconstruct prior net withdrawals per account from account_transactions (fallback to oldAcc/oldDirectPaid)
+                var oldNetByAcc = new Dictionary<long, double>();
+                var accCache = new Dictionary<long, Dictionary<string, object?>>();
+                if (oldAcc != null && oldAccId > 0) accCache[oldAccId] = oldAcc;
+                if (newAcc != null && newAccId > 0) accCache[newAccId] = newAcc;
+
+                if (await Db.HasTableAsync("account_transactions"))
+                {
+                    var prevTxns = await Db.QueryListAsync(
+                        @"SELECT account_id, type, amount FROM account_transactions
+                          WHERE reference_type IN ('purchase_invoice', 'purchase_invoice_update')
+                            AND reference_id = @id",
+                        new { id }, conn, tx);
+                    foreach (var pt in prevTxns)
+                    {
+                        var aid = ToLong(pt.GetValueOrDefault("account_id"));
+                        if (aid <= 0) continue;
+                        var tp = (pt.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                        var amt = ToDouble(pt.GetValueOrDefault("amount"));
+                        // For purchase invoices, withdrawals are positive paid-out amounts, deposits are refunds
+                        var signed = tp is "withdrawal" or "transfer_out" ? amt : -amt;
+                        oldNetByAcc[aid] = Math.Round(oldNetByAcc.GetValueOrDefault(aid, 0.0) + signed, 2);
+                    }
+                }
+                if (oldNetByAcc.Count == 0 && oldAccId > 0 && oldDirectPaid > 0.001)
+                {
+                    oldNetByAcc[oldAccId] = oldDirectPaid;
+                }
+
+                var newTargetByAcc = new Dictionary<long, double>();
+                if (newAccId > 0 && newDirectPaid > 0.001)
+                {
+                    newTargetByAcc[newAccId] = newDirectPaid;
+                }
+
+                double oldDrawerAmt = 0.0;
+                double newDrawerAmt = 0.0;
+
+                foreach (var aid in oldNetByAcc.Keys.Union(newTargetByAcc.Keys).Distinct())
+                {
+                    if (!accCache.TryGetValue(aid, out var accRow))
+                    {
+                        accRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid }, conn, tx);
+                        if (accRow != null) accCache[aid] = accRow;
+                    }
+                    if (accRow == null) continue;
+
+                    var oldAmt = oldNetByAcc.GetValueOrDefault(aid, 0.0);
+                    var newAmt = newTargetByAcc.GetValueOrDefault(aid, 0.0);
+                    var isDrawerAcc = ReturnSettlementService.IsDefaultCashDrawerAccount(
+                        accRow,
+                        aid == newAccId ? newPayMethod : (aid == oldAccId ? oldPayMethodStr : "cash"));
+
+                    if (isDrawerAcc)
+                    {
+                        oldDrawerAmt = Math.Round(oldDrawerAmt + oldAmt, 2);
+                        newDrawerAmt = Math.Round(newDrawerAmt + newAmt, 2);
+                    }
+
+                    // If pre-shift and caller opted NOT to touch the drawer, skip mutating default Cash in Hand symmetrically
+                    if (isDrawerAcc && isPreShift && updateDrawerFlag == false)
+                    {
+                        continue;
+                    }
+
+                    var delta = Math.Round(newAmt - oldAmt, 2);
+                    if (delta > 0.001)
+                    {
+                        await _settlementService.WithdrawFromAccountAsync(accRow, delta, "purchase_invoice_update", id, $"Edit payment increase for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                    else if (delta < -0.001)
+                    {
+                        await _settlementService.DepositToAccountAsync(accRow, Math.Abs(delta), "purchase_invoice_update", id, $"Edit payment reduction for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                    }
+                }
+
                 if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
                 {
-                    var removedOpenRows = await Db.ExecuteAsync(
-                        @"DELETE FROM cash_drawer_transactions
-                          WHERE reference_type = 'purchase_invoice'
-                            AND reference_id = @id
-                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
-                        new { id }, conn, tx);
-                    var hadHistorical = removedOpenRows == 0 &&
-                        await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM cash_drawer_transactions WHERE reference_type = 'purchase_invoice' AND reference_id = @id", new { id }, conn, tx) > 0;
-
-                    var oldWasDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(oldAcc, oldPayMethodStr);
-                    var newIsDrawer = ReturnSettlementService.IsDefaultCashDrawerAccount(newAcc, newPayMethod);
-
-                    if (removedOpenRows > 0 || !hadHistorical)
+                    if (!isPreShift)
                     {
-                        if (newIsDrawer && newCashPaid > 0 && !(hadHistorical == false && updateDrawerFlag == false && oldWasDrawer))
+                        if (newDrawerAmt > 0.001)
                         {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_out", newCashPaid, "purchase_invoice", id, $"Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_purchase", newDrawerAmt, "purchase_invoice", id, $"Purchase Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
                         }
                     }
-                    else if (updateDrawerFlag == true)
+                    else if (updateDrawerFlag != false)
                     {
-                        var drawerDelta = Math.Round((newIsDrawer ? newCashPaid : 0.0) - (oldWasDrawer ? oldCashPaid : 0.0), 2);
-                        if (drawerDelta > 0)
+                        var drawerDelta = Math.Round(newDrawerAmt - oldDrawerAmt, 2);
+                        if (drawerDelta > 0.001)
                         {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_out", drawerDelta, "purchase_invoice", id, $"Pre-shift edit adjustment for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_purchase", drawerDelta, "purchase_invoice", id, $"Pre-shift edit adjustment for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
                         }
-                        else if (drawerDelta < 0)
+                        else if (drawerDelta < -0.001)
                         {
-                            await _settlementService.RecordCashDrawerTransactionAsync("cash_in", Math.Abs(drawerDelta), "purchase_invoice", id, $"Pre-shift edit refund for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx);
+                            await _settlementService.RecordCashDrawerTransactionAsync("cash_in", Math.Abs(drawerDelta), "purchase_invoice", id, $"Pre-shift edit refund for Purchase Invoice #{postedNumber}", operatorUserId, conn, tx, termId);
                         }
                     }
                 }
@@ -946,42 +1009,95 @@ public class PurchaseInvoiceController : ApiControllerBase
                 await _poReceivingService.SyncAsync(poId.Value, CurrentUserId, conn, tx);
             }
 
-            // Refund account & cash drawer
+            // Refund account & cash drawer across all net direct withdrawals posted for this invoice
             var freshInv = (await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id }, conn, tx))!;
-            var revPaid = ToDouble(freshInv.GetValueOrDefault("total_paid"));
-            var invType = (freshInv.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
-            if (invType == "debit" && revPaid <= 0)
+            var termId = CurrentTerminalId;
+            var netPaidByAcc = new Dictionary<long, double>();
+            if (await Db.HasTableAsync("account_transactions"))
             {
-                revPaid = ToDouble(freshInv.GetValueOrDefault("total_amount"));
-            }
-            if (revPaid > 0)
-            {
-                var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
-                if (acc != null)
+                var priorTxns = await Db.QueryListAsync(
+                    @"SELECT account_id, type, amount FROM account_transactions
+                      WHERE reference_type IN ('purchase_invoice', 'purchase_invoice_update')
+                        AND reference_id = @id",
+                    new { id }, conn, tx);
+                foreach (var pt in priorTxns)
                 {
+                    var aid = ToLong(pt.GetValueOrDefault("account_id"));
+                    if (aid <= 0) continue;
+                    var tp = (pt.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                    var amt = ToDouble(pt.GetValueOrDefault("amount"));
+                    var signed = tp is "withdrawal" or "transfer_out" ? amt : -amt;
+                    netPaidByAcc[aid] = Math.Round(netPaidByAcc.GetValueOrDefault(aid, 0.0) + signed, 2);
+                }
+            }
+
+            double cashDrawerRefund = 0.0;
+            var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+
+            if (netPaidByAcc.Count > 0)
+            {
+                foreach (var (aid, netAmt) in netPaidByAcc)
+                {
+                    if (netAmt <= 0.001) continue;
+                    var acc = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid }, conn, tx);
+                    if (acc == null) continue;
                     await _settlementService.DepositToAccountAsync(
                         acc,
-                        revPaid,
+                        netAmt,
                         "purchase_invoice_reversal",
                         id,
                         $"Reversal refund for Purchase Invoice #{postedNumber}",
                         CurrentUserId,
                         conn,
                         tx);
+                    if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                    {
+                        cashDrawerRefund = Math.Round(cashDrawerRefund + netAmt, 2);
+                    }
                 }
-                if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+            }
+            else
+            {
+                var revPaid = ToDouble(freshInv.GetValueOrDefault("total_paid"));
+                var invType = (freshInv.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
+                if (invType == "debit" && revPaid <= 0)
                 {
-                    await _settlementService.RecordCashDrawerTransactionAsync(
-                        "cash_in",
-                        revPaid,
-                        "purchase_invoice_reversal",
-                        id,
-                        $"Reversal of Purchase Invoice #{postedNumber}: {reason}",
-                        CurrentUserId,
-                        conn,
-                        tx);
+                    revPaid = ToDouble(freshInv.GetValueOrDefault("total_amount"));
                 }
+                if (revPaid > 0.001)
+                {
+                    var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
+                    if (acc != null)
+                    {
+                        await _settlementService.DepositToAccountAsync(
+                            acc,
+                            revPaid,
+                            "purchase_invoice_reversal",
+                            id,
+                            $"Reversal refund for Purchase Invoice #{postedNumber}",
+                            CurrentUserId,
+                            conn,
+                            tx);
+                    }
+                    if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                    {
+                        cashDrawerRefund = revPaid;
+                    }
+                }
+            }
+
+            if (cashDrawerRefund > 0.001)
+            {
+                await _settlementService.RecordCashDrawerTransactionAsync(
+                    "cash_in",
+                    cashDrawerRefund,
+                    "purchase_invoice_reversal",
+                    id,
+                    $"Reversal of Purchase Invoice #{postedNumber}: {reason}",
+                    CurrentUserId,
+                    conn,
+                    tx,
+                    termId);
             }
 
             await tx.CommitAsync();
@@ -1060,40 +1176,94 @@ public class PurchaseInvoiceController : ApiControllerBase
                 }
 
                 var freshInv = (await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id }, conn, tx))!;
-                var delPaid = ToDouble(freshInv.GetValueOrDefault("total_paid"));
-                var invType = (freshInv.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
-                if (invType == "debit" && delPaid <= 0)
+                var termId = CurrentTerminalId;
+                var netPaidByAcc = new Dictionary<long, double>();
+                if (await Db.HasTableAsync("account_transactions"))
                 {
-                    delPaid = ToDouble(freshInv.GetValueOrDefault("total_amount"));
-                }
-                if (delPaid > 0)
-                {
-                    var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
-                    var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
-                    if (acc != null)
+                    var priorTxns = await Db.QueryListAsync(
+                        @"SELECT account_id, type, amount FROM account_transactions
+                          WHERE reference_type IN ('purchase_invoice', 'purchase_invoice_update')
+                            AND reference_id = @id",
+                        new { id }, conn, tx);
+                    foreach (var pt in priorTxns)
                     {
+                        var aid = ToLong(pt.GetValueOrDefault("account_id"));
+                        if (aid <= 0) continue;
+                        var tp = (pt.GetValueOrDefault("type")?.ToString() ?? "").ToLowerInvariant();
+                        var amt = ToDouble(pt.GetValueOrDefault("amount"));
+                        var signed = tp is "withdrawal" or "transfer_out" ? amt : -amt;
+                        netPaidByAcc[aid] = Math.Round(netPaidByAcc.GetValueOrDefault(aid, 0.0) + signed, 2);
+                    }
+                }
+
+                double cashDrawerRefunded = 0.0;
+                var payMethod = freshInv.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
+
+                if (netPaidByAcc.Count > 0)
+                {
+                    foreach (var (aid, netAmt) in netPaidByAcc)
+                    {
+                        if (netAmt <= 0.001) continue;
+                        var acc = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @aid", new { aid }, conn, tx);
+                        if (acc == null) continue;
                         await _settlementService.DepositToAccountAsync(
                             acc,
-                            delPaid,
+                            netAmt,
                             "purchase_invoice_deletion",
                             id,
                             $"Refund for deleted purchase invoice #{postedNumber}",
                             CurrentUserId,
                             conn,
                             tx);
+                        if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                        {
+                            cashDrawerRefunded = Math.Round(cashDrawerRefunded + netAmt, 2);
+                        }
+                    }
+                }
+                else
+                {
+                    var delPaid = ToDouble(freshInv.GetValueOrDefault("total_paid"));
+                    var invType = (freshInv.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
+                    if (invType == "debit" && delPaid <= 0)
+                    {
+                        delPaid = ToDouble(freshInv.GetValueOrDefault("total_amount"));
+                    }
+                    if (delPaid > 0.001)
+                    {
+                        var acc = await _settlementService.ResolveAccountAsync(ToNullableLong(freshInv.GetValueOrDefault("account_id")), payMethod, conn, tx);
+                        if (acc != null)
+                        {
+                            await _settlementService.DepositToAccountAsync(
+                                acc,
+                                delPaid,
+                                "purchase_invoice_deletion",
+                                id,
+                                $"Refund for deleted purchase invoice #{postedNumber}",
+                                CurrentUserId,
+                                conn,
+                                tx);
+                        }
+                        if (ReturnSettlementService.IsDefaultCashDrawerAccount(acc, payMethod))
+                        {
+                            cashDrawerRefunded = delPaid;
+                        }
                     }
                 }
 
-                if (await Db.HasTableAsync("cash_drawer_transactions") && await Db.HasTableAsync("cash_drawer_sessions"))
+                var removedDrawerRows = await _settlementService.RemoveOpenCashDrawerTransactionsForRefAsync("purchase_invoice", id, conn, tx);
+                if (removedDrawerRows == 0 && cashDrawerRefunded > 0.001)
                 {
-                    await Db.ExecuteAsync(
-                        @"DELETE FROM cash_drawer_transactions
-                          WHERE reference_type = 'purchase_invoice'
-                            AND reference_id = @id
-                            AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
-                        new { id },
+                    await _settlementService.RecordCashDrawerTransactionAsync(
+                        "cash_in",
+                        cashDrawerRefunded,
+                        "purchase_invoice_deleted",
+                        id,
+                        $"Refund for deleted purchase invoice #{postedNumber}",
+                        CurrentUserId,
                         conn,
-                        tx);
+                        tx,
+                        termId);
                 }
             }
 

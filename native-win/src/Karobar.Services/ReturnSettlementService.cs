@@ -88,7 +88,8 @@ public class ReturnSettlementService
         Dictionary<string, object?> saleReturn,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         var srId = ToLong(saleReturn.GetValueOrDefault("id"));
         var mode = (saleReturn.GetValueOrDefault("settlement_mode")?.ToString() ?? "").Trim();
@@ -147,7 +148,7 @@ public class ReturnSettlementService
         if (amount > 0 && IsDefaultCashDrawerAccount(account, payMethod))
         {
             var postedNumber = saleReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"SR-{srId}";
-            await RecordCashDrawerTransactionAsync("cash_refund", amount, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx);
+            await RecordCashDrawerTransactionAsync("cash_refund", amount, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx, terminalId);
         }
     }
 
@@ -157,9 +158,9 @@ public class ReturnSettlementService
         bool? updateDrawerIfPreShift = null,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
-        // Unwind old settlement and apply new settlement cleanly
         var srId = ToLong(saleReturn.GetValueOrDefault("id"));
         var newMode = (saleReturn.GetValueOrDefault("settlement_mode")?.ToString() ?? "cash_refund").Trim();
         var newPayMethod = (saleReturn.GetValueOrDefault("payment_method")?.ToString() ?? "cash").Trim();
@@ -167,8 +168,17 @@ public class ReturnSettlementService
 
         var oldMode = (oldSnapshot.TryGetValue("settlement_mode", out var om) ? om?.ToString() : "cash_refund") ?? "cash_refund";
         var oldPayMethod = (oldSnapshot.TryGetValue("payment_method", out var opm) ? opm?.ToString() : "cash") ?? "cash";
+        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
+        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
 
-        // 1. Check existing account transaction
+        // Remove open-shift drawer rows for ALL legacy & current sale_return types (cash_refund, cash_return, cash_in)
+        var removedOpenRows = await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
+        var hadDrawerInOpenShift = removedOpenRows > 0;
+        var isPreShift = !hadDrawerInOpenShift && await IsPreShiftDocumentInTxAsync(
+            "sale_return", srId, saleReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+        var skipDrawerCash = isPreShift && updateDrawerIfPreShift == false;
+
+        // 1. Resolve old & target accounts
         Dictionary<string, object?>? existingAccTxn = null;
         if (await _db.HasTableAsync("account_transactions"))
         {
@@ -179,18 +189,29 @@ public class ReturnSettlementService
                 tx);
         }
 
-        if (existingAccTxn != null && await _db.HasTableAsync("accounts"))
+        Dictionary<string, object?>? oldAcc = null;
+        var oldAccIdFromTxn = existingAccTxn != null ? ToLong(existingAccTxn.GetValueOrDefault("account_id")) : 0L;
+        var oldAccIdSnap = oldSnapshot.TryGetValue("account_id", out var oa) ? ToLong(oa) : 0L;
+        var resolvedOldAccId = oldAccIdFromTxn > 0 ? oldAccIdFromTxn : oldAccIdSnap;
+        if (resolvedOldAccId > 0 && await _db.HasTableAsync("accounts"))
         {
-            var oldAccId = ToLong(existingAccTxn.GetValueOrDefault("account_id"));
-            var oldAmt = ToDouble(existingAccTxn.GetValueOrDefault("amount"));
-            if (oldAccId > 0)
-            {
-                await _db.ExecuteAsync(
-                    "UPDATE accounts SET current_balance = ROUND(COALESCE(current_balance, 0) + @amt, 2), updated_at = @now WHERE id = @id",
-                    new { amt = oldAmt, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), id = oldAccId },
-                    conn,
-                    tx);
-            }
+            oldAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = resolvedOldAccId }, conn, tx);
+        }
+        else if (oldWasCashRefund && oldTotal > 0)
+        {
+            oldAcc = await ResolveAccountAsync(null, oldPayMethod, conn, tx);
+        }
+        var oldAccAmount = existingAccTxn != null ? Math.Round(ToDouble(existingAccTxn.GetValueOrDefault("amount")), 2) : (oldWasCashRefund ? oldTotal : 0.0);
+        var oldWasDrawer = oldWasCashRefund && IsDefaultCashDrawerAccount(oldAcc, oldPayMethod);
+
+        // Unwind old account effect unless pre-shift drawer skip applies to Cash in Hand
+        if (existingAccTxn != null && oldAcc != null && !(skipDrawerCash && IsDefaultCashDrawerAccount(oldAcc, oldPayMethod)))
+        {
+            await _db.ExecuteAsync(
+                "UPDATE accounts SET current_balance = ROUND(COALESCE(current_balance, 0) + @amt, 2), updated_at = @now WHERE id = @id",
+                new { amt = oldAccAmount, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), id = ToLong(oldAcc["id"]) },
+                conn,
+                tx);
             await _db.ExecuteAsync(
                 "DELETE FROM account_transactions WHERE id = @id",
                 new { id = existingAccTxn["id"] },
@@ -198,25 +219,19 @@ public class ReturnSettlementService
                 tx);
         }
 
-        // Remove old cash drawer transaction for this sale return ONLY if it belongs to the currently open shift
-        var hadDrawerInOpenShift = await RemoveCashDrawerTransactionForRefAsync("sale_return", srId, "cash_refund", conn, tx) > 0;
-        var hadHistoricalDrawerTxn = !hadDrawerInOpenShift && await HasAnyCashDrawerTransactionForRefAsync("sale_return", srId, conn, tx);
-        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
-        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
-
         if (newMode == "cash_refund" && newTotal > 0)
         {
-            var oldAccIdSnap = oldSnapshot.TryGetValue("account_id", out var oa) ? ToLong(oa) : 0;
             var curAccId = ToLong(saleReturn.GetValueOrDefault("account_id"));
-            long? explicitAccountId = (newPayMethod != oldPayMethod && curAccId == oldAccIdSnap)
+            long? explicitAccountId = (!string.Equals(newPayMethod, oldPayMethod, StringComparison.OrdinalIgnoreCase) && curAccId == oldAccIdSnap)
                 ? null
                 : (curAccId > 0 ? curAccId : null);
 
             var targetAccount = await ResolveAccountAsync(explicitAccountId, newPayMethod, conn, tx);
             long? resolvedAccountId = targetAccount != null ? ToLong(targetAccount["id"]) : explicitAccountId;
             var postedNumber = saleReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"SR-{srId}";
+            var newIsDrawer = IsDefaultCashDrawerAccount(targetAccount, newPayMethod);
 
-            if (targetAccount != null)
+            if (targetAccount != null && !(skipDrawerCash && newIsDrawer))
             {
                 await WithdrawFromAccountAsync(
                     targetAccount,
@@ -239,32 +254,23 @@ public class ReturnSettlementService
 
             await DeleteCustomerLedgerForSaleReturnAsync(srId, conn, tx);
 
-            if (IsDefaultCashDrawerAccount(targetAccount, newPayMethod))
+            if (!isPreShift)
             {
-                if (hadDrawerInOpenShift || !hadHistoricalDrawerTxn)
+                if (newIsDrawer)
                 {
-                    // Same open shift (or brand-new cash refund): record full updated amount cleanly
-                    if (!hadHistoricalDrawerTxn && updateDrawerIfPreShift == false && oldWasCashRefund)
-                    {
-                        // User explicitly declined touching the current shift drawer for a pre-shift edit
-                    }
-                    else
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_refund", newTotal, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx);
-                    }
+                    await RecordCashDrawerTransactionAsync("cash_refund", newTotal, "sale_return", srId, $"Cash refund for sale return #{postedNumber}", userId, conn, tx, terminalId);
                 }
-                else if (updateDrawerIfPreShift == true)
+            }
+            else if (updateDrawerIfPreShift == true)
+            {
+                var delta = Math.Round((newIsDrawer ? newTotal : 0.0) - (oldWasDrawer ? oldAccAmount : 0.0), 2);
+                if (delta > 0)
                 {
-                    // Pre-shift return edited with user opting to reflect the net cash delta in the current open shift
-                    var delta = Math.Round(newTotal - (oldWasCashRefund ? oldTotal : 0.0), 2);
-                    if (delta > 0)
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_refund", delta, "sale_return", srId, $"Cash refund adjustment for pre-shift sale return #{postedNumber}", userId, conn, tx);
-                    }
-                    else if (delta < 0)
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_in", Math.Abs(delta), "sale_return", srId, $"Cash refund reduction for pre-shift sale return #{postedNumber}", userId, conn, tx);
-                    }
+                    await RecordCashDrawerTransactionAsync("cash_refund", delta, "sale_return", srId, $"Cash refund adjustment for pre-shift sale return #{postedNumber}", userId, conn, tx, terminalId);
+                }
+                else if (delta < 0)
+                {
+                    await RecordCashDrawerTransactionAsync("cash_in", Math.Abs(delta), "sale_return", srId, $"Cash refund reduction for pre-shift sale return #{postedNumber}", userId, conn, tx, terminalId);
                 }
             }
         }
@@ -286,6 +292,13 @@ public class ReturnSettlementService
             {
                 await DeleteCustomerLedgerForSaleReturnAsync(srId, conn, tx);
             }
+
+            // If a pre-shift cash refund switched to credit note and user opted to update drawer, reimburse cash_in
+            if (isPreShift && updateDrawerIfPreShift == true && oldWasDrawer && oldAccAmount > 0)
+            {
+                var postedNumber = saleReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"SR-{srId}";
+                await RecordCashDrawerTransactionAsync("cash_in", oldAccAmount, "sale_return", srId, $"Switched pre-shift sale return #{postedNumber} to {newMode}", userId, conn, tx, terminalId);
+            }
         }
     }
 
@@ -293,7 +306,8 @@ public class ReturnSettlementService
         Dictionary<string, object?> saleReturn,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         var srId = ToLong(saleReturn.GetValueOrDefault("id"));
         await DeleteCustomerLedgerForSaleReturnAsync(srId, conn, tx);
@@ -304,6 +318,9 @@ public class ReturnSettlementService
 
         if (mode == "cash_refund")
         {
+            Dictionary<string, object?>? refundedAcc = null;
+            double refundedAmount = 0.0;
+
             if (await _db.HasTableAsync("account_transactions"))
             {
                 var existingAccTxn = await _db.QuerySingleOrDefaultAsync(
@@ -315,12 +332,13 @@ public class ReturnSettlementService
                 if (existingAccTxn != null)
                 {
                     var accId = ToLong(existingAccTxn.GetValueOrDefault("account_id"));
-                    var acc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accId }, conn, tx);
-                    if (acc != null)
+                    refundedAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accId }, conn, tx);
+                    refundedAmount = Math.Round(ToDouble(existingAccTxn.GetValueOrDefault("amount")), 2);
+                    if (refundedAcc != null && refundedAmount > 0)
                     {
                         await DepositToAccountAsync(
-                            acc,
-                            ToDouble(existingAccTxn.GetValueOrDefault("amount")),
+                            refundedAcc,
+                            refundedAmount,
                             "sale_return_deletion",
                             srId,
                             $"Recovery for deleted sale return #{postedNumber}",
@@ -332,12 +350,13 @@ public class ReturnSettlementService
                 else if (ToDouble(saleReturn.GetValueOrDefault("total")) > 0)
                 {
                     var accId = ToLong(saleReturn.GetValueOrDefault("account_id"));
-                    var acc = await ResolveAccountAsync(accId > 0 ? accId : null, payMethod, conn, tx);
-                    if (acc != null)
+                    refundedAcc = await ResolveAccountAsync(accId > 0 ? accId : null, payMethod, conn, tx);
+                    refundedAmount = Math.Round(ToDouble(saleReturn.GetValueOrDefault("total")), 2);
+                    if (refundedAcc != null && refundedAmount > 0)
                     {
                         await DepositToAccountAsync(
-                            acc,
-                            ToDouble(saleReturn.GetValueOrDefault("total")),
+                            refundedAcc,
+                            refundedAmount,
                             "sale_return_deletion",
                             srId,
                             $"Recovery for deleted sale return #{postedNumber}",
@@ -348,9 +367,24 @@ public class ReturnSettlementService
                 }
             }
 
-            if (string.Equals(payMethod, "cash", StringComparison.OrdinalIgnoreCase))
+            if (IsDefaultCashDrawerAccount(refundedAcc, payMethod))
             {
-                await RemoveCashDrawerTransactionForRefAsync("sale_return", srId, "cash_refund", conn, tx);
+                // Remove ALL matching open-shift drawer rows (handles both 'cash_refund' and legacy Laravel 'cash_return')
+                var removed = await RemoveOpenCashDrawerTransactionsForRefAsync("sale_return", srId, conn, tx);
+                if (removed == 0 && refundedAmount > 0)
+                {
+                    // Pre-shift return deleted while a drawer is open: record compensating cash_in to keep Account & Drawer in parity
+                    await RecordCashDrawerTransactionAsync(
+                        "cash_in",
+                        refundedAmount,
+                        "sale_return_deletion",
+                        srId,
+                        $"Cash recovery for deleted pre-shift sale return #{postedNumber}",
+                        userId,
+                        conn,
+                        tx,
+                        terminalId);
+                }
             }
         }
     }
@@ -359,7 +393,8 @@ public class ReturnSettlementService
         Dictionary<string, object?> purchaseReturn,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         var prId = ToLong(purchaseReturn.GetValueOrDefault("id"));
         var mode = (purchaseReturn.GetValueOrDefault("settlement_mode")?.ToString() ?? "").Trim();
@@ -418,7 +453,7 @@ public class ReturnSettlementService
         if (amount > 0 && IsDefaultCashDrawerAccount(account, payMethod))
         {
             var postedNumber = purchaseReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"PR-{prId}";
-            await RecordCashDrawerTransactionAsync("cash_in", amount, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx);
+            await RecordCashDrawerTransactionAsync("purchase_return", amount, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx, terminalId);
         }
     }
 
@@ -428,14 +463,24 @@ public class ReturnSettlementService
         bool? updateDrawerIfPreShift = null,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         var prId = ToLong(purchaseReturn.GetValueOrDefault("id"));
         var newMode = (purchaseReturn.GetValueOrDefault("settlement_mode")?.ToString() ?? "cash_refund").Trim();
         var newPayMethod = (purchaseReturn.GetValueOrDefault("payment_method")?.ToString() ?? "cash").Trim();
         var newTotal = Math.Round(ToDouble(purchaseReturn.GetValueOrDefault("total")), 2);
 
+        var oldMode = (oldSnapshot.TryGetValue("settlement_mode", out var om) ? om?.ToString() : "cash_refund") ?? "cash_refund";
         var oldPayMethod = (oldSnapshot.TryGetValue("payment_method", out var opm) ? opm?.ToString() : "cash") ?? "cash";
+        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
+        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
+
+        var removedOpenRows = await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
+        var hadDrawerInOpenShift = removedOpenRows > 0;
+        var isPreShift = !hadDrawerInOpenShift && await IsPreShiftDocumentInTxAsync(
+            "purchase_return", prId, purchaseReturn.GetValueOrDefault("created_at")?.ToString(), conn, tx, userId, terminalId);
+        var skipDrawerCash = isPreShift && updateDrawerIfPreShift == false;
 
         Dictionary<string, object?>? existingAccTxn = null;
         if (await _db.HasTableAsync("account_transactions"))
@@ -447,18 +492,28 @@ public class ReturnSettlementService
                 tx);
         }
 
-        if (existingAccTxn != null && await _db.HasTableAsync("accounts"))
+        Dictionary<string, object?>? oldAcc = null;
+        var oldAccIdFromTxn = existingAccTxn != null ? ToLong(existingAccTxn.GetValueOrDefault("account_id")) : 0L;
+        var oldAccIdSnap = oldSnapshot.TryGetValue("account_id", out var oa) ? ToLong(oa) : 0L;
+        var resolvedOldAccId = oldAccIdFromTxn > 0 ? oldAccIdFromTxn : oldAccIdSnap;
+        if (resolvedOldAccId > 0 && await _db.HasTableAsync("accounts"))
         {
-            var oldAccId = ToLong(existingAccTxn.GetValueOrDefault("account_id"));
-            var oldAmt = ToDouble(existingAccTxn.GetValueOrDefault("amount"));
-            if (oldAccId > 0)
-            {
-                await _db.ExecuteAsync(
-                    "UPDATE accounts SET current_balance = ROUND(COALESCE(current_balance, 0) - @amt, 2), updated_at = @now WHERE id = @id",
-                    new { amt = oldAmt, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), id = oldAccId },
-                    conn,
-                    tx);
-            }
+            oldAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = resolvedOldAccId }, conn, tx);
+        }
+        else if (oldWasCashRefund && oldTotal > 0)
+        {
+            oldAcc = await ResolveAccountAsync(null, oldPayMethod, conn, tx);
+        }
+        var oldAccAmount = existingAccTxn != null ? Math.Round(ToDouble(existingAccTxn.GetValueOrDefault("amount")), 2) : (oldWasCashRefund ? oldTotal : 0.0);
+        var oldWasDrawer = oldWasCashRefund && IsDefaultCashDrawerAccount(oldAcc, oldPayMethod);
+
+        if (existingAccTxn != null && oldAcc != null && !(skipDrawerCash && IsDefaultCashDrawerAccount(oldAcc, oldPayMethod)))
+        {
+            await _db.ExecuteAsync(
+                "UPDATE accounts SET current_balance = ROUND(COALESCE(current_balance, 0) - @amt, 2), updated_at = @now WHERE id = @id",
+                new { amt = oldAccAmount, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), id = ToLong(oldAcc["id"]) },
+                conn,
+                tx);
             await _db.ExecuteAsync(
                 "DELETE FROM account_transactions WHERE id = @id",
                 new { id = existingAccTxn["id"] },
@@ -466,25 +521,19 @@ public class ReturnSettlementService
                 tx);
         }
 
-        var hadDrawerInOpenShift = await RemoveCashDrawerTransactionForRefAsync("purchase_return", prId, "cash_in", conn, tx) > 0;
-        var hadHistoricalDrawerTxn = !hadDrawerInOpenShift && await HasAnyCashDrawerTransactionForRefAsync("purchase_return", prId, conn, tx);
-        var oldMode = (oldSnapshot.TryGetValue("settlement_mode", out var om) ? om?.ToString() : "cash_refund") ?? "cash_refund";
-        var oldTotal = Math.Round(ToDouble(oldSnapshot.TryGetValue("total", out var ot) ? ot : 0), 2);
-        var oldWasCashRefund = string.Equals(oldMode, "cash_refund", StringComparison.OrdinalIgnoreCase);
-
         if (newMode == "cash_refund" && newTotal > 0)
         {
-            var oldAccIdSnap = oldSnapshot.TryGetValue("account_id", out var oa) ? ToLong(oa) : 0;
             var curAccId = ToLong(purchaseReturn.GetValueOrDefault("account_id"));
-            long? explicitAccountId = (newPayMethod != oldPayMethod && curAccId == oldAccIdSnap)
+            long? explicitAccountId = (!string.Equals(newPayMethod, oldPayMethod, StringComparison.OrdinalIgnoreCase) && curAccId == oldAccIdSnap)
                 ? null
                 : (curAccId > 0 ? curAccId : null);
 
             var targetAccount = await ResolveAccountAsync(explicitAccountId, newPayMethod, conn, tx);
             long? resolvedAccountId = targetAccount != null ? ToLong(targetAccount["id"]) : explicitAccountId;
             var postedNumber = purchaseReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"PR-{prId}";
+            var newIsDrawer = IsDefaultCashDrawerAccount(targetAccount, newPayMethod);
 
-            if (targetAccount != null)
+            if (targetAccount != null && !(skipDrawerCash && newIsDrawer))
             {
                 await DepositToAccountAsync(
                     targetAccount,
@@ -507,30 +556,23 @@ public class ReturnSettlementService
 
             await DeleteSupplierLedgerForPurchaseReturnAsync(prId, conn, tx);
 
-            if (IsDefaultCashDrawerAccount(targetAccount, newPayMethod))
+            if (!isPreShift)
             {
-                if (hadDrawerInOpenShift || !hadHistoricalDrawerTxn)
+                if (newIsDrawer)
                 {
-                    if (!hadHistoricalDrawerTxn && updateDrawerIfPreShift == false && oldWasCashRefund)
-                    {
-                        // User explicitly declined touching the current shift drawer for a pre-shift edit
-                    }
-                    else
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_in", newTotal, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx);
-                    }
+                    await RecordCashDrawerTransactionAsync("purchase_return", newTotal, "purchase_return", prId, $"Supplier refund for purchase return #{postedNumber}", userId, conn, tx, terminalId);
                 }
-                else if (updateDrawerIfPreShift == true)
+            }
+            else if (updateDrawerIfPreShift == true)
+            {
+                var delta = Math.Round((newIsDrawer ? newTotal : 0.0) - (oldWasDrawer ? oldAccAmount : 0.0), 2);
+                if (delta > 0)
                 {
-                    var delta = Math.Round(newTotal - (oldWasCashRefund ? oldTotal : 0.0), 2);
-                    if (delta > 0)
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_in", delta, "purchase_return", prId, $"Supplier refund adjustment for pre-shift purchase return #{postedNumber}", userId, conn, tx);
-                    }
-                    else if (delta < 0)
-                    {
-                        await RecordCashDrawerTransactionAsync("cash_out", Math.Abs(delta), "purchase_return", prId, $"Supplier refund reduction for pre-shift purchase return #{postedNumber}", userId, conn, tx);
-                    }
+                    await RecordCashDrawerTransactionAsync("purchase_return", delta, "purchase_return", prId, $"Supplier refund adjustment for pre-shift purchase return #{postedNumber}", userId, conn, tx, terminalId);
+                }
+                else if (delta < 0)
+                {
+                    await RecordCashDrawerTransactionAsync("cash_out", Math.Abs(delta), "purchase_return", prId, $"Supplier refund reduction for pre-shift purchase return #{postedNumber}", userId, conn, tx, terminalId);
                 }
             }
         }
@@ -552,6 +594,12 @@ public class ReturnSettlementService
             {
                 await DeleteSupplierLedgerForPurchaseReturnAsync(prId, conn, tx);
             }
+
+            if (isPreShift && updateDrawerIfPreShift == true && oldWasDrawer && oldAccAmount > 0)
+            {
+                var postedNumber = purchaseReturn.GetValueOrDefault("posted_number")?.ToString() ?? $"PR-{prId}";
+                await RecordCashDrawerTransactionAsync("cash_out", oldAccAmount, "purchase_return", prId, $"Switched pre-shift purchase return #{postedNumber} to {newMode}", userId, conn, tx, terminalId);
+            }
         }
     }
 
@@ -559,7 +607,8 @@ public class ReturnSettlementService
         Dictionary<string, object?> purchaseReturn,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         var prId = ToLong(purchaseReturn.GetValueOrDefault("id"));
         await DeleteSupplierLedgerForPurchaseReturnAsync(prId, conn, tx);
@@ -570,6 +619,9 @@ public class ReturnSettlementService
 
         if (mode == "cash_refund")
         {
+            Dictionary<string, object?>? refundedAcc = null;
+            double refundedAmount = 0.0;
+
             if (await _db.HasTableAsync("account_transactions"))
             {
                 var existingAccTxn = await _db.QuerySingleOrDefaultAsync(
@@ -581,12 +633,13 @@ public class ReturnSettlementService
                 if (existingAccTxn != null)
                 {
                     var accId = ToLong(existingAccTxn.GetValueOrDefault("account_id"));
-                    var acc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accId }, conn, tx);
-                    if (acc != null)
+                    refundedAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accId }, conn, tx);
+                    refundedAmount = Math.Round(ToDouble(existingAccTxn.GetValueOrDefault("amount")), 2);
+                    if (refundedAcc != null && refundedAmount > 0)
                     {
                         await WithdrawFromAccountAsync(
-                            acc,
-                            ToDouble(existingAccTxn.GetValueOrDefault("amount")),
+                            refundedAcc,
+                            refundedAmount,
                             "purchase_return_deletion",
                             prId,
                             $"Reversal for deleted purchase return #{postedNumber}",
@@ -598,12 +651,13 @@ public class ReturnSettlementService
                 else if (ToDouble(purchaseReturn.GetValueOrDefault("total")) > 0)
                 {
                     var accId = ToLong(purchaseReturn.GetValueOrDefault("account_id"));
-                    var acc = await ResolveAccountAsync(accId > 0 ? accId : null, payMethod, conn, tx);
-                    if (acc != null)
+                    refundedAcc = await ResolveAccountAsync(accId > 0 ? accId : null, payMethod, conn, tx);
+                    refundedAmount = Math.Round(ToDouble(purchaseReturn.GetValueOrDefault("total")), 2);
+                    if (refundedAcc != null && refundedAmount > 0)
                     {
                         await WithdrawFromAccountAsync(
-                            acc,
-                            ToDouble(purchaseReturn.GetValueOrDefault("total")),
+                            refundedAcc,
+                            refundedAmount,
                             "purchase_return_deletion",
                             prId,
                             $"Reversal for deleted purchase return #{postedNumber}",
@@ -614,9 +668,22 @@ public class ReturnSettlementService
                 }
             }
 
-            if (string.Equals(payMethod, "cash", StringComparison.OrdinalIgnoreCase))
+            if (IsDefaultCashDrawerAccount(refundedAcc, payMethod))
             {
-                await RemoveCashDrawerTransactionForRefAsync("purchase_return", prId, "cash_in", conn, tx);
+                var removed = await RemoveOpenCashDrawerTransactionsForRefAsync("purchase_return", prId, conn, tx);
+                if (removed == 0 && refundedAmount > 0)
+                {
+                    await RecordCashDrawerTransactionAsync(
+                        "cash_out",
+                        refundedAmount,
+                        "purchase_return_deletion",
+                        prId,
+                        $"Cash reversal for deleted pre-shift purchase return #{postedNumber}",
+                        userId,
+                        conn,
+                        tx,
+                        terminalId);
+                }
             }
         }
     }
@@ -1378,7 +1445,9 @@ public class ReturnSettlementService
             var type = account.GetValueOrDefault("type")?.ToString() ?? "";
             var code = account.GetValueOrDefault("code")?.ToString() ?? "";
             return string.Equals(type, "cash", StringComparison.OrdinalIgnoreCase) &&
-                   (string.Equals(code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase) || IsTruthy(account.GetValueOrDefault("is_default")));
+                   (string.Equals(code, "cash_drawer", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase) ||
+                    IsTruthy(account.GetValueOrDefault("is_default")));
         }
 
         return string.Equals(paymentMethod ?? "cash", "cash", StringComparison.OrdinalIgnoreCase);
@@ -1517,28 +1586,31 @@ public class ReturnSettlementService
         await RecalculateDrawerExpectedInTxAsync(sessionId, session, conn, tx);
     }
 
-    private async Task<int> RemoveCashDrawerTransactionForRefAsync(
+    public async Task<int> RemoveOpenCashDrawerTransactionsForRefAsync(
         string referenceType,
         long referenceId,
-        string type,
         IDbConnection? conn,
-        IDbTransaction? tx)
+        IDbTransaction? tx,
+        params string[] types)
     {
         if (!await _db.HasTableAsync("cash_drawer_transactions") || !await _db.HasTableAsync("cash_drawer_sessions")) return 0;
-        var affectedSessions = await _db.QueryListAsync(
-            @"SELECT DISTINCT session_id FROM cash_drawer_transactions
-              WHERE reference_type = @refType AND reference_id = @refId AND type = @type
-                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
-            new { refType = referenceType, refId = referenceId, type }, conn, tx);
 
-        // Never mutate closed historical shifts — only remove drawer entries inside the currently open session
+        var filterByType = types is { Length: > 0 };
+        var typeClause = filterByType ? " AND type IN @types" : "";
+
+        var affectedSessions = await _db.QueryListAsync(
+            $@"SELECT DISTINCT session_id FROM cash_drawer_transactions
+               WHERE reference_type = @refType AND reference_id = @refId{typeClause}
+                 AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+            new { refType = referenceType, refId = referenceId, types }, conn, tx);
+
+        // Never mutate closed historical shifts — only remove drawer entries inside currently open sessions
         var removed = await _db.ExecuteAsync(
-            @"DELETE FROM cash_drawer_transactions
-              WHERE reference_type = @refType
-                AND reference_id = @refId
-                AND type = @type
-                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
-            new { refType = referenceType, refId = referenceId, type },
+            $@"DELETE FROM cash_drawer_transactions
+               WHERE reference_type = @refType
+                 AND reference_id = @refId{typeClause}
+                 AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+            new { refType = referenceType, refId = referenceId, types },
             conn,
             tx);
 
@@ -1557,7 +1629,51 @@ public class ReturnSettlementService
         return removed;
     }
 
-    private async Task RecalculateDrawerExpectedInTxAsync(
+    public async Task<bool> IsPreShiftDocumentInTxAsync(
+        string referenceType,
+        long referenceId,
+        string? createdAtStr,
+        IDbConnection? conn,
+        IDbTransaction? tx,
+        long? userId = null,
+        long? terminalId = null)
+    {
+        if (!await _db.HasTableAsync("cash_drawer_sessions") || !await _db.HasTableAsync("cash_drawer_transactions")) return false;
+
+        if (await HasAnyCashDrawerTransactionForRefAsync(referenceType, referenceId, conn, tx))
+        {
+            return true;
+        }
+
+        Dictionary<string, object?>? session = null;
+        if (terminalId.HasValue && await _db.HasColumnAsync("cash_drawer_sessions", "terminal_id"))
+        {
+            session = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @terminalId ORDER BY id DESC LIMIT 1",
+                new { terminalId = terminalId.Value }, conn, tx);
+        }
+        if (session == null && userId.HasValue)
+        {
+            session = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @userId ORDER BY id DESC LIMIT 1",
+                new { userId = userId.Value }, conn, tx);
+        }
+        session ??= await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1",
+            null, conn, tx);
+
+        if (session == null) return false;
+
+        if (DateTime.TryParse(createdAtStr, out var createdAt) &&
+            DateTime.TryParse(session.GetValueOrDefault("opened_at")?.ToString(), out var openedAt))
+        {
+            return createdAt < openedAt;
+        }
+
+        return false;
+    }
+
+    public async Task RecalculateDrawerExpectedInTxAsync(
         long sessionId,
         Dictionary<string, object?> session,
         IDbConnection? conn,

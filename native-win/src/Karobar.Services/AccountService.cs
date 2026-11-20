@@ -125,54 +125,20 @@ public class AccountService
             return cashAccount;
         }
 
+        // Refresh stored closing_balance_expected on open sessions so read endpoints never show stale drawer figures,
+        // without fabricating silent cash_drawer_reconcile account mutations that would erase closed multi-terminal
+        // shift cash or mask real accounting discrepancies.
         var openSessions = await _db.QueryListAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id ASC");
-        if (openSessions.Count == 0)
+        if (openSessions.Count > 0)
         {
-            return await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = cashAccount["id"] });
+            var drawerService = new CashDrawerService(_db);
+            foreach (var sess in openSessions)
+            {
+                await drawerService.RecalculateExpectedBalanceAsync(ToLong(sess["id"]), syncAccount: false);
+            }
         }
-
-        var drawerService = new CashDrawerService(_db);
-        decimal totalOpenExpected = 0m;
-        foreach (var sess in openSessions)
-        {
-            totalOpenExpected += await drawerService.RecalculateExpectedBalanceAsync(ToLong(sess["id"]), syncAccount: false);
-        }
-        totalOpenExpected = Math.Round(totalOpenExpected, 2);
 
         var cashId = ToLong(cashAccount["id"]);
-        var lockedAccount = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = cashId });
-        if (lockedAccount == null) return cashAccount;
-
-        if (Math.Abs(ToDecimal(lockedAccount.GetValueOrDefault("opening_balance"))) > 0.0001m)
-        {
-            await _db.UpdateAsync("accounts", cashId, new Dictionary<string, object?> { ["opening_balance"] = 0m });
-        }
-
-        var currentBalance = ToDecimal(lockedAccount.GetValueOrDefault("current_balance"));
-        var delta = Math.Round(totalOpenExpected - currentBalance, 2);
-        var primarySessionId = ToLong(openSessions[0]["id"]);
-
-        if (delta > 0.009m)
-        {
-            await DepositAsync(
-                lockedAccount,
-                delta,
-                "cash_drawer_reconcile",
-                primarySessionId,
-                $"Auto-reconciled Cash in Hand with active Cash Drawer (Shift #{primarySessionId})",
-                userId);
-        }
-        else if (delta < -0.009m)
-        {
-            await WithdrawAsync(
-                lockedAccount,
-                Math.Abs(delta),
-                "cash_drawer_reconcile",
-                primarySessionId,
-                $"Auto-reconciled Cash in Hand with active Cash Drawer (Shift #{primarySessionId})",
-                userId);
-        }
-
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = cashId });
     }
 

@@ -181,10 +181,10 @@ public class PurchaseReturnController : ApiControllerBase
                 prRow["payment_method"] = rawData.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
                 prRow["account_id"] = ToNullableLong(rawData.GetValueOrDefault("account_id"));
 
-                await _settlementService.ApplyPurchaseReturnSettlementAsync(prRow, operatorUserId, conn, tx);
+                await _settlementService.ApplyPurchaseReturnSettlementAsync(prRow, operatorUserId, conn, tx, CurrentTerminalId);
 
                 await tx.CommitAsync();
-                SyncPulseService.Bump("stock");
+                SyncPulseService.Bump("stock", "drawer");
 
                 var loaded = (await LoadPurchaseReturnAsync(prId))!;
                 loaded["operator_name"] = op.GetValueOrDefault("operator_name");
@@ -299,10 +299,10 @@ public class PurchaseReturnController : ApiControllerBase
                 if (body.ContainsKey("update_drawer")) updateDrawerFlag = GetBool(body, "update_drawer");
                 else if (body.ContainsKey("update_drawer_if_pre_shift")) updateDrawerFlag = GetBool(body, "update_drawer_if_pre_shift");
 
-                await _settlementService.SyncPurchaseReturnSettlementUpdateAsync(prRow, oldSnapshot, updateDrawerFlag, operatorUserId, conn, tx);
+                await _settlementService.SyncPurchaseReturnSettlementUpdateAsync(prRow, oldSnapshot, updateDrawerFlag, operatorUserId, conn, tx, CurrentTerminalId);
 
                 await tx.CommitAsync();
-                SyncPulseService.Bump("stock");
+                SyncPulseService.Bump("stock", "drawer");
 
                 var loaded = (await LoadPurchaseReturnAsync(id))!;
                 loaded["operator_name"] = op.GetValueOrDefault("operator_name");
@@ -340,7 +340,7 @@ public class PurchaseReturnController : ApiControllerBase
 
         try
         {
-            await _settlementService.RevertPurchaseReturnSettlementAsync(existing, CurrentUserId, conn, tx);
+            await _settlementService.RevertPurchaseReturnSettlementAsync(existing, CurrentUserId, conn, tx, CurrentTerminalId);
 
             var oldItems = await Db.QueryListAsync("SELECT * FROM purchase_return_items WHERE purchase_return_id = @id", new { id }, conn, tx);
             await RevertItemsAsync(oldItems, conn, tx);
@@ -349,7 +349,7 @@ public class PurchaseReturnController : ApiControllerBase
             await Db.ExecuteAsync("DELETE FROM purchase_returns WHERE id = @id", new { id }, conn, tx);
 
             await tx.CommitAsync();
-            SyncPulseService.Bump("stock");
+            SyncPulseService.Bump("stock", "drawer");
 
             return NoContent();
         }

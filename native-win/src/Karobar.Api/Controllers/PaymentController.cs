@@ -183,8 +183,8 @@ public class PaymentController : ApiControllerBase
         try
         {
             var payment = partyType == "customer"
-                ? await _paymentService.RecordCustomerPaymentAsync(partyId, data, CurrentUserId)
-                : await _paymentService.RecordSupplierPaymentAsync(partyId, data, CurrentUserId);
+                ? await _paymentService.RecordCustomerPaymentAsync(partyId, data, CurrentUserId, CurrentTerminalId)
+                : await _paymentService.RecordSupplierPaymentAsync(partyId, data, CurrentUserId, CurrentTerminalId);
 
             return StatusCode(201, new Dictionary<string, object?>
             {
@@ -220,7 +220,7 @@ public class PaymentController : ApiControllerBase
 
         try
         {
-            var reversed = await _paymentService.ReversePaymentAsync(id, reason, CurrentUserId);
+            var reversed = await _paymentService.ReversePaymentAsync(id, reason, CurrentUserId, CurrentTerminalId);
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = "Payment reversed successfully",
@@ -402,7 +402,7 @@ public class PaymentController : ApiControllerBase
 
         try
         {
-            var updated = await _paymentService.UpdateChequeStatusAsync(id, status, accountId, reason, CurrentUserId);
+            var updated = await _paymentService.UpdateChequeStatusAsync(id, status, accountId, reason, CurrentUserId, CurrentTerminalId);
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = $"Cheque status updated to {status}",

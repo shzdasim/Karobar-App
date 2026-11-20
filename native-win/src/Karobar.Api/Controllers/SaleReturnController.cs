@@ -196,7 +196,7 @@ public class SaleReturnController : ApiControllerBase
                 srRow["payment_method"] = rawData.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
                 srRow["account_id"] = ToNullableLong(rawData.GetValueOrDefault("account_id"));
 
-                await _settlementService.ApplySaleReturnSettlementAsync(srRow, operatorUserId, conn, tx);
+                await _settlementService.ApplySaleReturnSettlementAsync(srRow, operatorUserId, conn, tx, CurrentTerminalId);
 
                 await tx.CommitAsync();
                 SyncPulseService.Bump("stock", "drawer");
@@ -334,7 +334,7 @@ public class SaleReturnController : ApiControllerBase
                 if (body.ContainsKey("update_drawer")) updateDrawerFlag = GetBool(body, "update_drawer");
                 else if (body.ContainsKey("update_drawer_if_pre_shift")) updateDrawerFlag = GetBool(body, "update_drawer_if_pre_shift");
 
-                await _settlementService.SyncSaleReturnSettlementUpdateAsync(srRow, oldSnapshot, updateDrawerFlag, operatorUserId, conn, tx);
+                await _settlementService.SyncSaleReturnSettlementUpdateAsync(srRow, oldSnapshot, updateDrawerFlag, operatorUserId, conn, tx, CurrentTerminalId);
 
                 await tx.CommitAsync();
                 SyncPulseService.Bump("stock", "drawer");
@@ -375,7 +375,7 @@ public class SaleReturnController : ApiControllerBase
 
         try
         {
-            await _settlementService.RevertSaleReturnSettlementAsync(existing, CurrentUserId, conn, tx);
+            await _settlementService.RevertSaleReturnSettlementAsync(existing, CurrentUserId, conn, tx, CurrentTerminalId);
 
             var oldItems = await Db.QueryListAsync("SELECT * FROM sale_return_items WHERE sale_return_id = @id", new { id }, conn, tx);
             await RevertItemsAsync(oldItems, conn, tx);

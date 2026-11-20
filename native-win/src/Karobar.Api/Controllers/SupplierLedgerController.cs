@@ -709,7 +709,8 @@ public class SupplierLedgerController : ApiControllerBase
                 }
                 if (account == null)
                 {
-                    var accType = string.Equals(payMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) ? "bank" : payMethod;
+                    var accType = (string.Equals(payMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
+                                   string.Equals(payMethod, "cheque", StringComparison.OrdinalIgnoreCase)) ? "bank" : payMethod;
                     account = await Db.QuerySingleOrDefaultAsync(
                         "SELECT * FROM accounts WHERE is_active = 1 AND (type = @t OR is_default = 1) ORDER BY CASE WHEN type = @t AND is_default = 1 THEN 0 WHEN type = @t THEN 1 ELSE 2 END, id ASC LIMIT 1",
                         new { t = accType });
@@ -788,7 +789,8 @@ public class SupplierLedgerController : ApiControllerBase
                     "payment",
                     paymentId.Value,
                     $"Settled Purchase Invoice {refLabel} ({payNo})",
-                    CurrentUserId);
+                    CurrentUserId,
+                    CurrentTerminalId);
             }
         }
         else

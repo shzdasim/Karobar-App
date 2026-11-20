@@ -35,6 +35,23 @@ public abstract class ApiControllerBase : ControllerBase
     protected long? CurrentTokenId =>
         HttpContext.Items.TryGetValue("KarobarTokenId", out var tid) && tid is long t ? t : null;
 
+    protected long? CurrentTerminalId
+    {
+        get
+        {
+            if (HttpContext?.Items.TryGetValue("KarobarTerminal", out var termObj) == true &&
+                termObj is Dictionary<string, object?> dict &&
+                dict.TryGetValue("id", out var idObj) &&
+                idObj != null &&
+                long.TryParse(idObj.ToString(), out var tid) &&
+                tid > 0)
+            {
+                return tid;
+            }
+            return null;
+        }
+    }
+
     protected async Task<bool> IsAdminAsync()
     {
         var uid = CurrentUserId;

@@ -1426,15 +1426,47 @@ public sealed class KarobarCliCommandRunner
 
             if (nextDate <= asOfDate)
             {
+                var payMethod = string.IsNullOrWhiteSpace(template.PaymentMethod) ? "cash" : template.PaymentMethod.Trim();
+                Account? account = null;
+                if (template.AccountId.HasValue && template.AccountId.Value > 0)
+                {
+                    account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == template.AccountId.Value, cancellationToken);
+                }
+                else if (payMethod.Equals("cash", StringComparison.OrdinalIgnoreCase))
+                {
+                    account = await db.Accounts
+                        .Where(a => a.IsActive && a.Type == "cash")
+                        .OrderByDescending(a => a.IsDefault)
+                        .ThenBy(a => a.Id)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+
+                var isDefaultCashDrawer = account != null &&
+                    string.Equals(account.Type, "cash", StringComparison.OrdinalIgnoreCase) &&
+                    (account.IsDefault ||
+                     string.Equals(account.Code, "cash_drawer", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(account.Code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase));
+
+                CashDrawerSession? openSession = null;
+                if (isDefaultCashDrawer && template.Amount > 0m)
+                {
+                    openSession = await db.CashDrawerSessions
+                        .Where(s => s.Status == "open")
+                        .OrderByDescending(s => s.OpenedAt)
+                        .ThenByDescending(s => s.Id)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+
                 var newExp = new Expense
                 {
                     ExpenseNumber = $"EXP-REC-{DateTime.UtcNow:yyyyMMddHHmmss}-{template.Id}",
                     ExpenseCategoryId = template.ExpenseCategoryId,
-                    AccountId = template.AccountId,
+                    AccountId = account?.Id ?? template.AccountId,
+                    CashDrawerSessionId = openSession?.Id,
                     UserId = template.UserId,
                     Amount = template.Amount,
                     Date = nextDate,
-                    PaymentMethod = template.PaymentMethod,
+                    PaymentMethod = payMethod,
                     ReferenceNumber = template.ReferenceNumber,
                     Payee = template.Payee,
                     Description = template.Description,
@@ -1445,24 +1477,42 @@ public sealed class KarobarCliCommandRunner
                 };
                 db.Expenses.Add(newExp);
                 template.IsRecurring = false;
+                await db.SaveChangesAsync(cancellationToken);
 
-                // Debit the linked financial account & record an AccountTransaction so balances stay reconciled
-                if (template.AccountId.HasValue && template.AccountId.Value > 0 && template.Amount > 0m)
+                // Debit the linked financial account & sync active Cash Drawer so both stay reconciled
+                if (account != null && template.Amount > 0m)
                 {
-                    var account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == template.AccountId.Value, cancellationToken);
-                    if (account != null)
+                    var recDesc = $"Recurring Expense ({newExp.ExpenseNumber}): {template.Description ?? template.Payee ?? "Scheduled"}";
+                    account.CurrentBalance = Math.Round(account.CurrentBalance - template.Amount, 2);
+                    account.UpdatedAt = DateTime.UtcNow;
+                    db.AccountTransactions.Add(new AccountTransaction
                     {
-                        account.CurrentBalance = Math.Round(account.CurrentBalance - template.Amount, 2);
-                        account.UpdatedAt = DateTime.UtcNow;
-                        db.AccountTransactions.Add(new AccountTransaction
+                        AccountId = account.Id,
+                        Type = "withdrawal",
+                        Amount = template.Amount,
+                        BalanceAfter = account.CurrentBalance,
+                        ReferenceType = "expense",
+                        ReferenceId = newExp.Id,
+                        Description = recDesc,
+                        UserId = template.UserId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+
+                    if (openSession != null)
+                    {
+                        openSession.ClosingBalanceExpected = Math.Round(openSession.ClosingBalanceExpected - template.Amount, 2);
+                        openSession.UpdatedAt = DateTime.UtcNow;
+                        db.CashDrawerTransactions.Add(new CashDrawerTransaction
                         {
-                            AccountId = account.Id,
-                            Type = "withdrawal",
+                            SessionId = openSession.Id,
+                            UserId = template.UserId ?? openSession.UserId,
+                            Type = "expense",
                             Amount = template.Amount,
-                            BalanceAfter = account.CurrentBalance,
                             ReferenceType = "expense",
-                            Description = $"Recurring Expense ({newExp.ExpenseNumber}): {template.Description ?? template.Payee ?? "Scheduled"}",
-                            UserId = template.UserId,
+                            ReferenceId = newExp.Id,
+                            Notes = recDesc,
+                            TerminalId = openSession.TerminalId,
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         });

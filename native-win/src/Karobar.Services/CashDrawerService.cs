@@ -215,9 +215,20 @@ public class CashDrawerService
             var cashAccount = await accountService.SyncCashDrawerBalanceAsync(session);
             if (cashAccount != null)
             {
-                var targetBalance = Math.Round(otherOpenExpected + opening, 2);
                 var currentBal = AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance"));
-                var delta = Math.Round(targetBalance - currentBal, 2);
+                decimal delta;
+                if (openSessions.Count == 0)
+                {
+                    // Single active shift: reconcile opening float against Cash in Hand
+                    delta = Math.Round(opening - currentBal, 2);
+                }
+                else
+                {
+                    // Multi-terminal / additional counter: draw from any unassigned closed-counter pool first
+                    // and only deposit fresh cash added above that pool — never wipe out another closed shift's cash!
+                    var unassignedPool = Math.Max(0m, Math.Round(currentBal - otherOpenExpected, 2));
+                    delta = opening > unassignedPool ? Math.Round(opening - unassignedPool, 2) : 0m;
+                }
 
                 if (delta > 0.001m)
                 {
@@ -441,29 +452,29 @@ public class CashDrawerService
             var cashAccount = await accountService.SyncCashDrawerBalanceAsync(lockedSession);
             if (cashAccount != null)
             {
-                var targetBalance = Math.Round(otherOpenExpected + actual, 2);
-                var currentBal = AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance"));
-                var accountDelta = Math.Round(targetBalance - currentBal, 2);
+                // Post ONLY the physical cash count variance (actual - expected) for this closing shift.
+                // Never overwrite Cash in Hand with (otherOpenExpected + actual), which would erase cash
+                // from previously closed multi-terminal shifts still held in Cash in Hand.
                 var actorId = userId ?? AccountService.ToLong(lockedSession.GetValueOrDefault("user_id"));
 
-                if (accountDelta > 0.001m)
+                if (difference > 0.001m)
                 {
                     await accountService.DepositAsync(
                         cashAccount,
-                        accountDelta,
+                        difference,
                         "cash_drawer_variance",
                         sessionId,
-                        $"Cash drawer close overage / reconciliation (Session #{sessionId})",
+                        $"Cash drawer close overage (Session #{sessionId})",
                         actorId);
                 }
-                else if (accountDelta < -0.001m)
+                else if (difference < -0.001m)
                 {
                     await accountService.WithdrawAsync(
                         cashAccount,
-                        Math.Abs(accountDelta),
+                        Math.Abs(difference),
                         "cash_drawer_variance",
                         sessionId,
-                        $"Cash drawer close shortage / reconciliation (Session #{sessionId})",
+                        $"Cash drawer close shortage (Session #{sessionId})",
                         actorId);
                 }
             }
@@ -971,7 +982,8 @@ public class CashDrawerService
         Dictionary<string, object?> payment,
         string reason,
         long? userId = null,
-        bool? updateDrawerIfClosedShift = null)
+        bool? updateDrawerIfClosedShift = null,
+        long? terminalId = null)
     {
         if (!await _db.HasTableAsync("cash_drawer_sessions") || !await _db.HasTableAsync("cash_drawer_transactions"))
         {
@@ -1009,7 +1021,7 @@ public class CashDrawerService
             return null;
         }
 
-        var session = await GetCurrentSessionAsync(userId, false);
+        var session = await GetCurrentSessionAsync(userId, false, terminalId);
         if (session == null) return null;
 
         var partyType = payment.GetValueOrDefault("party_type")?.ToString() ?? "customer";
@@ -1024,7 +1036,8 @@ public class CashDrawerService
             "payment",
             payId,
             $"Reversal of {partyLabel} Payment {payNo}: {reason}",
-            userId);
+            userId,
+            terminalId);
     }
 
     public async Task<decimal> ResolveDirectCashForSaleInvoiceAsync(Dictionary<string, object?> invoice)
