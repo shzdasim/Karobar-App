@@ -59,6 +59,35 @@ public class WhatsAppShareSystemTests
 
         // Default Setting entity uses local_agent for seamless in-app QR link & send
         new Karobar.Core.Entities.Setting().WhatsappProvider.Should().Be("local_agent");
+
+        // deps_fingerprint must include bundled WhatsApp Node + Baileys runtime so pre-WA installs auto-trigger full installer once
+        buildPs1.Should().Contain("wa-node:");
+        buildPs1.Should().Contain("wa-pkg:");
+
+        // ReadRecentAgentError must never return the useless trailing "Node.js v25.8.1" stack footer
+        var tmpDiagRoot = Path.Combine(Path.GetTempPath(), $"karobar-wa-diag-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(tmpDiagRoot, "storage", "logs"));
+            Directory.CreateDirectory(Path.Combine(tmpDiagRoot, "runtime", "whatsapp-agent"));
+            var fakeScript = Path.Combine(tmpDiagRoot, "runtime", "whatsapp-agent", "whatsapp-agent.mjs");
+            File.WriteAllText(fakeScript, "import '@whiskeysockets/baileys';");
+            LocalWhatsAppSidecarManager.HasBaileysModulesForScript(fakeScript).Should().BeFalse();
+
+            File.WriteAllText(Path.Combine(tmpDiagRoot, "storage", "logs", "whatsapp-agent.log"),
+                "[ERR] Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@whiskeysockets/baileys' imported from C:\\Program Files\\Karobar-App-Native\\runtime\\whatsapp-agent\\whatsapp-agent.mjs\n" +
+                "[ERR]     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:255:9)\n" +
+                "[ERR] Node.js v25.8.1\n");
+
+            using var mgr = new LocalWhatsAppSidecarManager(tmpDiagRoot);
+            var err = mgr.ReadRecentAgentError();
+            err.Should().Contain("ERR_MODULE_NOT_FOUND");
+            err.Should().NotBe("Node.js v25.8.1");
+        }
+        finally
+        {
+            try { Directory.Delete(tmpDiagRoot, recursive: true); } catch { }
+        }
     }
 
     [Fact]

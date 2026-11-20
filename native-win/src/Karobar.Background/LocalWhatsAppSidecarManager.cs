@@ -377,6 +377,16 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             Path.Combine(AppContext.BaseDirectory, "scripts", "whatsapp-agent.mjs")
         };
 
+        // First pass: prefer a script whose directory (or parent repo root) actually contains @whiskeysockets/baileys
+        foreach (var c in candidates)
+        {
+            if (File.Exists(c) && HasBaileysModulesForScript(c))
+            {
+                return c;
+            }
+        }
+
+        // Second pass: fall back to any existing script so StartAsync can report the exact missing-modules message
         foreach (var c in candidates)
         {
             if (File.Exists(c))
@@ -385,6 +395,21 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             }
         }
         return null;
+    }
+
+    public static bool HasBaileysModulesForScript(string scriptPath)
+    {
+        var dir = Path.GetDirectoryName(scriptPath);
+        for (var depth = 0; depth < 3 && !string.IsNullOrEmpty(dir); depth++)
+        {
+            var baileysDir = Path.Combine(dir, "node_modules", "@whiskeysockets", "baileys");
+            if (Directory.Exists(baileysDir))
+            {
+                return true;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
     }
 
     public bool HasSavedLinkedSession()
@@ -509,8 +534,23 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
                 ["ok"] = false,
                 ["agent_running"] = false,
                 ["status"] = "error",
-                ["last_error"] = "Built-in WhatsApp Agent script (whatsapp-agent.mjs) was not found in this installation. Please reinstall Karobar-App Native.",
+                ["last_error"] = "Built-in WhatsApp Agent script (whatsapp-agent.mjs) was not found in this installation. Please run the latest Karobar-Native-Setup.exe installer.",
                 ["message"] = "Built-in WhatsApp Agent script was not found in this installation.",
+                ["agent_url"] = baseUrl,
+                ["api_key"] = apiKey
+            };
+        }
+
+        if (!HasBaileysModulesForScript(scriptPath))
+        {
+            const string missingDepsMsg = "Built-in WhatsApp packages (@whiskeysockets/baileys) are not installed in this folder yet. Please run the latest full Karobar-Native-Setup.exe installer once (your database and settings are preserved).";
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["agent_running"] = false,
+                ["status"] = "error",
+                ["last_error"] = missingDepsMsg,
+                ["message"] = missingDepsMsg,
                 ["agent_url"] = baseUrl,
                 ["api_key"] = apiKey
             };
@@ -865,14 +905,29 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
 
         try
         {
-            var lines = File.ReadAllLines(logFile)
-                .Select(l => l.Trim())
-                .Where(l => !string.IsNullOrEmpty(l) && !l.Contains("[WhatsApp Agent] Listening on", StringComparison.OrdinalIgnoreCase))
+            var rawLines = File.ReadAllLines(logFile)
+                .Select(l => Regex.Replace(l.Trim(), @"^\[(ERR|OUT)\]\s*", "", RegexOptions.IgnoreCase).Trim())
+                .Where(l => !string.IsNullOrEmpty(l))
+                .Where(l => !l.Contains("[WhatsApp Agent] Listening on", StringComparison.OrdinalIgnoreCase))
+                .Where(l => !l.Contains("[WhatsApp Agent] Connected as", StringComparison.OrdinalIgnoreCase))
+                .Where(l => !l.Contains("[WhatsApp Agent] QR code ready", StringComparison.OrdinalIgnoreCase))
+                .Where(l => !Regex.IsMatch(l, @"^Node\.js\s+v\d+", RegexOptions.IgnoreCase))
+                .Where(l => !l.StartsWith("at ", StringComparison.Ordinal))
+                .Where(l => !Regex.IsMatch(l, @"^\^+$"))
                 .ToList();
 
-            if (lines.Count == 0) return null;
-            var last = lines[^1];
-            return last.Length > 240 ? last[..240] : last;
+            if (rawLines.Count == 0) return null;
+
+            // Prefer the actual root error line (e.g. Error [ERR_MODULE_NOT_FOUND]: ..., SyntaxError: ..., EADDRINUSE, etc.)
+            var rootError = rawLines.LastOrDefault(l =>
+                l.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                l.Contains("ERR_", StringComparison.Ordinal) ||
+                l.Contains("Cannot find", StringComparison.OrdinalIgnoreCase) ||
+                l.Contains("EADDRINUSE", StringComparison.OrdinalIgnoreCase) ||
+                l.Contains("Failed", StringComparison.OrdinalIgnoreCase));
+
+            var chosen = rootError ?? rawLines[^1];
+            return chosen.Length > 320 ? chosen[..320] : chosen;
         }
         catch
         {

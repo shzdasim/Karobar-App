@@ -1445,9 +1445,16 @@ public sealed class KarobarDesktopBridge
                                          string.IsNullOrEmpty(local.DepsFingerprint) ||
                                          string.Equals(remoteDeps, local.DepsFingerprint, StringComparison.OrdinalIgnoreCase);
 
+                    // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
+                    // require a one-time zero-data-loss full installer upgrade instead of a differential patch.
+                    var hasBundledWaRuntime = !OperatingSystem.IsWindows() ||
+                        (File.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "node", "node.exe")) &&
+                         Directory.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys")));
+
                     var canPatch = !string.IsNullOrWhiteSpace(patchUrl) &&
                                    layoutCompatible &&
                                    depsCompatible &&
+                                   hasBundledWaRuntime &&
                                    !CompareSemverNewer(minPatchVer, local.Version);
 
                     return new

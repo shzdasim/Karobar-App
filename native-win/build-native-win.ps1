@@ -174,8 +174,9 @@ New-Item -ItemType Directory -Force -Path $NodeRuntimeDir | Out-Null
 $BundledNodeExe = Join-Path $NodeRuntimeDir "node.exe"
 
 $LocalNodeCmd = Get-Command "node.exe" -ErrorAction SilentlyContinue
-if ($LocalNodeCmd -and (Test-Path $LocalNodeCmd.Source)) {
-    Write-Host "    Using host Node.js binary from: $($LocalNodeCmd.Source)" -ForegroundColor Gray
+$LocalNodeVer = if ($LocalNodeCmd -and (Test-Path $LocalNodeCmd.Source)) { (& $LocalNodeCmd.Source -v 2>$null) } else { "" }
+if ($LocalNodeCmd -and (Test-Path $LocalNodeCmd.Source) -and ($LocalNodeVer -match '^v(20|22)\.')) {
+    Write-Host "    Using host Node.js LTS ($LocalNodeVer) binary from: $($LocalNodeCmd.Source)" -ForegroundColor Gray
     Copy-Item -Path $LocalNodeCmd.Source -Destination $BundledNodeExe -Force
 } else {
     $NodeZipUrl = "https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip"
@@ -231,11 +232,14 @@ try {
     Pop-Location
 }
 
-# Compute deterministic third-party DLL fingerprint BEFORE Inno Setup & OTA patch packaging
-# so public/version.json inside BOTH the installer and patch carries the exact deps_fingerprint
+# Compute deterministic third-party DLL + bundled WhatsApp Node/Baileys runtime fingerprint BEFORE Inno Setup & OTA patch packaging
+# so older installs lacking runtime\node\node.exe or runtime\whatsapp-agent\node_modules automatically receive the full installer once.
 $ThirdPartyDllList = (Get-ChildItem -Path $StageDir -Filter "*.dll" | Where-Object { $_.Name -notlike "Karobar*" } | Sort-Object Name | ForEach-Object { "$($_.Name):$($_.Length)" }) -join "|"
+$NodeExeSize = if (Test-Path $BundledNodeExe) { (Get-Item $BundledNodeExe).Length } else { 0 }
+$WaPkgRaw = if (Test-Path (Join-Path $WaRuntimeDir "package.json")) { (Get-Content (Join-Path $WaRuntimeDir "package.json") -Raw).Trim() } else { "" }
+$FingerprintSeed = "$ThirdPartyDllList|wa-node:$NodeExeSize|wa-pkg:$WaPkgRaw"
 $Sha = [System.Security.Cryptography.SHA256]::Create()
-$DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ThirdPartyDllList))
+$DepsHashBytes = $Sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($FingerprintSeed))
 $DepsHash8 = ([System.BitConverter]::ToString($DepsHashBytes) -replace "-", "").ToLower().Substring(0, 8)
 $RuntimeLayoutTag = "split-v2-$DepsHash8"
 $Sha.Dispose()
