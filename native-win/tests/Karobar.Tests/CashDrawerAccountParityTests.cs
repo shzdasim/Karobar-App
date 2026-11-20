@@ -840,4 +840,26 @@ public class CashDrawerAccountParityTests
         }
         finally { Cleanup(p); }
     }
+
+    [Fact]
+    public async Task S24_SinglePc_SecondUserCannotDoubleOpenDrawerAndDoubleCashInHand()
+    {
+        var (db, p, cashId, _) = await SetupFreshAsync();
+        try
+        {
+            var drawer = new CashDrawerService(db);
+            // User 1 opens Cash Drawer on standalone PC (terminalId = null) with Rs. 50,000
+            var s1 = await drawer.OpenSessionAsync(1, 50000m, "Morning shift", terminalId: null);
+            var s1Id = AccountService.ToLong(s1["id"]);
+
+            // User 2 logs in on the SAME PC (terminalId = null) and tries to open a second drawer -> MUST be blocked!
+            Func<Task> doubleOpen = async () => await drawer.OpenSessionAsync(2, 50000m, "Afternoon shift", terminalId: null);
+            await doubleOpen.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*already open on this PC*");
+
+            // Cash in Hand MUST remain 50,000 (never doubled to 100,000!)
+            await AssertParityAsync(db, cashId, s1Id, 50000m, "S24 single-PC duplicate open blocked");
+        }
+        finally { Cleanup(p); }
+    }
 }

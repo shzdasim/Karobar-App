@@ -342,11 +342,22 @@ public class CashDrawerController : ApiControllerBase
             openStoredTotal = Math.Round(openStoredTotal + stored, 2);
             openCalcTotal = Math.Round(openCalcTotal + calc, 2);
 
+            var sessUid = AccountService.ToLong(sess.GetValueOrDefault("user_id"));
+            var sessTid = AccountService.ToLong(sess.GetValueOrDefault("terminal_id"));
+            string? userName = sessUid > 0 && await Db.HasTableAsync("users")
+                ? await Db.ExecuteScalarAsync<string?>("SELECT name FROM users WHERE id = @uid", new { uid = sessUid })
+                : null;
+            string? terminalName = sessTid > 0 && await Db.HasTableAsync("terminals")
+                ? await Db.ExecuteScalarAsync<string?>("SELECT name FROM terminals WHERE id = @tid", new { tid = sessTid })
+                : null;
+
             sessionDiagnostics.Add(new Dictionary<string, object?>
             {
                 ["session_id"] = sid,
                 ["terminal_id"] = sess.GetValueOrDefault("terminal_id"),
+                ["terminal_name"] = terminalName,
                 ["user_id"] = sess.GetValueOrDefault("user_id"),
+                ["user_name"] = userName,
                 ["opened_at"] = sess.GetValueOrDefault("opened_at"),
                 ["opening_balance"] = Math.Round(AccountService.ToDecimal(sess.GetValueOrDefault("opening_balance")), 2),
                 ["stored_expected_before_refresh"] = stored,

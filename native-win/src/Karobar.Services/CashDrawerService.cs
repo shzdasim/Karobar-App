@@ -160,23 +160,31 @@ public class CashDrawerService
         }
         else if (hasTerminalCol)
         {
+            // Single-PC standalone mode (no terminal_id): only ONE physical drawer can be open at a time on this PC,
+            // even across different logged-in users, so Cash in Hand is never double-counted by a second open.
             existing = await _db.QuerySingleOrDefaultAsync(
-                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid AND terminal_id IS NULL LIMIT 1",
-                new { uid = userId });
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY id DESC LIMIT 1");
         }
         else
         {
             existing = await _db.QuerySingleOrDefaultAsync(
-                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid LIMIT 1",
-                new { uid = userId });
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1");
         }
 
         if (existing != null)
         {
+            var exId = AccountService.ToLong(existing["id"]);
+            var exUid = AccountService.ToLong(existing.GetValueOrDefault("user_id"));
+            string? exUserName = null;
+            if (exUid > 0 && await _db.HasTableAsync("users"))
+            {
+                exUserName = await _db.ExecuteScalarAsync<string?>("SELECT name FROM users WHERE id = @uid", new { uid = exUid });
+            }
+            var ownerLabel = !string.IsNullOrWhiteSpace(exUserName) ? $" (opened by {exUserName})" : "";
             throw new InvalidOperationException(
                 terminalId.HasValue
-                    ? "A cash drawer session is already open on this terminal. Please close it first."
-                    : "A cash drawer session is already open for this user. Please close it first.");
+                    ? $"Cash drawer Shift #{exId}{ownerLabel} is already open on this terminal. Please close it first."
+                    : $"Cash drawer Shift #{exId}{ownerLabel} is already open on this PC. Please close Shift #{exId} first before opening a new shift so Cash in Hand is not double-counted.");
         }
 
         var opening = Math.Max(0m, Math.Round(openingBalance, 2));
