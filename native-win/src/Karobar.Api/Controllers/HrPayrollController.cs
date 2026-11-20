@@ -398,7 +398,10 @@ public class HrPayrollController : ApiControllerBase
         var records = await Db.QueryListAsync(
             "SELECT * FROM employee_attendances WHERE date = @dateStr",
             new { dateStr });
-        var recByEmp = records.ToDictionary(r => Convert.ToInt64(r["employee_id"]), r => r);
+        var recByEmp = records
+            .Where(r => r.GetValueOrDefault("employee_id") != null)
+            .GroupBy(r => Convert.ToInt64(r["employee_id"]))
+            .ToDictionary(g => g.Key, g => g.Last());
 
         var sheet = new List<Dictionary<string, object?>>();
         foreach (var emp in employees)

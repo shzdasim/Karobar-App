@@ -146,10 +146,13 @@ public class SqliteImportController : ApiControllerBase
         return false;
     }
 
+    private static readonly string EphemeralImportSecret =
+        "base64:" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
     private static string GetAppSecret()
     {
         var key = Environment.GetEnvironmentVariable("APP_KEY");
-        return !string.IsNullOrWhiteSpace(key) ? key : "karobar-native-win-default-app-key-secret";
+        return !string.IsNullOrWhiteSpace(key) ? key : EphemeralImportSecret;
     }
 
     private static string GenerateSoftwareAdminToken(long userId, string? dateStr = null)
@@ -581,7 +584,14 @@ public class SqliteImportController : ApiControllerBase
                     var backupDir = Db.StoragePath("app/backups");
                     Directory.CreateDirectory(backupDir);
                     safetyBackupName = $"pre-sqlite-import-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite";
-                    System.IO.File.Copy(Db.SqlitePath, Path.Combine(backupDir, safetyBackupName), overwrite: true);
+                    var snapTarget = Path.Combine(backupDir, safetyBackupName);
+                    using (var snapSrcConn = new SqliteConnection($"Data Source={Db.SqlitePath};Mode=ReadOnly;Pooling=False;"))
+                    using (var snapDstConn = new SqliteConnection($"Data Source={snapTarget};Mode=ReadWriteCreate;Pooling=False;"))
+                    {
+                        await snapSrcConn.OpenAsync();
+                        await snapDstConn.OpenAsync();
+                        snapSrcConn.BackupDatabase(snapDstConn);
+                    }
                 }
             }
             catch

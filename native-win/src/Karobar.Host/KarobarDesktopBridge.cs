@@ -570,12 +570,14 @@ public sealed class KarobarDesktopBridge
 
         var preferredName = ReadPreferredPrinterConfig();
         var printers = new List<PrinterInfoDto>();
+        var wmiSucceeded = !OperatingSystem.IsWindows();
 
         if (OperatingSystem.IsWindows())
         {
+            Process? proc = null;
             try
             {
-                using var proc = new Process
+                proc = new Process
                 {
                     StartInfo = new ProcessStartInfo
                     {
@@ -592,6 +594,7 @@ public sealed class KarobarDesktopBridge
                 using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(4500));
                 var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
                 await proc.WaitForExitAsync(cts.Token);
+                wmiSucceeded = proc.ExitCode == 0;
 
                 if (!string.IsNullOrWhiteSpace(stdout))
                 {
@@ -628,17 +631,35 @@ public sealed class KarobarDesktopBridge
                             wmiWorkOffline: workOff,
                             preferredName: preferredName));
                     }
+                    wmiSucceeded = true;
                 }
             }
             catch
             {
-                // Ignore WMI query errors
+                try
+                {
+                    if (proc is { HasExited: false })
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                }
+                catch { }
+            }
+            finally
+            {
+                proc?.Dispose();
             }
         }
 
-        _cachedPrinters = printers;
-        _cachedPrintersAt = Environment.TickCount64;
-        return printers;
+        if (wmiSucceeded)
+        {
+            _cachedPrinters = printers;
+            _cachedPrintersAt = Environment.TickCount64;
+            return printers;
+        }
+
+        // Preserve any previously known good printer list on transient WMI timeout/failure
+        return _cachedPrinters ?? printers;
     }
 
     public Task<IReadOnlyList<PrinterInfoDto>> getPrinters() => GetPrintersAsync(true);
@@ -909,7 +930,7 @@ public sealed class KarobarDesktopBridge
         };
     }
 
-    public Task<object> PrintThermalRawAsync(JsonElement payload, CancellationToken cancellationToken = default)
+    public async Task<object> PrintThermalRawAsync(JsonElement payload, CancellationToken cancellationToken = default)
     {
         var printerName = "";
         var text = "";
@@ -925,19 +946,22 @@ public sealed class KarobarDesktopBridge
         }
         if (string.IsNullOrWhiteSpace(printerName))
         {
-            printerName = ReadPreferredPrinterConfig();
+            var strategy = await ResolvePrinterStrategyAsync(isThermalDoc: true);
+            printerName = !string.IsNullOrWhiteSpace(strategy.DeviceName)
+                ? strategy.DeviceName
+                : ReadPreferredPrinterConfig();
         }
 
         var rawSvc = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
         var bytes = rawSvc.BuildEscPosReceiptPayload(text, kickDrawer: kickDrawer);
         var res = rawSvc.SendRawBytesToPrinter(printerName, bytes, "Karobar Thermal Receipt");
-        return Task.FromResult<object>(new
+        return new
         {
             ok = res.Ok,
             printer = printerName,
             bytesWritten = res.BytesWritten,
             error = res.Error
-        });
+        };
     }
 
     public Task<object> silentPrint(JsonElement options) => SilentPrintAsync(options);
@@ -1004,6 +1028,7 @@ public sealed class KarobarDesktopBridge
         // Neutralize inline window.print() / window.close() calls inside the HTML
         var sanitizedHtml = Regex.Replace(rawHtml, @"window\.print\s*\(\s*\)", "void(0)");
         sanitizedHtml = Regex.Replace(sanitizedHtml, @"window\.close\s*\(\s*\)", "void(0)");
+        sanitizedHtml = InjectBaseHrefForPrintHtml(sanitizedHtml, _networkConfig.GetAppBaseUrl());
 
         var tempFilePath = Path.Combine(
             Path.GetTempPath(),
@@ -1039,6 +1064,30 @@ public sealed class KarobarDesktopBridge
     }
 
     public Task<object> printHtml(JsonElement payload) => PrintHtmlAsync(payload);
+
+    public static string InjectBaseHrefForPrintHtml(string html, string appBaseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(appBaseUrl))
+        {
+            return html;
+        }
+        if (Regex.IsMatch(html, @"<base\b", RegexOptions.IgnoreCase))
+        {
+            return html;
+        }
+
+        var normalizedBase = appBaseUrl.TrimEnd('/') + "/";
+        var escapedBase = System.Net.WebUtility.HtmlEncode(normalizedBase);
+        var baseTag = $"<base href=\"{escapedBase}\">";
+
+        var headMatch = Regex.Match(html, @"<head\b[^>]*>", RegexOptions.IgnoreCase);
+        if (headMatch.Success)
+        {
+            return html.Insert(headMatch.Index + headMatch.Length, baseTag);
+        }
+
+        return baseTag + html;
+    }
 
     private static async Task<(bool Ok, string? Error)> SpoolPdfViaSumatraAsync(
         string sumatraExe,
@@ -1427,9 +1476,9 @@ public sealed class KarobarDesktopBridge
                         bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
                             ? bu.GetString()
                             : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
-                        patch_url = patchUrl,
-                        patch_size = remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
-                        patch_sha256 = remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
+                        patch_url = canPatch ? patchUrl : null,
+                        patch_size = canPatch && remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
+                        patch_sha256 = canPatch && remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
                             ? pSha.GetString()
                             : null,
                         installer_sha256 = remote.TryGetProperty("installer_sha256", out var iSha) && iSha.ValueKind == JsonValueKind.String
@@ -1460,17 +1509,37 @@ public sealed class KarobarDesktopBridge
             if (apiData.TryGetProperty("tag_name", out var tagProp) && tagProp.ValueKind == JsonValueKind.String)
             {
                 var rawTag = tagProp.GetString() ?? "";
+                var releaseName = apiData.TryGetProperty("name", out var rn) && rn.ValueKind == JsonValueKind.String
+                    ? rn.GetString() ?? ""
+                    : "";
+                var releaseBody = apiData.TryGetProperty("body", out var bd) && bd.ValueKind == JsonValueKind.String
+                    ? bd.GetString() ?? ""
+                    : "";
+
                 var remoteVer = Regex.Replace(rawTag, @"^(native-)?[vV]", "");
+                if (!Regex.IsMatch(remoteVer, @"^\d+\.\d+\.\d+$"))
+                {
+                    var nameVerMatch = Regex.Match(releaseName, @"\bv?(\d+\.\d+\.\d+)\b");
+                    if (nameVerMatch.Success)
+                    {
+                        remoteVer = nameVerMatch.Groups[1].Value;
+                    }
+                    else
+                    {
+                        var bodyVerMatch = Regex.Match(releaseBody, @"\bv?(\d+\.\d+\.\d+)\b");
+                        remoteVer = bodyVerMatch.Success ? bodyVerMatch.Groups[1].Value : "";
+                    }
+                }
+
                 var match = Regex.Match(remoteVer, @"^2\.0\.(\d+)$");
                 var remoteBuild = match.Success && int.TryParse(match.Groups[1].Value, out var rb) ? rb : 0;
-                var isNewer = remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
-                    ? remoteBuild > local.BuildNumber
-                    : CompareSemverNewer(remoteVer, local.Version);
+                var isNewer = !string.IsNullOrWhiteSpace(remoteVer) &&
+                              (remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
+                                  ? remoteBuild > local.BuildNumber
+                                  : CompareSemverNewer(remoteVer, local.Version));
 
                 var downloadUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe";
                 var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
-                string? patchUrl = null;
-                long? patchSize = null;
                 long? installerSize = null;
 
                 if (apiData.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
@@ -1487,39 +1556,35 @@ public sealed class KarobarDesktopBridge
                         }
                         if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip")
                             bundleUrl = url;
-                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Patch.zip")
-                        {
-                            patchUrl = url;
-                            if (asset.TryGetProperty("size", out var sProp) && sProp.TryGetInt64(out var sz))
-                                patchSize = sz;
-                        }
                     }
                 }
 
+                // Never enable differential patch in the GitHub REST fallback because runtime_layout,
+                // deps_fingerprint, min_patch_version, and patch_sha256 from native-version.json were not verified.
                 return new
                 {
                     ok = true,
                     update_available = isNewer,
-                    is_patch = !string.IsNullOrWhiteSpace(patchUrl),
+                    is_patch = false,
                     app_name = "Karobar-App Native",
                     current_version = local.Version,
                     current_build = local.BuildNumber,
-                    latest_version = remoteVer,
+                    latest_version = string.IsNullOrWhiteSpace(remoteVer) ? local.Version : remoteVer,
                     latest_build = remoteBuild,
-                    release_name = apiData.TryGetProperty("name", out var rn) && rn.ValueKind == JsonValueKind.String
-                        ? rn.GetString()
-                        : $"Karobar-App Native v{remoteVer}",
+                    release_name = !string.IsNullOrWhiteSpace(releaseName)
+                        ? releaseName
+                        : $"Karobar-App Native v{(string.IsNullOrWhiteSpace(remoteVer) ? local.Version : remoteVer)}",
                     released_at = apiData.TryGetProperty("published_at", out var pa) && pa.ValueKind == JsonValueKind.String
                         ? pa.GetString()
                         : "",
-                    notes = apiData.TryGetProperty("body", out var bd) && bd.ValueKind == JsonValueKind.String
-                        ? bd.GetString()
+                    notes = !string.IsNullOrWhiteSpace(releaseBody)
+                        ? releaseBody
                         : "New Karobar-App Native release available.",
                     download_url = downloadUrl,
                     installer_size = installerSize,
                     bundle_url = bundleUrl,
-                    patch_url = patchUrl,
-                    patch_size = patchSize,
+                    patch_url = (string?)null,
+                    patch_size = (long?)null,
                     patch_sha256 = (string?)null,
                     installer_sha256 = (string?)null,
                     min_patch_version = "2.0.0",
@@ -1603,7 +1668,7 @@ public sealed class KarobarDesktopBridge
             mode = "download";
         }
 
-        var isPatch = (isPatchFlag || !string.IsNullOrWhiteSpace(candidatePatchUrl)) && !forceFull;
+        var isPatch = isPatchFlag && !forceFull && !string.IsNullOrWhiteSpace(candidatePatchUrl);
         var expectedSha256 = isPatch ? candidatePatchSha256 : candidateInstallerSha256;
         var versionLabel = Regex.Replace(rawVersion, @"[^a-zA-Z0-9._-]", "");
         if (string.IsNullOrWhiteSpace(versionLabel)) versionLabel = "latest";
@@ -1647,6 +1712,12 @@ public sealed class KarobarDesktopBridge
                 try
                 {
                     await DownloadFileWithProgressAsync(downloadUrl, partPath, isPatch, cancellationToken);
+
+                    var downloadedSize = File.Exists(partPath) ? new FileInfo(partPath).Length : 0L;
+                    if (downloadedSize < minValidSize)
+                    {
+                        throw new InvalidOperationException($"Downloaded update file is unexpectedly small ({downloadedSize} bytes). Please retry.");
+                    }
 
                     if (!string.IsNullOrWhiteSpace(expectedSha256) &&
                         !VerifyFileSha256(partPath, expectedSha256))
@@ -1900,9 +1971,29 @@ public sealed class KarobarDesktopBridge
                 Write-Log "Successfully updated $copied files in $installDir"
 
                 if (Test-Path $exePath) {
-                    Write-Log "Running post-patch --cli install --upgrade-only..."
-                    $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
-                    Write-Log "Post-patch schema upgrade exited with code $($upgProc.ExitCode)"
+                    $isTerminalMode = $false
+                    foreach ($modeCfg in @(
+                        (Join-Path $installDir 'storage\app\network-mode.json'),
+                        (Join-Path $env:APPDATA 'Karobar-App-Native\network-mode.json')
+                    )) {
+                        if (Test-Path $modeCfg) {
+                            try {
+                                $cfgRaw = Get-Content -Path $modeCfg -Raw -ErrorAction Stop
+                                if ($cfgRaw -match '"mode"\s*:\s*"terminal"') {
+                                    $isTerminalMode = $true
+                                    break
+                                }
+                            } catch {}
+                        }
+                    }
+
+                    if ($isTerminalMode) {
+                        Write-Log "Terminal Mode detected - skipping local --cli install --upgrade-only."
+                    } else {
+                        Write-Log "Running post-patch --cli install --upgrade-only..."
+                        $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
+                        Write-Log "Post-patch schema upgrade exited with code $($upgProc.ExitCode)"
+                    }
                 }
 
                 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
@@ -2060,6 +2151,12 @@ public sealed class KarobarDesktopBridge
             {
                 _windowManager.SendUpdateProgress(prog);
             }
+        }
+
+        await fileStream.FlushAsync(cancellationToken);
+        if (totalBytes > 0 && downloadedBytes != totalBytes)
+        {
+            throw new IOException($"Incomplete update download: received {downloadedBytes} of {totalBytes} bytes.");
         }
     }
 

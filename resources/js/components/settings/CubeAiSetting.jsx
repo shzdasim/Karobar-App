@@ -780,7 +780,7 @@ function NativeMascotSettingsCard({ isDark }) {
         {window.karobarDesktop?.isNative && (
           <button
             type="button"
-            onClick={() => window.karobarDesktop.toggleGuideBot?.()}
+            onClick={() => Promise.resolve(window.karobarDesktop.toggleGuideBot?.()).catch(() => {})}
             className="products-action theme-btn-secondary"
           >
             <SparklesIcon className="w-4 h-4" />

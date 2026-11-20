@@ -200,6 +200,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
     private long _staticAssetCacheBytes;
     private byte[]? _cachedSpaHtmlBuffer;
+    private byte[]? _cachedLanSpaHtmlBuffer;
     private WebApplication? _app;
 
     public KestrelHostServer(
@@ -312,20 +313,31 @@ public sealed class KestrelHostServer : IAsyncDisposable
     /// Resolves resources/views/index.blade.php (or public/index.html) with Vite manifest.json
     /// CSS and JS bundle tags plus the KarobarPreloadScript injection for window.karobarDesktop.
     /// </summary>
-    public byte[] GetOrBuildSpaShellHtmlBuffer(bool forceRebuild = false)
+    public byte[] GetOrBuildSpaShellHtmlBuffer(bool forceRebuild = false, bool includeLocalPreloadTag = true)
     {
-        if (!forceRebuild && _cachedSpaHtmlBuffer is { Length: > 0 })
+        if (includeLocalPreloadTag)
         {
-            return _cachedSpaHtmlBuffer;
+            if (!forceRebuild && _cachedSpaHtmlBuffer is { Length: > 0 })
+            {
+                return _cachedSpaHtmlBuffer;
+            }
+            var bytes = Encoding.UTF8.GetBytes(BuildSpaShellHtml(includeLocalPreloadTag: true));
+            _cachedSpaHtmlBuffer = bytes;
+            return bytes;
         }
-
-        var html = BuildSpaShellHtml();
-        var bytes = Encoding.UTF8.GetBytes(html);
-        _cachedSpaHtmlBuffer = bytes;
-        return bytes;
+        else
+        {
+            if (!forceRebuild && _cachedLanSpaHtmlBuffer is { Length: > 0 })
+            {
+                return _cachedLanSpaHtmlBuffer;
+            }
+            var bytes = Encoding.UTF8.GetBytes(BuildSpaShellHtml(includeLocalPreloadTag: false));
+            _cachedLanSpaHtmlBuffer = bytes;
+            return bytes;
+        }
     }
 
-    public string BuildSpaShellHtml()
+    public string BuildSpaShellHtml(bool includeLocalPreloadTag = true)
     {
         var bladePath = Path.Combine(_networkConfig.AppRoot, "resources", "views", "index.blade.php");
         var indexHtmlPath = Path.Combine(PublicDir, "index.html");
@@ -358,7 +370,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         }
 
         var viteTags = BuildViteAssetTagsFromManifest();
-        var preloadTag = "<script src=\"/__karobar_ipc/preload.js\"></script>";
+        var preloadTag = includeLocalPreloadTag ? "<script src=\"/__karobar_ipc/preload.js\"></script>\n    " : "";
 
         // Replace Laravel Blade @if(...) @viteReactRefresh @vite(...) @endif block
         var bladeViteBlockRegex = new Regex(
@@ -368,7 +380,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         string resolvedHtml;
         if (bladeViteBlockRegex.IsMatch(rawTemplate))
         {
-            resolvedHtml = bladeViteBlockRegex.Replace(rawTemplate, $"{preloadTag}\n    {viteTags}");
+            resolvedHtml = bladeViteBlockRegex.Replace(rawTemplate, $"{preloadTag}{viteTags}");
         }
         else if (rawTemplate.Contains("@vite", StringComparison.OrdinalIgnoreCase))
         {
@@ -376,12 +388,12 @@ public sealed class KestrelHostServer : IAsyncDisposable
             resolvedHtml = Regex.Replace(
                 resolvedHtml,
                 @"@vite\s*\([^\)]*\)",
-                $"{preloadTag}\n    {viteTags}",
+                $"{preloadTag}{viteTags}",
                 RegexOptions.IgnoreCase);
         }
         else
         {
-            resolvedHtml = rawTemplate.Replace("</head>", $"    {preloadTag}\n    {viteTags}\n</head>", StringComparison.OrdinalIgnoreCase);
+            resolvedHtml = rawTemplate.Replace("</head>", $"    {preloadTag}{viteTags}\n</head>", StringComparison.OrdinalIgnoreCase);
         }
 
         return resolvedHtml;
@@ -629,6 +641,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", _networkConfig.AppRoot);
         Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", _networkConfig.AppRoot);
         Environment.SetEnvironmentVariable("APP_URL", $"http://127.0.0.1:{port}");
+        EnsurePerInstallAppKey(_networkConfig.AppRoot);
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -703,9 +716,21 @@ public sealed class KestrelHostServer : IAsyncDisposable
         // 1. Health Endpoint: GET /up -> 200 OK
         app.MapGet("/up", () => Results.Text("OK", "text/plain; charset=utf-8"));
 
-        // 2. Desktop IPC Preload Script & Invoke Endpoints
+        // 2. Desktop IPC Preload Script & Invoke Endpoints — STRICTLY LOOPBACK ONLY!
+        // Remote LAN clients must NEVER invoke desktop IPC on the Store Server PC.
+        // (Native WebView2 Terminal PCs inject their OWN local preload via AddScriptToExecuteOnDocumentCreatedAsync.)
+        static bool IsLoopbackRequest(HttpContext ctx)
+        {
+            var ip = ctx.Connection.RemoteIpAddress;
+            return ip == null || IPAddress.IsLoopback(ip);
+        }
+
         app.MapGet("/__karobar_ipc/preload.js", (HttpContext ctx) =>
         {
+            if (!IsLoopbackRequest(ctx))
+            {
+                return Results.Text("// desktop preload disabled for remote LAN clients\n", "application/javascript; charset=utf-8");
+            }
             var isOffscreen = ctx.Request.Query.ContainsKey("offscreen");
             var js = KarobarPreloadScript.GetPreloadScript(isOffscreen);
             return Results.Text(js, "application/javascript; charset=utf-8");
@@ -713,6 +738,13 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         app.MapPost("/__karobar_ipc/invoke", async (HttpContext ctx) =>
         {
+            if (!IsLoopbackRequest(ctx))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Desktop IPC is restricted to localhost." }, ctx.RequestAborted);
+                return;
+            }
+
             using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
             var root = doc.RootElement;
             var channel = root.TryGetProperty("channel", out var chProp) && chProp.ValueKind == JsonValueKind.String
@@ -726,6 +758,13 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         app.MapPost("/__karobar_ipc/{channel}", async (string channel, HttpContext ctx) =>
         {
+            if (!IsLoopbackRequest(ctx))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Desktop IPC is restricted to localhost." }, ctx.RequestAborted);
+                return;
+            }
+
             JsonElement? payload = null;
             if (ctx.Request.ContentLength is > 0)
             {
@@ -739,6 +778,10 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         app.MapGet("/__karobar_ipc/events", (HttpContext ctx) =>
         {
+            if (!IsLoopbackRequest(ctx))
+            {
+                return Results.Json(new { ok = false, error = "Desktop IPC is restricted to localhost." }, statusCode: StatusCodes.Status403Forbidden);
+            }
             var since = long.TryParse(ctx.Request.Query["since"], out var s) ? s : 0L;
             var events = _windowManager.GetRecentEventsSince(since);
             return Results.Json(new { ok = true, events });
@@ -799,7 +842,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
             if (IsSpaShellRequest(context.Request.Method, context.Request.Path.Value, context.Request.Headers.Accept))
             {
-                var spaBytes = GetOrBuildSpaShellHtmlBuffer();
+                var spaBytes = GetOrBuildSpaShellHtmlBuffer(includeLocalPreloadTag: IsLoopbackRequest(context));
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.ContentLength = spaBytes.Length;
@@ -825,7 +868,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
         {
             if (IsSpaShellRequest(context.Request.Method, context.Request.Path.Value, context.Request.Headers.Accept))
             {
-                var spaBytes = GetOrBuildSpaShellHtmlBuffer();
+                var spaBytes = GetOrBuildSpaShellHtmlBuffer(includeLocalPreloadTag: IsLoopbackRequest(context));
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.ContentLength = spaBytes.Length;
@@ -1108,5 +1151,38 @@ public sealed class KestrelHostServer : IAsyncDisposable
     {
         await StopAsync();
         _windowManager.Dispose();
+    }
+
+    private static void EnsurePerInstallAppKey(string appRoot)
+    {
+        try
+        {
+            var existing = Environment.GetEnvironmentVariable("APP_KEY");
+            if (!string.IsNullOrWhiteSpace(existing)) return;
+
+            var keyFile = Path.Combine(appRoot, "storage", "app", ".app-key");
+            if (File.Exists(keyFile))
+            {
+                var stored = File.ReadAllText(keyFile, Encoding.UTF8).Trim();
+                if (stored.Length >= 32)
+                {
+                    Environment.SetEnvironmentVariable("APP_KEY", stored);
+                    return;
+                }
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(keyFile)!);
+            var generated = "base64:" + Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            File.WriteAllText(keyFile, generated, Encoding.UTF8);
+            Environment.SetEnvironmentVariable("APP_KEY", generated);
+        }
+        catch
+        {
+            // Fall back to process-unique ephemeral key if disk is read-only
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("APP_KEY")))
+            {
+                Environment.SetEnvironmentVariable("APP_KEY", "base64:" + Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+            }
+        }
     }
 }

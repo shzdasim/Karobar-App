@@ -455,9 +455,13 @@ export default function SetupWizard() {
 
   const handleChooseNativeBackupFolder = async () => {
     if (window.karobarDesktop?.selectDirectory) {
-      const selected = await window.karobarDesktop.selectDirectory();
-      if (selected) {
-        setForm((s) => ({ ...s, custom_backup_path: selected }));
+      try {
+        const selected = await window.karobarDesktop.selectDirectory();
+        if (selected) {
+          setForm((s) => ({ ...s, custom_backup_path: selected }));
+        }
+      } catch {
+        toast.error("Unable to open folder picker right now.");
       }
     }
   };

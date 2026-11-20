@@ -286,7 +286,19 @@ public class UserController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var roles = GetStringList(body, "roles");
 
-        if (await Db.UserHasRoleAsync(id, "Admin") && !roles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
+        var callerIsAdmin = await IsAdminAsync();
+        var targetIsAdmin = await Db.UserHasRoleAsync(id, "Admin");
+        var assignsReservedAdmin = roles.Any(r =>
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("super-admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Super Admin", StringComparison.OrdinalIgnoreCase));
+
+        if (!callerIsAdmin && (targetIsAdmin || assignsReservedAdmin))
+        {
+            return Forbidden("Only an Administrator can assign or modify Admin roles.");
+        }
+
+        if (targetIsAdmin && !roles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
         {
             if (CurrentUserId == id)
             {
@@ -307,6 +319,11 @@ public class UserController : ApiControllerBase
     public async Task<IActionResult> SyncPermissions(long id)
     {
         if (!await CanManageOrAsync("user.assign.permissions", "user.update")) return Forbidden();
+
+        if (!await IsAdminAsync())
+        {
+            return Forbidden("Only an Administrator can directly assign or modify user permissions.");
+        }
 
         var body = await ReadJsonBodyAsync();
         var perms = GetStringList(body, "permissions");

@@ -38,6 +38,21 @@ public sealed class NativeGuideBotDrawer : Panel
     private static readonly Color AccentAmber = Color.FromArgb(245, 158, 11);
     private static readonly Color AccentRed = Color.FromArgb(220, 38, 38);
 
+    // Shared static GDI fonts to avoid leaking HFONT handles on every dynamic chat/blueprint render
+    private static readonly Font FontTitleBold = new("Segoe UI", 10f, FontStyle.Bold);
+    private static readonly Font FontCardTitleBold = new("Segoe UI", 9.2f, FontStyle.Bold);
+    private static readonly Font FontHeroBtnBold = new("Segoe UI", 8.8f, FontStyle.Bold);
+    private static readonly Font FontBody = new("Segoe UI", 8.8f);
+    private static readonly Font FontBodyCompact = new("Segoe UI", 8.6f);
+    private static readonly Font FontBodySmall = new("Segoe UI", 8.5f);
+    private static readonly Font FontThinkingItalic = new("Segoe UI", 8.6f, FontStyle.Italic);
+    private static readonly Font FontGuardBold = new("Segoe UI", 8.2f, FontStyle.Bold);
+    private static readonly Font FontGuardLine = new("Segoe UI", 8f);
+    private static readonly Font FontGuardSub = new("Segoe UI", 7.8f);
+    private static readonly Font FontPillBold = new("Segoe UI", 7.8f, FontStyle.Bold);
+    private static readonly Font FontBadge = new("Segoe UI", 7.1f);
+    private static readonly Font FontMonoRoute = new("Consolas", 8.2f);
+
     private readonly GuideBotSessionController _session;
     private readonly MascotPreferencesStore _prefsStore;
     private readonly ToolTip _toolTip;
@@ -330,17 +345,21 @@ public sealed class NativeGuideBotDrawer : Panel
         };
         _composerBox.KeyDown += async (_, e) =>
         {
-            if (e.KeyCode == Keys.Enter && !e.Shift)
+            try
             {
-                e.SuppressKeyPress = true;
-                await HandleComposerSubmitAsync();
+                if (e.KeyCode == Keys.Enter && !e.Shift)
+                {
+                    e.SuppressKeyPress = true;
+                    await HandleComposerSubmitAsync();
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    e.SuppressKeyPress = true;
+                    if (_slashMenu.Visible) _slashMenu.Close();
+                    else HideDrawer();
+                }
             }
-            else if (e.KeyCode == Keys.Escape)
-            {
-                e.SuppressKeyPress = true;
-                if (_slashMenu.Visible) _slashMenu.Close();
-                else HideDrawer();
-            }
+            catch { }
         };
         _composerBox.TextChanged += (_, _) =>
         {
@@ -362,7 +381,10 @@ public sealed class NativeGuideBotDrawer : Panel
             Cursor = Cursors.Hand
         };
         _sendBtn.FlatAppearance.BorderSize = 0;
-        _sendBtn.Click += async (_, _) => await HandleComposerSubmitAsync();
+        _sendBtn.Click += async (_, _) =>
+        {
+            try { await HandleComposerSubmitAsync(); } catch { }
+        };
 
         composerGrid.Controls.Add(_slashBtn, 0, 0);
         composerGrid.Controls.Add(_composerBox, 1, 0);
@@ -555,9 +577,9 @@ public sealed class NativeGuideBotDrawer : Panel
         taskControls.Controls.Add(_taskFilterBox, 0, 0);
         taskControls.SetColumnSpan(_taskFilterBox, 4);
 
-        _taskPreviewBtn = CreateGridActionBtn("Preview", AccentAmber, async (_, _) => await RunTaskPreviewAsync());
-        _taskStartBtn = CreateGridActionBtn("Start Auto-Fill", AccentEmerald, async (_, _) => await StartBackgroundAutofillAsync());
-        _taskStopBtn = CreateGridActionBtn("Stop", AccentRed, async (_, _) => await StopBackgroundAutofillAsync());
+        _taskPreviewBtn = CreateGridActionBtn("Preview", AccentAmber, async (_, _) => { try { await RunTaskPreviewAsync(); } catch { } });
+        _taskStartBtn = CreateGridActionBtn("Start Auto-Fill", AccentEmerald, async (_, _) => { try { await StartBackgroundAutofillAsync(); } catch { } });
+        _taskStopBtn = CreateGridActionBtn("Stop", AccentRed, async (_, _) => { try { await StopBackgroundAutofillAsync(); } catch { } });
         _taskStopBtn.Enabled = false;
         _taskExportCsvBtn = CreateGridActionBtn("CSV", BgSurface, (_, _) => ExportTaskReportCsv());
 
@@ -646,12 +668,17 @@ public sealed class NativeGuideBotDrawer : Panel
         _terminalTaskPollTimer.Tick += async (_, _) =>
         {
             if (IsDisposed || !Visible || _session.BackgroundTaskManager != null) return;
-            var snap = await _session.PollBackgroundTaskStatusAsync();
-            if (snap != null)
+            try
             {
-                ApplyTaskSnapshot(snap);
-                if (snap.Status != "running") _terminalTaskPollTimer.Stop();
+                var snap = await _session.PollBackgroundTaskStatusAsync();
+                if (IsDisposed) return;
+                if (snap != null)
+                {
+                    ApplyTaskSnapshot(snap);
+                    if (snap.Status != "running") _terminalTaskPollTimer.Stop();
+                }
             }
+            catch { }
         };
 
         InitCategories();
@@ -849,10 +876,13 @@ public sealed class NativeGuideBotDrawer : Panel
         finally
         {
             _isSending = false;
-            _sendBtn.Enabled = true;
-            _sendBtn.Text = "Send";
-            RenderChatFeed();
-            if (Visible && _activeMainTab == "chat") _composerBox.Focus();
+            if (!IsDisposed)
+            {
+                _sendBtn.Enabled = true;
+                _sendBtn.Text = "Send";
+                RenderChatFeed();
+                if (Visible && _activeMainTab == "chat") _composerBox.Focus();
+            }
         }
     }
 
@@ -864,7 +894,7 @@ public sealed class NativeGuideBotDrawer : Panel
         {
             _lastRenderedChatWidth = _chatFeedPanel.ClientSize.Width;
             _chatFeedPanel.SuspendLayout();
-            _chatFeedPanel.Controls.Clear();
+            ClearAndDisposeControls(_chatFeedPanel);
 
             var cardW = Math.Max(260, _chatFeedPanel.ClientSize.Width - 28);
             var isUr = _session.Language == "ur";
@@ -896,7 +926,7 @@ public sealed class NativeGuideBotDrawer : Panel
                     Text = isUr ? "خوش آمدید! میں کیوب اے آئی ہوں" : "Welcome to Cube AI Copilot",
                     AutoSize = true,
                     MaximumSize = new Size(cardW - 28, 0),
-                    Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                    Font = FontTitleBold,
                     ForeColor = TextPrimary
                 });
                 heroFlow.Controls.Add(new Label
@@ -907,7 +937,7 @@ public sealed class NativeGuideBotDrawer : Panel
                     AutoSize = true,
                     MaximumSize = new Size(cardW - 28, 0),
                     Margin = new Padding(0, 4, 0, 10),
-                    Font = new Font("Segoe UI", 8.5f),
+                    Font = FontBodySmall,
                     ForeColor = TextMuted
                 });
 
@@ -931,7 +961,7 @@ public sealed class NativeGuideBotDrawer : Panel
                         ForeColor = TextPrimary,
                         TextAlign = ContentAlignment.MiddleLeft,
                         Padding = new Padding(6, 0, 6, 0),
-                        Font = new Font("Segoe UI", 8.8f, FontStyle.Bold),
+                        Font = FontHeroBtnBold,
                         Margin = new Padding(0, 3, 0, 3),
                         Cursor = Cursors.Hand
                     };
@@ -968,7 +998,7 @@ public sealed class NativeGuideBotDrawer : Panel
                 {
                     Text = isUr ? "کیوب اے آئی جواب تیار کر رہا ہے…" : "Cube AI is thinking…",
                     AutoSize = true,
-                    Font = new Font("Segoe UI", 8.6f, FontStyle.Italic),
+                    Font = FontThinkingItalic,
                     ForeColor = AccentCyan
                 });
                 _chatFeedPanel.Controls.Add(thinkingCard);
@@ -1024,7 +1054,7 @@ public sealed class NativeGuideBotDrawer : Panel
                     Text = title,
                     AutoSize = true,
                     MaximumSize = new Size(innerW - 4, 0),
-                    Font = new Font("Segoe UI", 9.2f, FontStyle.Bold),
+                    Font = FontCardTitleBold,
                     ForeColor = AccentCyan
                 });
             }
@@ -1038,7 +1068,7 @@ public sealed class NativeGuideBotDrawer : Panel
             AutoSize = true,
             MaximumSize = new Size(innerW - 4, 0),
             Margin = new Padding(0, 4, 0, 4),
-            Font = new Font("Segoe UI", 8.8f),
+            Font = FontBody,
             ForeColor = TextPrimary
         });
 
@@ -1064,7 +1094,7 @@ public sealed class NativeGuideBotDrawer : Panel
                 Text = "⚠ NOT POSTED TO DATABASE YET — Approval Required",
                 AutoSize = true,
                 MaximumSize = new Size(innerW - 24, 0),
-                Font = new Font("Segoe UI", 8.2f, FontStyle.Bold),
+                Font = FontGuardBold,
                 ForeColor = AccentAmber
             });
 
@@ -1077,7 +1107,7 @@ public sealed class NativeGuideBotDrawer : Panel
                         Text = $"Table: {tbl}  |  Operation: {pr.GetValueOrDefault("operation") ?? "WRITE"}",
                         AutoSize = true,
                         MaximumSize = new Size(innerW - 24, 0),
-                        Font = new Font("Segoe UI", 7.8f),
+                        Font = FontGuardSub,
                         ForeColor = TextMuted
                     });
                 }
@@ -1098,7 +1128,7 @@ public sealed class NativeGuideBotDrawer : Panel
                             Text = line,
                             AutoSize = true,
                             MaximumSize = new Size(innerW - 24, 0),
-                            Font = new Font("Segoe UI", 8f),
+                            Font = FontGuardLine,
                             ForeColor = TextPrimary
                         });
                     }
@@ -1195,7 +1225,7 @@ public sealed class NativeGuideBotDrawer : Panel
                 Text = provText,
                 AutoSize = true,
                 Margin = new Padding(0, 4, 0, 0),
-                Font = new Font("Segoe UI", 7.1f),
+                Font = FontBadge,
                 ForeColor = TextMuted
             });
         }
@@ -1252,8 +1282,9 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private void RenderScreenBlueprint()
     {
+        if (IsDisposed) return;
         _guideDetailScroll.SuspendLayout();
-        _guideDetailScroll.Controls.Clear();
+        ClearAndDisposeControls(_guideDetailScroll);
 
         var g = _previewedScreen ?? _session.GetCurrentScreenGuide();
         if (g == null)
@@ -1279,14 +1310,14 @@ public sealed class NativeGuideBotDrawer : Panel
             Text = isUr && !string.IsNullOrWhiteSpace(g.TitleUr) ? g.TitleUr : g.TitleEn,
             AutoSize = true,
             MaximumSize = new Size(w, 0),
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font = FontTitleBold,
             ForeColor = AccentCyan
         });
         flow.Controls.Add(new Label
         {
             Text = g.Route,
             AutoSize = true,
-            Font = new Font("Consolas", 8.2f),
+            Font = FontMonoRoute,
             ForeColor = TextMuted
         });
 
@@ -1375,7 +1406,7 @@ public sealed class NativeGuideBotDrawer : Panel
             Text = sb.ToString().Trim(),
             AutoSize = true,
             MaximumSize = new Size(w, 0),
-            Font = new Font("Segoe UI", 8.6f),
+            Font = FontBodyCompact,
             ForeColor = TextPrimary
         });
 
@@ -1385,11 +1416,13 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private async Task RunTaskPreviewAsync()
     {
+        if (IsDisposed) return;
         _taskPreviewBtn.Enabled = false;
         _taskStatusLabel.Text = "Running dry-run DRAP preview (0 DB writes)…";
         try
         {
             var res = await _session.PreviewFormulationAutofillAsync(_taskFilterBox.Text.Trim());
+            if (IsDisposed) return;
             var tm = res?.GetValueOrDefault("task_meta") as Dictionary<string, object?>;
             var pr = tm?.GetValueOrDefault("preview_result") as Dictionary<string, object?>;
             var totalMissing = Convert.ToInt32(pr?.GetValueOrDefault("total_missing") ?? 0);
@@ -1429,14 +1462,16 @@ public sealed class NativeGuideBotDrawer : Panel
         }
         finally
         {
-            _taskPreviewBtn.Enabled = true;
+            if (!IsDisposed) _taskPreviewBtn.Enabled = true;
         }
     }
 
     private async Task StartBackgroundAutofillAsync()
     {
+        if (IsDisposed) return;
         _taskStartBtn.Enabled = false;
         var snap = await _session.StartBackgroundAutofillAsync(_taskFilterBox.Text.Trim(), 20);
+        if (IsDisposed) return;
         if (snap != null)
         {
             ApplyTaskSnapshot(snap);
@@ -1454,7 +1489,9 @@ public sealed class NativeGuideBotDrawer : Panel
 
     private async Task StopBackgroundAutofillAsync()
     {
+        if (IsDisposed) return;
         var snap = await _session.StopBackgroundAutofillAsync();
+        if (IsDisposed) return;
         if (snap != null) ApplyTaskSnapshot(snap);
     }
 
@@ -1638,7 +1675,7 @@ public sealed class NativeGuideBotDrawer : Panel
             FlatStyle = FlatStyle.Flat,
             BackColor = bg,
             ForeColor = TextPrimary,
-            Font = new Font("Segoe UI", 7.8f, FontStyle.Bold),
+            Font = FontPillBold,
             Padding = new Padding(4, 0, 4, 0),
             Margin = new Padding(0, 0, 5, 4),
             Cursor = Cursors.Hand
@@ -1648,6 +1685,17 @@ public sealed class NativeGuideBotDrawer : Panel
         return b;
     }
 
+    private static void ClearAndDisposeControls(Control container)
+    {
+        if (container.Controls.Count == 0) return;
+        var detached = container.Controls.Cast<Control>().ToList();
+        container.Controls.Clear();
+        foreach (var c in detached)
+        {
+            try { c.Dispose(); } catch { }
+        }
+    }
+
     private static Label CreateMetricCard(TableLayoutPanel grid, int col, string title, Color color)
     {
         var lbl = new Label
@@ -1655,7 +1703,7 @@ public sealed class NativeGuideBotDrawer : Panel
             Text = $"0\n{title}",
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 8.2f, FontStyle.Bold),
+            Font = FontGuardBold,
             ForeColor = color
         };
         grid.Controls.Add(lbl, col, 0);
@@ -1665,8 +1713,23 @@ public sealed class NativeGuideBotDrawer : Panel
     private void SafeUi(Action action)
     {
         if (IsDisposed) return;
-        if (InvokeRequired) BeginInvoke(action);
-        else action();
+        var invoker = IsHandleCreated ? (Control)this : FindForm();
+        if (invoker == null || invoker.IsDisposed || !invoker.IsHandleCreated) return;
+        if (invoker.InvokeRequired)
+        {
+            try
+            {
+                invoker.BeginInvoke((Action)(() =>
+                {
+                    if (!IsDisposed) action();
+                }));
+            }
+            catch { }
+        }
+        else
+        {
+            action();
+        }
     }
 
     protected override void Dispose(bool disposing)

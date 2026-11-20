@@ -27,9 +27,16 @@ public class RequireSignedUrlAttribute : Attribute, IAsyncActionFilter
 public class SignedUrlMiddleware
 {
     private readonly RequestDelegate _next;
-    private static readonly string SigningKey =
-        Environment.GetEnvironmentVariable("APP_KEY")
-        ?? "karobar-native-win-signed-url-secret-key-2026";
+    private static readonly string EphemeralFallbackKey =
+        "base64:" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+    private static string SigningKey
+    {
+        get
+        {
+            var env = Environment.GetEnvironmentVariable("APP_KEY");
+            return !string.IsNullOrWhiteSpace(env) ? env : EphemeralFallbackKey;
+        }
+    }
 
     private static readonly string[] SignedRoutePrefixes =
     {

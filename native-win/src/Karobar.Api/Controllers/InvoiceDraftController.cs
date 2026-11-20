@@ -575,6 +575,10 @@ public class InvoiceDraftController : ApiControllerBase
         var type = (draft.GetValueOrDefault("type")?.ToString() ?? "sale_retail").ToLowerInvariant();
         if (type is "sale_retail" or "sale_wholesale" or "quotation")
         {
+            if (!await CanAsync("sale-invoice.create", "barcode-pos.create", "wholesale-invoice.create"))
+            {
+                return Forbidden("You do not have permission to post Sale Invoices.");
+            }
             if (!payloadDict.ContainsKey("date") || payloadDict["date"] == null || string.IsNullOrWhiteSpace(payloadDict["date"]?.ToString()))
             {
                 payloadDict["date"] = DateTime.UtcNow.ToString("yyyy-MM-dd");
@@ -592,6 +596,10 @@ public class InvoiceDraftController : ApiControllerBase
         }
         else
         {
+            if (!await CanAsync("purchase-invoice.create"))
+            {
+                return Forbidden("You do not have permission to post Purchase Invoices.");
+            }
             var purchaseController = new PurchaseInvoiceController(Db)
             {
                 ControllerContext = ControllerContext

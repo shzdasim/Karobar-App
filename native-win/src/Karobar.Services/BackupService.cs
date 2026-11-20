@@ -374,14 +374,18 @@ public class BackupService
             throw new InvalidOperationException("Backup file not found on disk.");
         }
 
-        // Pre-restore safety snapshot
+        // Pre-restore WAL-safe safety snapshot via SQLite Online Backup API (never raw File.Copy on live WAL DB)
         EnsureBackupDirectoryExists();
         if (File.Exists(_db.SqlitePath))
         {
             try
             {
                 var snapPath = Path.Combine(_backupPath, $"pre-restore-safety-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
-                File.Copy(_db.SqlitePath, snapPath, overwrite: true);
+                using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_db.SqlitePath};Mode=ReadOnly;Pooling=False;");
+                using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={snapPath};Mode=ReadWriteCreate;Pooling=False;");
+                await srcConn.OpenAsync();
+                await dstConn.OpenAsync();
+                srcConn.BackupDatabase(dstConn);
             }
             catch { }
         }
@@ -406,6 +410,24 @@ public class BackupService
                 }
             }
         }
+        else if (lower.EndsWith(".sql") || lower.EndsWith(".sql.gz"))
+        {
+            string sqlContent;
+            if (lower.EndsWith(".sql.gz"))
+            {
+                await using var fs = File.OpenRead(path);
+                await using var gz = new GZipStream(fs, CompressionMode.Decompress);
+                using var sr = new StreamReader(gz, Encoding.UTF8);
+                sqlContent = await sr.ReadToEndAsync();
+            }
+            else
+            {
+                sqlContent = await File.ReadAllTextAsync(path, Encoding.UTF8);
+            }
+
+            await RestoreFromSqlScriptAsync(sqlContent);
+            KarobarDb.FlushSchemaCache();
+        }
         else if (lower.EndsWith(".sqlite") || lower.EndsWith(".db"))
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
@@ -420,6 +442,9 @@ public class BackupService
             var sqliteEntry = archive.Entries.FirstOrDefault(e =>
                 e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
                 e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase));
+            var sqlEntry = archive.Entries.FirstOrDefault(e =>
+                e.FullName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) ||
+                e.FullName.EndsWith(".sql.gz", StringComparison.OrdinalIgnoreCase));
             if (sqliteEntry != null)
             {
                 var tmpExtract = Path.Combine(Path.GetTempPath(), $"karobar_restore_{Guid.NewGuid():N}.sqlite");
@@ -437,6 +462,34 @@ public class BackupService
                     try { if (File.Exists(tmpExtract)) File.Delete(tmpExtract); } catch { }
                 }
             }
+            else if (sqlEntry != null)
+            {
+                string sqlContent;
+                await using (var entryStream = sqlEntry.Open())
+                {
+                    if (sqlEntry.FullName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await using var gz = new GZipStream(entryStream, CompressionMode.Decompress);
+                        using var sr = new StreamReader(gz, Encoding.UTF8);
+                        sqlContent = await sr.ReadToEndAsync();
+                    }
+                    else
+                    {
+                        using var sr = new StreamReader(entryStream, Encoding.UTF8);
+                        sqlContent = await sr.ReadToEndAsync();
+                    }
+                }
+                await RestoreFromSqlScriptAsync(sqlContent);
+                KarobarDb.FlushSchemaCache();
+            }
+            else
+            {
+                throw new InvalidOperationException("ZIP archive does not contain a .sqlite, .db, or .sql database backup.");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException($"Unsupported backup restore format: {Path.GetFileName(path)}");
         }
 
         await _db.UpdateAsync("backup_logs", id, new Dictionary<string, object?>
@@ -591,7 +644,7 @@ public class BackupService
             sb.AppendLine($"{createSql};");
 
             var escaped = name.Replace("\"", "\"\"");
-            var rows = (await conn.QueryAsync($"SELECT * FROM \"{escaped}\" LIMIT 50000")).ToList();
+            var rows = (await conn.QueryAsync($"SELECT * FROM \"{escaped}\"")).ToList();
             foreach (var r in rows)
             {
                 if (r is not IDictionary<string, object?> dict || dict.Count == 0) continue;
@@ -610,5 +663,98 @@ public class BackupService
 
         sb.AppendLine("PRAGMA foreign_keys = ON;");
         return sb.ToString();
+    }
+
+    private async Task RestoreFromSqlScriptAsync(string sqlContent)
+    {
+        if (string.IsNullOrWhiteSpace(sqlContent))
+        {
+            throw new InvalidOperationException("SQL backup file is empty.");
+        }
+
+        // Build into a fresh staging SQLite file first so a corrupt/partial SQL dump can NEVER destroy the live DB!
+        var tmpDb = Path.Combine(Path.GetTempPath(), $"karobar_sql_restore_{Guid.NewGuid():N}.sqlite");
+        try
+        {
+            using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmpDb};Mode=ReadWriteCreate;Pooling=False;"))
+            {
+                await conn.OpenAsync();
+                await conn.ExecuteAsync("PRAGMA foreign_keys = OFF; PRAGMA synchronous = OFF;");
+                using var tx = conn.BeginTransaction();
+                foreach (var stmt in SplitSqlStatements(sqlContent))
+                {
+                    var trimmed = stmt.Trim();
+                    if (string.IsNullOrWhiteSpace(trimmed) ||
+                        trimmed.StartsWith("PRAGMA ", StringComparison.OrdinalIgnoreCase) ||
+                        trimmed.StartsWith("BEGIN", StringComparison.OrdinalIgnoreCase) ||
+                        trimmed.StartsWith("COMMIT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    await conn.ExecuteAsync(trimmed, transaction: tx);
+                }
+                tx.Commit();
+                await conn.ExecuteAsync("PRAGMA foreign_keys = ON;");
+            }
+
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            File.Copy(tmpDb, _db.SqlitePath, overwrite: true);
+            try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
+            try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+        }
+        finally
+        {
+            try { if (File.Exists(tmpDb)) File.Delete(tmpDb); } catch { }
+        }
+    }
+
+    private static IEnumerable<string> SplitSqlStatements(string sql)
+    {
+        var sb = new StringBuilder();
+        var inSingle = false;
+        var inDouble = false;
+        var inLineComment = false;
+
+        for (var i = 0; i < sql.Length; i++)
+        {
+            var c = sql[i];
+            var next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (c == '\n') inLineComment = false;
+                continue;
+            }
+            if (!inSingle && !inDouble && c == '-' && next == '-')
+            {
+                inLineComment = true;
+                i++;
+                continue;
+            }
+            if (c == '\'' && !inDouble)
+            {
+                sb.Append(c);
+                if (inSingle && next == '\'') { sb.Append(next); i++; }
+                else inSingle = !inSingle;
+                continue;
+            }
+            if (c == '"' && !inSingle)
+            {
+                sb.Append(c);
+                inDouble = !inDouble;
+                continue;
+            }
+            if (c == ';' && !inSingle && !inDouble)
+            {
+                var s = sb.ToString().Trim();
+                sb.Clear();
+                if (!string.IsNullOrWhiteSpace(s)) yield return s;
+                continue;
+            }
+            sb.Append(c);
+        }
+
+        var rem = sb.ToString().Trim();
+        if (!string.IsNullOrWhiteSpace(rem)) yield return rem;
     }
 }

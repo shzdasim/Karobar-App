@@ -1476,18 +1476,30 @@ public class ReturnSettlementService
         string? notes = null,
         long? userId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        long? terminalId = null)
     {
         if (amount <= 0 || !await _db.HasTableAsync("cash_drawer_sessions") || !await _db.HasTableAsync("cash_drawer_transactions"))
         {
             return;
         }
 
-        var session = await _db.QuerySingleOrDefaultAsync(
+        Dictionary<string, object?>? session = null;
+        if (terminalId.HasValue && await _db.HasColumnAsync("cash_drawer_sessions", "terminal_id"))
+        {
+            session = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @terminalId ORDER BY id DESC LIMIT 1",
+                new { terminalId = terminalId.Value }, conn, tx);
+        }
+        if (session == null && userId.HasValue)
+        {
+            session = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @userId ORDER BY id DESC LIMIT 1",
+                new { userId = userId.Value }, conn, tx);
+        }
+        session ??= await _db.QuerySingleOrDefaultAsync(
             "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1",
-            null,
-            conn,
-            tx);
+            null, conn, tx);
         if (session == null) return;
 
         var sessionId = ToLong(session["id"]);
@@ -1501,6 +1513,8 @@ public class ReturnSettlementService
             ["reference_id"] = referenceId,
             ["notes"] = notes
         }, conn, tx);
+
+        await RecalculateDrawerExpectedInTxAsync(sessionId, session, conn, tx);
     }
 
     private async Task<int> RemoveCashDrawerTransactionForRefAsync(
@@ -1511,8 +1525,14 @@ public class ReturnSettlementService
         IDbTransaction? tx)
     {
         if (!await _db.HasTableAsync("cash_drawer_transactions") || !await _db.HasTableAsync("cash_drawer_sessions")) return 0;
+        var affectedSessions = await _db.QueryListAsync(
+            @"SELECT DISTINCT session_id FROM cash_drawer_transactions
+              WHERE reference_type = @refType AND reference_id = @refId AND type = @type
+                AND session_id IN (SELECT id FROM cash_drawer_sessions WHERE status = 'open')",
+            new { refType = referenceType, refId = referenceId, type }, conn, tx);
+
         // Never mutate closed historical shifts — only remove drawer entries inside the currently open session
-        return await _db.ExecuteAsync(
+        var removed = await _db.ExecuteAsync(
             @"DELETE FROM cash_drawer_transactions
               WHERE reference_type = @refType
                 AND reference_id = @refId
@@ -1521,6 +1541,40 @@ public class ReturnSettlementService
             new { refType = referenceType, refId = referenceId, type },
             conn,
             tx);
+
+        if (removed > 0)
+        {
+            foreach (var row in affectedSessions)
+            {
+                var sid = ToLong(row.GetValueOrDefault("session_id"));
+                if (sid > 0)
+                {
+                    var sess = await _db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE id = @sid", new { sid }, conn, tx);
+                    if (sess != null) await RecalculateDrawerExpectedInTxAsync(sid, sess, conn, tx);
+                }
+            }
+        }
+        return removed;
+    }
+
+    private async Task RecalculateDrawerExpectedInTxAsync(
+        long sessionId,
+        Dictionary<string, object?> session,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        var cashIn = await _db.ExecuteScalarAsync<decimal?>(
+            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_sale', 'customer_payment', 'purchase_return', 'cash_in')",
+            new { sessionId }, conn, tx) ?? 0m;
+        var cashOut = await _db.ExecuteScalarAsync<decimal?>(
+            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_purchase', 'cash_return', 'cash_refund', 'supplier_payment', 'expense', 'cash_out')",
+            new { sessionId }, conn, tx) ?? 0m;
+        var opening = AccountService.ToDecimal(session.GetValueOrDefault("opening_balance"));
+        var expected = Math.Round(opening + cashIn - cashOut, 2);
+        await _db.UpdateAsync("cash_drawer_sessions", sessionId, new Dictionary<string, object?>
+        {
+            ["closing_balance_expected"] = expected
+        }, "id", conn, tx);
     }
 
     private async Task<bool> HasAnyCashDrawerTransactionForRefAsync(

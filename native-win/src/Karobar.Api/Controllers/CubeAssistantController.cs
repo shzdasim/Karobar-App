@@ -239,8 +239,13 @@ public class CubeAssistantController : ApiControllerBase
     }
 
     [HttpPost("bg-task/stop")]
-    public IActionResult BgTaskStop()
+    public async Task<IActionResult> BgTaskStop()
     {
+        var userCtx = await BuildUserContextAsync();
+        if (!userCtx.Can("product.update", "product.create"))
+        {
+            return StatusCode(403, new { ok = false, message = "You need product.update permission to stop background formulation auto-fill." });
+        }
         if (_bgTaskManager == null) return Ok(new { ok = true, status = "idle" });
         var snap = _bgTaskManager.Stop();
         return Ok(new { ok = true, status = snap.Status, message = snap.Message });

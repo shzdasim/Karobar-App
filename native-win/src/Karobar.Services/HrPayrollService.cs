@@ -229,15 +229,16 @@ public class HrPayrollService
     {
         await EnsureTablesAsync();
 
-        var month = !string.IsNullOrWhiteSpace(periodMonth) && Regex.IsMatch(periodMonth.Trim(), @"^\d{4}-\d{2}$")
+        var month = !string.IsNullOrWhiteSpace(periodMonth) &&
+                    Regex.IsMatch(periodMonth.Trim(), @"^\d{4}-\d{2}$") &&
+                    DateTime.TryParseExact($"{periodMonth.Trim()}-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var monthDt)
             ? periodMonth.Trim()
-            : DateTime.UtcNow.ToString("yyyy-MM");
+            : (monthDt = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1)).ToString("yyyy-MM");
 
         var attDate = !string.IsNullOrWhiteSpace(attendanceDate) && DateTime.TryParse(attendanceDate, out var parsedAtt)
             ? parsedAtt.ToString("yyyy-MM-dd")
             : DateTime.UtcNow.ToString("yyyy-MM-dd");
 
-        var monthDt = DateTime.ParseExact($"{month}-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         var startDate = new DateTime(monthDt.Year, monthDt.Month, 1).ToString("yyyy-MM-dd");
         var endDate = new DateTime(monthDt.Year, monthDt.Month, DateTime.DaysInMonth(monthDt.Year, monthDt.Month)).ToString("yyyy-MM-dd");
 
@@ -251,7 +252,10 @@ public class HrPayrollService
         var todayAttendances = await _db.QueryListAsync(
             "SELECT * FROM employee_attendances WHERE date = @attDate",
             new { attDate });
-        var attByEmp = todayAttendances.ToDictionary(a => Convert.ToInt64(a["employee_id"]), a => a);
+        var attByEmp = todayAttendances
+            .Where(a => a.GetValueOrDefault("employee_id") != null)
+            .GroupBy(a => Convert.ToInt64(a["employee_id"]))
+            .ToDictionary(g => g.Key, g => g.Last());
 
         int presentCount = 0, lateCount = 0, absentCount = 0, leaveCount = 0, unmarkedCount = 0;
 

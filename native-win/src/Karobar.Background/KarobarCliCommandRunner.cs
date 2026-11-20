@@ -728,18 +728,18 @@ public sealed class KarobarCliCommandRunner
         }
 
         // 4. Zero-data-loss upgrade path: take WAL-safe pre-upgrade snapshot & preserve existing users, license, and settings untouched
-        if (isUpgradeOnly && await db.Users.AnyAsync(cancellationToken))
+        if (isUpgradeOnly)
         {
             var existingDbPath = Path.Combine(_appRoot, "database", "database.sqlite");
-            if (File.Exists(existingDbPath))
+            if (File.Exists(existingDbPath) && await db.Users.AnyAsync(cancellationToken))
             {
                 try
                 {
                     var preUpgradeDir = Path.Combine(_appRoot, "storage", "app", "backups");
                     Directory.CreateDirectory(preUpgradeDir);
                     var preSnap = Path.Combine(preUpgradeDir, $"pre-upgrade-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
-                    using var srcConn = new SqliteConnection($"Data Source={existingDbPath};Mode=ReadOnly;");
-                    using var dstConn = new SqliteConnection($"Data Source={preSnap};Mode=ReadWriteCreate;");
+                    using var srcConn = new SqliteConnection($"Data Source={existingDbPath};Mode=ReadOnly;Pooling=False;");
+                    using var dstConn = new SqliteConnection($"Data Source={preSnap};Mode=ReadWriteCreate;Pooling=False;");
                     await srcConn.OpenAsync(cancellationToken);
                     await dstConn.OpenAsync(cancellationToken);
                     srcConn.BackupDatabase(dstConn);
@@ -1481,11 +1481,13 @@ public sealed class KarobarCliCommandRunner
             if (File.Exists(sourceDb))
             {
                 tempSnapshot = Path.Combine(Path.GetTempPath(), $"karobar-sched-snap-{Guid.NewGuid():N}.sqlite");
-                using var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;");
-                using var dstConn = new SqliteConnection($"Data Source={tempSnapshot};Mode=ReadWriteCreate;");
-                await srcConn.OpenAsync(cancellationToken);
-                await dstConn.OpenAsync(cancellationToken);
-                srcConn.BackupDatabase(dstConn);
+                using (var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;Pooling=False;"))
+                using (var dstConn = new SqliteConnection($"Data Source={tempSnapshot};Mode=ReadWriteCreate;Pooling=False;"))
+                {
+                    await srcConn.OpenAsync(cancellationToken);
+                    await dstConn.OpenAsync(cancellationToken);
+                    srcConn.BackupDatabase(dstConn);
+                }
             }
 
             using (var zipStream = new FileStream(fullPath, FileMode.Create))

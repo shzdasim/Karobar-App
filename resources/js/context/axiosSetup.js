@@ -305,9 +305,15 @@ export function initAxiosAuth() {
   axios.get = function cachedAxiosGet(url, config) {
     const ttl = getTtlForUrl(url);
     const hasAbortControl = Boolean(config?.signal || config?.cancelToken);
+    const skipCacheHeader =
+      config?.headers?.["X-Skip-Cache"] ??
+      config?.headers?.["x-skip-cache"];
     const skipCache =
       !ttl ||
       config?.cache === false ||
+      skipCacheHeader === "1" ||
+      skipCacheHeader === 1 ||
+      skipCacheHeader === true ||
       config?.signal?.aborted ||
       (config?.responseType && config.responseType !== "json");
 

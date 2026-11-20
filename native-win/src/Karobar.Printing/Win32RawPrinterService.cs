@@ -289,18 +289,20 @@ public sealed class Win32RawPrinterService
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (!string.IsNullOrWhiteSpace(appData))
         {
-            return Path.Combine(appData, "Karobar-App", "printer-config.json");
+            return Path.Combine(appData, "Karobar-App-Native", "printer-config.json");
         }
         return Path.Combine(_appRoot, "storage", "app", "printer-config.json");
     }
 
     public string ReadPreferredPrinterConfig()
     {
-        var candidates = new[]
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var candidates = new List<string> { GetPrinterConfigFilePath() };
+        if (!string.IsNullOrWhiteSpace(appData))
         {
-            GetPrinterConfigFilePath(),
-            Path.Combine(_appRoot, "storage", "app", "printer-config.json")
-        };
+            candidates.Add(Path.Combine(appData, "Karobar-App", "printer-config.json"));
+        }
+        candidates.Add(Path.Combine(_appRoot, "storage", "app", "printer-config.json"));
 
         foreach (var file in candidates)
         {

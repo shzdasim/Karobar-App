@@ -141,6 +141,14 @@ foreach ($dFile in @("splash.html", "terminal-offline.html", "icon.ico", "icon.p
         Copy-Item -Path $dSrc -Destination (Join-Path $DesktopStage $dFile) -Force
     }
 }
+# Prioritize Native Host HTML assets (port 18960, Pairing Token, 10s auto-reconnect) over legacy Electron root desktop/ files
+$NativeDesktopDir = Join-Path $RepoRoot "native-win\src\Karobar.Host\desktop"
+foreach ($nFile in @("splash.html", "terminal-offline.html")) {
+    $nSrc = Join-Path $NativeDesktopDir $nFile
+    if (Test-Path $nSrc) {
+        Copy-Item -Path $nSrc -Destination (Join-Path $DesktopStage $nFile) -Force
+    }
+}
 
 $SumatraSrc = Join-Path $RepoRoot "desktop\node_modules\pdf-to-printer\dist\SumatraPDF-3.4.6-32.exe"
 if (Test-Path $SumatraSrc) {

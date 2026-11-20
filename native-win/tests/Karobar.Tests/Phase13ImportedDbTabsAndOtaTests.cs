@@ -188,11 +188,14 @@ public class Phase13ImportedDbTabsAndOtaTests
             // Test UploadAndInspect on the WAL-mode source DB (merging sibling -wal automatically!)
             var walSourcePath = sourceDbPath;
 
-            // Generate valid software admin token matching SqliteImportController
-            var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
-            var secret = Environment.GetEnvironmentVariable("APP_KEY") is { Length: > 0 } k ? k : "karobar-native-win-default-app-key-secret";
-            var sigHex = Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"sqlite_import_sw_admin|1|{dateStr}"))).ToLowerInvariant();
-            var swToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"1|{dateStr}|{sigHex}"));
+            // Unlock via real SqliteImportController.Unlock() using admin password (no hardcoded APP_KEY fallback!)
+            var unlockPayload = JsonSerializer.Serialize(new { password = "password" });
+            var unlockCtrl = AttachAdminContext(new SqliteImportController(targetDb), 1, "", unlockPayload);
+            var unlockRes = await unlockCtrl.Unlock();
+            var unlockOk = unlockRes.Should().BeOfType<OkObjectResult>("Unlock must succeed with admin password").Subject;
+            var unlockDict = unlockOk.Value.Should().BeAssignableTo<Dictionary<string, object?>>().Subject;
+            var swToken = unlockDict["unlock_token"]?.ToString() ?? "";
+            swToken.Should().NotBeNullOrWhiteSpace();
 
             var uploadPayload = JsonSerializer.Serialize(new { local_file_path = walSourcePath, software_admin_token = swToken });
             var uploadCtrl = AttachAdminContext(new SqliteImportController(targetDb), 1, "", uploadPayload);

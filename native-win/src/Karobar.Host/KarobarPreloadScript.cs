@@ -367,20 +367,23 @@ public static class KarobarPreloadScript
                   sendTabShortcut(e, "toggle-guide-bot");
                   return;
                 }
+                var curPath = (window.location && window.location.pathname) || "";
+                var isInvoiceFormRoute = /^\/(sale-invoices|wholesale-invoices|purchase-invoices)\/(create|\d+\/edit)/.test(curPath);
                 if ((ctrl && !e.shiftKey && key === "t") || (ctrl && e.shiftKey && key === "n")) {
-                  // Preserve Sale Invoice Ctrl+T Debit/Credit toggle shortcut on invoice screens
-                  var curPath = (window.location && window.location.pathname) || "";
-                  if (key === "t" && !e.shiftKey && /^\/sale-invoices\/(create|\d+\/edit)/.test(curPath)) {
+                  // Preserve Ctrl+T on Sale / Wholesale / Purchase Invoice screens
+                  if (key === "t" && !e.shiftKey && isInvoiceFormRoute) {
                     return;
                   }
                   sendTabShortcut(e, "new-tab");
                   return;
                 }
                 if (ctrl && e.shiftKey && key === "t") {
+                  if (isInvoiceFormRoute) return;
                   sendTabShortcut(e, "reopen-closed");
                   return;
                 }
                 if (ctrl && e.shiftKey && key === "d") {
+                  if (isInvoiceFormRoute) return;
                   sendTabShortcut(e, "duplicate");
                   return;
                 }

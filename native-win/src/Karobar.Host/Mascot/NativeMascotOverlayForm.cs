@@ -641,9 +641,24 @@ public sealed class NativeMascotOverlayForm : Form
 
     private void OnPreferencesChanged(MascotPreferences prefs)
     {
-        if (IsDisposed) return;
-        if (InvokeRequired) BeginInvoke((Action)(() => ApplyPreferences(prefs)));
-        else ApplyPreferences(prefs);
+        if (IsDisposed || _ownerForm.IsDisposed) return;
+        Control? invoker = IsHandleCreated ? this : (_ownerForm.IsHandleCreated ? _ownerForm : null);
+        if (invoker == null) return;
+        if (invoker.InvokeRequired)
+        {
+            try
+            {
+                invoker.BeginInvoke((Action)(() =>
+                {
+                    if (!IsDisposed && !_ownerForm.IsDisposed) ApplyPreferences(prefs);
+                }));
+            }
+            catch { }
+        }
+        else
+        {
+            ApplyPreferences(prefs);
+        }
     }
 
     private void ApplyPreferences(MascotPreferences prefs)

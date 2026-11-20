@@ -43,15 +43,13 @@ public class SqliteExportService
         var currentDbPath = _db.SqlitePath;
         if (!string.IsNullOrWhiteSpace(currentDbPath) && File.Exists(currentDbPath))
         {
-            try
+            using (var srcConn = new SqliteConnection($"Data Source={currentDbPath};Mode=ReadOnly;Pooling=False;"))
+            using (var dstConn = new SqliteConnection($"Data Source={targetPath};Mode=ReadWriteCreate;Pooling=False;"))
             {
-                await _db.ExecuteAsync("PRAGMA wal_checkpoint(FULL);");
+                await srcConn.OpenAsync();
+                await dstConn.OpenAsync();
+                srcConn.BackupDatabase(dstConn);
             }
-            catch
-            {
-            }
-
-            File.Copy(currentDbPath, targetPath, overwrite: true);
             await SanitizeExportedSqliteFileAsync(targetPath);
             return targetPath;
         }

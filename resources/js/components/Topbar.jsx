@@ -771,7 +771,7 @@ export default function Topbar({
       if (e.code === "KeyG" || (e.key || "").toLowerCase() === "g") {
         e.preventDefault();
         if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
-          window.karobarDesktop.toggleGuideBot();
+          Promise.resolve(window.karobarDesktop.toggleGuideBot()).catch(() => {});
         } else {
           setGuideBotOpen((v) => !v);
         }
@@ -819,7 +819,7 @@ export default function Topbar({
     const onOpenShortcuts = () => setShortcutsModalOpen(true);
     const onOpenGuideBot = () => {
       if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.openGuideBot === "function") {
-        window.karobarDesktop.openGuideBot();
+        Promise.resolve(window.karobarDesktop.openGuideBot()).catch(() => {});
       } else {
         setGuideBotOpen(true);
       }
@@ -945,7 +945,7 @@ export default function Topbar({
             <GuideBotTopbarButton
               onClick={() => {
                 if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
-                  window.karobarDesktop.toggleGuideBot();
+                  Promise.resolve(window.karobarDesktop.toggleGuideBot()).catch(() => {});
                 } else {
                   setGuideBotOpen((v) => !v);
                 }

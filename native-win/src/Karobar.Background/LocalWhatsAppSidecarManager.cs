@@ -494,28 +494,45 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
 
             try
             {
+                if (_sidecarProcess != null)
+                {
+                    try { _sidecarProcess.Dispose(); } catch { }
+                    _sidecarProcess = null;
+                }
+
                 var proc = Process.Start(psi);
                 if (proc != null)
                 {
                     AttachProcessToJobObject(proc);
                     _sidecarProcess = proc;
 
-                    _ = Task.Run(async () =>
+                    // Drain stdout and stderr concurrently line-by-line (never await ReadToEndAsync sequentially -> avoids 4KB Windows pipe deadlock & unbounded RAM growth!)
+                    void StartLineDrain(StreamReader reader, string tag)
                     {
-                        try
+                        _ = Task.Run(async () =>
                         {
-                            var outText = await proc.StandardOutput.ReadToEndAsync();
-                            var errText = await proc.StandardError.ReadToEndAsync();
-                            if (!string.IsNullOrWhiteSpace(outText) || !string.IsNullOrWhiteSpace(errText))
+                            try
                             {
-                                await File.AppendAllTextAsync(logFile, outText + Environment.NewLine + errText);
+                                string? line;
+                                while ((line = await reader.ReadLineAsync()) != null)
+                                {
+                                    try
+                                    {
+                                        var fi = new FileInfo(logFile);
+                                        if (fi.Exists && fi.Length > 2 * 1024 * 1024)
+                                        {
+                                            File.WriteAllText(logFile, $"[{DateTime.UtcNow:O}] Log rotated (exceeded 2MB){Environment.NewLine}");
+                                        }
+                                        await File.AppendAllTextAsync(logFile, $"[{tag}] {line}{Environment.NewLine}");
+                                    }
+                                    catch { }
+                                }
                             }
-                        }
-                        catch
-                        {
-                            // Ignore logging errors
-                        }
-                    });
+                            catch { }
+                        });
+                    }
+                    StartLineDrain(proc.StandardOutput, "OUT");
+                    StartLineDrain(proc.StandardError, "ERR");
                 }
             }
             catch (Exception ex)

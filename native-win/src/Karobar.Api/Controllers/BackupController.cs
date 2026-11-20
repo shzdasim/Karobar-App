@@ -98,8 +98,7 @@ public class BackupController : ApiControllerBase
             return NotFound(new { message = "Backup file not found" });
         }
 
-        var bytes = await System.IO.File.ReadAllBytesAsync(path);
-        return File(bytes, "application/octet-stream", Path.GetFileName(path));
+        return PhysicalFile(Path.GetFullPath(path), "application/octet-stream", Path.GetFileName(path));
     }
 
     private async Task<bool> VerifyCurrentUserPasswordAsync(string password)

@@ -126,19 +126,19 @@ Filename: "{app}\{#MyAppExeName}"; \
   WorkingDir: "{app}"; \
   StatusMsg: "Updating Karobar-App Native database schema and runtime configuration..."; \
   Flags: runhidden waituntilterminated; \
-  Check: not IsTerminalModeSelected
+  Check: not ShouldSkipLocalServerSetup
 
 ; Open Windows Firewall strictly for the local LAN subnet (all network profiles: Private, Domain & Public) on TCP 18960
 ; Delete any prior rule with the same name first so re-installs never accumulate duplicate rules.
 Filename: "{sys}\netsh.exe"; \
   Parameters: "advfirewall firewall delete rule name=""Karobar-App Native LAN Server (TCP 18960)"""; \
   Flags: runhidden waituntilterminated; \
-  Check: not IsTerminalModeSelected
+  Check: not ShouldSkipLocalServerSetup
 
 Filename: "{sys}\netsh.exe"; \
   Parameters: "advfirewall firewall add rule name=""Karobar-App Native LAN Server (TCP 18960)"" dir=in action=allow protocol=TCP localport=18960 remoteip=localsubnet profile=any"; \
   Flags: runhidden waituntilterminated; \
-  Check: not IsTerminalModeSelected
+  Check: not ShouldSkipLocalServerSetup
 
 ; Launch the Native Desktop Application after interactive installation completes
 Filename: "{app}\{#MyAppExeName}"; \
@@ -150,6 +150,12 @@ Filename: "{app}\{#MyAppExeName}"; \
 Filename: "{app}\{#MyAppExeName}"; \
   Flags: nowait runasoriginaluser; \
   Check: IsCliUpgradeMode
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; \
+  Parameters: "advfirewall firewall delete rule name=""Karobar-App Native LAN Server (TCP 18960)"""; \
+  Flags: runhidden waituntilterminated; \
+  RunOnceId: "KarobarRemoveFirewallRule"
 
 [Code]
 var
@@ -228,6 +234,65 @@ end;
 function IsTerminalModeSelected(): Boolean;
 begin
   Result := Assigned(TerminalModeRadio) and TerminalModeRadio.Checked;
+end;
+
+function ReadExistingNetworkModeJson(): String;
+var
+  RawAnsi: AnsiString;
+  CfgPath: String;
+begin
+  Result := '';
+  CfgPath := ExpandConstant('{app}\storage\app\network-mode.json');
+  if FileExists(CfgPath) and LoadStringFromFile(CfgPath, RawAnsi) then
+  begin
+    Result := String(RawAnsi);
+    Exit;
+  end;
+  CfgPath := ExpandConstant('{userappdata}\Karobar-App-Native\network-mode.json');
+  if FileExists(CfgPath) and LoadStringFromFile(CfgPath, RawAnsi) then
+  begin
+    Result := String(RawAnsi);
+    Exit;
+  end;
+  CfgPath := ExpandConstant('{userappdata}\Karobar-App-Native\network-config.json');
+  if FileExists(CfgPath) and LoadStringFromFile(CfgPath, RawAnsi) then
+  begin
+    Result := String(RawAnsi);
+    Exit;
+  end;
+end;
+
+function IsExistingTerminalInstall(): Boolean;
+var
+  LowerRaw: String;
+begin
+  LowerRaw := LowerCase(ReadExistingNetworkModeJson());
+  Result := (Pos('"mode":"terminal"', LowerRaw) > 0) or (Pos('"mode": "terminal"', LowerRaw) > 0);
+end;
+
+function ShouldSkipLocalServerSetup(): Boolean;
+begin
+  Result := IsTerminalModeSelected() or (IsCliUpgradeMode() and IsExistingTerminalInstall());
+end;
+
+function ExtractJsonStringField(RawJson, FieldName: String): String;
+var
+  KeyPattern, Rest: String;
+  P, EndPos: Integer;
+begin
+  Result := '';
+  KeyPattern := '"' + FieldName + '"';
+  P := Pos(KeyPattern, RawJson);
+  if P = 0 then Exit;
+  Rest := Copy(RawJson, P + Length(KeyPattern), Length(RawJson));
+  P := Pos(':', Rest);
+  if P = 0 then Exit;
+  Rest := Trim(Copy(Rest, P + 1, Length(Rest)));
+  if (Length(Rest) < 2) or (Rest[1] <> '"') then Exit;
+  Delete(Rest, 1, 1);
+  EndPos := Pos('"', Rest);
+  if EndPos > 0 then
+    Result := Copy(Rest, 1, EndPos - 1);
 end;
 
 { Compute deterministic hardware Machine ID using native Karobar-Native.exe --cli license:machine-id }
@@ -716,7 +781,19 @@ begin
     else
     begin
       KeepExistingDbRadio.Enabled := False;
-      if KeepExistingDbRadio.Checked then
+      if IsExistingTerminalInstall() then
+      begin
+        KeepExistingDbRadio.Checked := False;
+        FreshDbRadio.Checked := False;
+        TerminalModeRadio.Checked := True;
+        if Trim(ServerUrlEdit.Text) = '' then
+          ServerUrlEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'serverUrl');
+        if Trim(TerminalNameEdit.Text) = '' then
+          TerminalNameEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'terminalName');
+        if Trim(PairingTokenEdit.Text) = '' then
+          PairingTokenEdit.Text := ExtractJsonStringField(ReadExistingNetworkModeJson(), 'pairingToken');
+      end
+      else if KeepExistingDbRadio.Checked then
       begin
         KeepExistingDbRadio.Checked := False;
         FreshDbRadio.Checked := True;

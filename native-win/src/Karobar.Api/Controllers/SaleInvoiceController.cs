@@ -2515,8 +2515,13 @@ public class SaleInvoiceController : ApiControllerBase
     {
         if (!await Db.HasTableAsync("payment_allocations") || !await Db.HasTableAsync("payments")) return;
 
-        var allocs = await Db.QueryListAsync(
-            "SELECT * FROM payment_allocations WHERE invoice_type = @invoiceType AND invoice_id = @invoiceId",
+        var allocs = await Db.QueryListAsync(@"
+            SELECT pa.*
+            FROM payment_allocations pa
+            LEFT JOIN payments p ON p.id = pa.payment_id
+            WHERE pa.invoice_type = @invoiceType
+              AND pa.invoice_id = @invoiceId
+              AND (p.status IS NULL OR LOWER(p.status) != 'reversed')",
             new { invoiceType, invoiceId },
             conn,
             tx);

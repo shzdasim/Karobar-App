@@ -127,26 +127,44 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
         // 2. Daily at 00:05 -> expenses:process-recurring
         if (_lastRecurringExpensesDate.Date != now.Date && (now.Hour > 0 || (now.Hour == 0 && now.Minute >= 5)))
         {
-            await _cliRunner.ExecuteProcessRecurringExpensesAsync(db, new Dictionary<string, string?>(), cancellationToken);
-            _lastRecurringExpensesDate = now.Date;
-            executed["expenses:process-recurring"] = true;
+            try
+            {
+                await _cliRunner.ExecuteProcessRecurringExpensesAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                _lastRecurringExpensesDate = now.Date;
+                executed["expenses:process-recurring"] = true;
+            }
+            catch { }
         }
 
         // 3. Daily at 09:00 -> demands:notify
         if (_lastDemandsNotifyDate.Date != now.Date && now.Hour >= 9)
         {
-            await _cliRunner.ExecuteSendUserDemandNotificationsAsync(db, new Dictionary<string, string?>(), cancellationToken);
-            _lastDemandsNotifyDate = now.Date;
-            executed["demands:notify"] = true;
+            try
+            {
+                await _cliRunner.ExecuteSendUserDemandNotificationsAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                _lastDemandsNotifyDate = now.Date;
+                executed["demands:notify"] = true;
+            }
+            catch { }
         }
 
-        // 4. Hourly -> backup:run-scheduled (plus opportunistic FBR queue retry)
+        // 4. Hourly -> backup:run-scheduled (plus independent FBR queue retry)
         if (_lastScheduledBackupHour != now.Hour)
         {
-            await _cliRunner.ExecuteRunScheduledBackupAsync(db, new Dictionary<string, string?>(), cancellationToken);
-            await _fbrEngine.RetryPendingInvoicesAsync(db, 25, cancellationToken);
+            try
+            {
+                await _cliRunner.ExecuteRunScheduledBackupAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                executed["backup:run-scheduled"] = true;
+            }
+            catch { }
+
+            try
+            {
+                await _fbrEngine.RetryPendingInvoicesAsync(db, 25, cancellationToken);
+            }
+            catch { }
+
             _lastScheduledBackupHour = now.Hour;
-            executed["backup:run-scheduled"] = true;
         }
 
         return executed;

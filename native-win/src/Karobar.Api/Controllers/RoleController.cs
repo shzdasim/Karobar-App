@@ -130,6 +130,16 @@ public class RoleController : ApiControllerBase
         var role = await Db.QuerySingleOrDefaultAsync("SELECT * FROM roles WHERE id = @id AND guard_name = 'sanctum'", new { id });
         if (role == null) return NotFound();
 
+        var currentName = role.GetValueOrDefault("name")?.ToString() ?? "";
+        if (IsReservedAdminRoleName(currentName) && !await IsAdminAsync())
+        {
+            return Forbidden("Only an Admin can modify permissions on the Admin role.");
+        }
+        if (!await IsAdminAsync())
+        {
+            return Forbidden("Only an Admin can sync role permissions.");
+        }
+
         var body = await ReadJsonBodyAsync();
         var permissions = new List<string>();
         if (body.TryGetValue("permissions", out var permsEl) && permsEl.ValueKind == JsonValueKind.Array)

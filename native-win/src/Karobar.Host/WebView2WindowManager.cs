@@ -207,6 +207,10 @@ public sealed class WebView2WindowManager : IDisposable
         @"\/(print|customer-ledger\/print|supplier-ledger\/print)(\/|\?|$)|[?&]silent_print=",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex PrintPreviewRouteRegex = new(
+        @"\/print\/[^/?#]*preview\b|[?&]preview=(1|true)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly NetworkConfigManager _networkConfig;
     private readonly ConcurrentDictionary<int, AppWindowInstance> _activeWindows = new();
     private readonly ConcurrentQueue<DesktopEventEnvelope> _recentEvents = new();
@@ -569,7 +573,15 @@ public sealed class WebView2WindowManager : IDisposable
     public static bool IsLocalPrintRouteUrl(string? rawUrl)
     {
         var u = (rawUrl ?? string.Empty).Trim();
-        return !string.IsNullOrEmpty(u) && LocalPrintRouteRegex.IsMatch(u);
+        if (string.IsNullOrEmpty(u)) return false;
+        if (PrintPreviewRouteRegex.IsMatch(u)) return false;
+        return LocalPrintRouteRegex.IsMatch(u);
+    }
+
+    public static bool IsPrintPreviewRouteUrl(string? rawUrl)
+    {
+        var u = (rawUrl ?? string.Empty).Trim();
+        return !string.IsNullOrEmpty(u) && PrintPreviewRouteRegex.IsMatch(u);
     }
 
     /// <summary>
@@ -582,6 +594,12 @@ public sealed class WebView2WindowManager : IDisposable
     {
         var url = (rawUrl ?? string.Empty).Trim();
         var frame = (frameName ?? string.Empty).Trim();
+
+        // 0. Allow explicit print preview windows (e.g. /print/thermal-preview, /print/a4-preview, ?preview=1)
+        if (IsPrintPreviewRouteUrl(url))
+        {
+            return "allow-preview";
+        }
 
         // 1. Intercept print routes and spool silently in background
         if (IsLocalPrintRouteUrl(url))

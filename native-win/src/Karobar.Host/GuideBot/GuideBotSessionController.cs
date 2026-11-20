@@ -335,6 +335,7 @@ public sealed class GuideBotSessionController
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AuthBearerToken);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            AttachTerminalIdentityHeaders(req);
             using var res = await _http.SendAsync(req, ct);
             if (!res.IsSuccessStatusCode) return null;
             var raw = await res.Content.ReadAsStringAsync(ct);
@@ -379,6 +380,7 @@ public sealed class GuideBotSessionController
             {
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AuthBearerToken);
             }
+            AttachTerminalIdentityHeaders(req);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
@@ -391,6 +393,21 @@ public sealed class GuideBotSessionController
         {
             return null;
         }
+    }
+
+    private void AttachTerminalIdentityHeaders(HttpRequestMessage req)
+    {
+        try
+        {
+            foreach (var kv in _networkConfig.GetTerminalIdentityHeaders())
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Value))
+                {
+                    req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                }
+            }
+        }
+        catch { }
     }
 
     private static GuideBotChatMessage ParseChatMessage(Dictionary<string, object?> raw)

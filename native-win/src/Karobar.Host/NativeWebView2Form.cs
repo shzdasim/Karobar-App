@@ -100,38 +100,41 @@ public sealed class NativeWebView2Form : Form
         _winInstance.WebMessageSender = BroadcastMessageToActiveTab;
         _winInstance.UrlNavigator = targetUrl =>
         {
-            var originChanged = false;
-            if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) &&
-                (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+            void NavigateOnUi()
             {
-                var nextOrigin = $"{uri.Scheme}://{uri.Authority}";
-                if (!string.Equals(nextOrigin, _baseOrigin, StringComparison.OrdinalIgnoreCase))
+                if (IsDisposed) return;
+
+                var originChanged = false;
+                if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) &&
+                    (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
                 {
-                    _baseOrigin = nextOrigin;
-                    originChanged = true;
-                    if (_guideSession != null)
+                    var nextOrigin = $"{uri.Scheme}://{uri.Authority}";
+                    if (!string.Equals(nextOrigin, _baseOrigin, StringComparison.OrdinalIgnoreCase))
                     {
-                        _guideSession.BaseOrigin = _baseOrigin;
-                        _guideSession.AuthBearerToken = null;
+                        _baseOrigin = nextOrigin;
+                        originChanged = true;
+                        if (_guideSession != null)
+                        {
+                            _guideSession.BaseOrigin = _baseOrigin;
+                            _guideSession.AuthBearerToken = null;
+                        }
                     }
                 }
-            }
 
-            if (originChanged && _workspace.ActiveTabId != null)
-            {
-                // Close stale tabs pointing to the previous server origin (Standalone <-> Terminal mode switch)
-                void ResetTabsForNewOrigin()
+                if (originChanged && _workspace.ActiveTabId != null)
                 {
-                    if (IsDisposed || _workspace.ActiveTabId == null) return;
+                    // Close stale tabs pointing to the previous server origin (Standalone <-> Terminal mode switch)
                     var removed = _workspace.CloseOtherTabs(_workspace.ActiveTabId);
                     DisposeTabControls(removed);
                     SyncActiveTabVisuals();
                 }
-                if (InvokeRequired) BeginInvoke((Action)ResetTabsForNewOrigin);
-                else ResetTabsForNewOrigin();
+
+                OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
             }
 
-            OpenOrNavigateTabFromUrl(targetUrl, openNewTab: false);
+            if (IsDisposed) return;
+            if (InvokeRequired) BeginInvoke((Action)NavigateOnUi);
+            else NavigateOnUi();
         };
 
         Load += async (_, _) => await InitializeInitialTabAsync();
@@ -205,8 +208,9 @@ public sealed class NativeWebView2Form : Form
             _trayMenu.Items.Add("Check for Updates…", null, (_, _) =>
             {
                 Show();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
                 Activate();
-                _ = _desktopBridge.CheckForUpdatesAsync(null);
+                _windowManager.SendTriggerUpdateCheck(manual: true);
             });
             _trayMenu.Items.Add("Run Backup Now", null, (_, _) =>
             {
@@ -836,7 +840,9 @@ public sealed class NativeWebView2Form : Form
             }
 
             var env = await GetOrCreateSharedEnvironmentAsync();
+            if (IsDisposed || wv.IsDisposed) return;
             await wv.EnsureCoreWebView2Async(env);
+            if (IsDisposed || wv.IsDisposed || wv.CoreWebView2 == null) return;
 
             var core = wv.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
@@ -844,9 +850,37 @@ public sealed class NativeWebView2Form : Form
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsZoomControlEnabled = true;
 
+            // Inject terminal identity & LAN pairing token headers on every request to the active Store Server origin
+            // so Multi-PC LAN Terminal Mode authenticates seamlessly without relying on local Kestrel.
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested += (_, reqArgs) =>
+            {
+                try
+                {
+                    var reqUri = reqArgs.Request.Uri ?? "";
+                    if (!string.IsNullOrWhiteSpace(_baseOrigin) &&
+                        reqUri.StartsWith(_baseOrigin, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var headers = _windowManager.NetworkConfig.GetTerminalIdentityHeaders();
+                        foreach (var kv in headers)
+                        {
+                            if (!string.IsNullOrWhiteSpace(kv.Value))
+                            {
+                                reqArgs.Request.Headers.SetHeader(kv.Key, kv.Value);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Never block resource loading on header injection error
+                }
+            };
+
             var preloadJs = "window.__karobarUseNativeWebView2PostMessage = true;\n" +
                             KarobarPreloadScript.GetPreloadScript(_winInstance.IsOffscreenPrintWorker);
             await core.AddScriptToExecuteOnDocumentCreatedAsync(preloadJs);
+            if (IsDisposed || wv.IsDisposed) return;
 
             core.DocumentTitleChanged += (_, _) =>
             {
@@ -1080,13 +1114,19 @@ public sealed class NativeWebView2Form : Form
         {
             return ExecuteTabShortcutAction("toggle-guide-bot");
         }
+        var activeRoute = _workspace.ActiveTab?.RoutePath ?? "";
+        var isInvoiceFormRoute =
+            activeRoute.StartsWith("/sale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+            (activeRoute.StartsWith("/sale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase)) ||
+            activeRoute.StartsWith("/wholesale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+            (activeRoute.StartsWith("/wholesale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase)) ||
+            activeRoute.StartsWith("/purchase-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+            (activeRoute.StartsWith("/purchase-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase));
+
         if (keyData == (Keys.Control | Keys.T) || keyData == (Keys.Control | Keys.Shift | Keys.N))
         {
-            // Preserve Ctrl+T (Debit/Credit toggle) on Sale Invoice screens
-            var activeRoute = _workspace.ActiveTab?.RoutePath ?? "";
-            if (keyData == (Keys.Control | Keys.T) &&
-                (activeRoute.StartsWith("/sale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
-                 (activeRoute.StartsWith("/sale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase))))
+            // Preserve Ctrl+T on Sale / Wholesale / Purchase Invoice form screens
+            if (keyData == (Keys.Control | Keys.T) && isInvoiceFormRoute)
             {
                 return false;
             }
@@ -1094,6 +1134,7 @@ public sealed class NativeWebView2Form : Form
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.T))
         {
+            if (isInvoiceFormRoute) return false;
             return ExecuteTabShortcutAction("reopen-closed");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.X))
@@ -1102,6 +1143,7 @@ public sealed class NativeWebView2Form : Form
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.D))
         {
+            if (isInvoiceFormRoute) return false;
             return ExecuteTabShortcutAction("duplicate");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.P))
@@ -1375,6 +1417,7 @@ public sealed class NativeWebView2Form : Form
         settings.ShouldPrintBackgrounds = true;
         settings.ShouldPrintHeaderAndFooter = false;
         settings.ShouldPrintSelectionOnly = false;
+        var requestedCopies = 1;
         if (isThermal)
         {
             settings.MarginTop = 0;
@@ -1382,30 +1425,32 @@ public sealed class NativeWebView2Form : Form
             settings.MarginLeft = 0;
             settings.MarginRight = 0;
             settings.ScaleFactor = 1.0;
+        }
 
-            try
+        // Read <meta name="karobar-print-config"> for ALL silent prints (copies + optional paperWidthMm)
+        try
+        {
+            var metaRaw = await core.ExecuteScriptAsync(
+                "(function(){var m=document.querySelector('meta[name=\"karobar-print-config\"]');return m?m.getAttribute('content'):'';})()");
+            if (!string.IsNullOrWhiteSpace(metaRaw) && metaRaw != "null" && metaRaw != "\"\"")
             {
-                var metaRaw = await core.ExecuteScriptAsync(
-                    "(function(){var m=document.querySelector('meta[name=\"karobar-print-config\"]');return m?m.getAttribute('content'):'';})()");
-                if (!string.IsNullOrWhiteSpace(metaRaw) && metaRaw != "null" && metaRaw != "\"\"")
+                var unescaped = JsonSerializer.Deserialize<string>(metaRaw);
+                if (!string.IsNullOrWhiteSpace(unescaped))
                 {
-                    var unescaped = JsonSerializer.Deserialize<string>(metaRaw);
-                    if (!string.IsNullOrWhiteSpace(unescaped))
+                    using var cfgDoc = JsonDocument.Parse(unescaped);
+                    if (isThermal && cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) && pwEl.TryGetDouble(out var pwMm) && pwMm is >= 25 and <= 216)
                     {
-                        using var cfgDoc = JsonDocument.Parse(unescaped);
-                        if (cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) && pwEl.TryGetDouble(out var pwMm) && pwMm is >= 25 and <= 216)
-                        {
-                            settings.PageWidth = pwMm / 25.4;
-                        }
-                        if (cfgDoc.RootElement.TryGetProperty("copies", out var cpEl) && cpEl.TryGetInt32(out var copies) && copies is >= 1 and <= 20)
-                        {
-                            settings.Copies = copies;
-                        }
+                        settings.PageWidth = pwMm / 25.4;
+                    }
+                    if (cfgDoc.RootElement.TryGetProperty("copies", out var cpEl) && cpEl.TryGetInt32(out var copies) && copies is >= 1 and <= 20)
+                    {
+                        requestedCopies = copies;
+                        settings.Copies = copies;
                     }
                 }
             }
-            catch { }
         }
+        catch { }
 
         CoreWebView2PrintStatus status;
         try
@@ -1417,6 +1462,7 @@ public sealed class NativeWebView2Form : Form
             // Fallback for thermal drivers that reject explicit 0 margins or custom scale factor
             var fallback = core.Environment.CreatePrintSettings();
             fallback.PrinterName = printerName;
+            fallback.Copies = requestedCopies;
             fallback.ShouldPrintBackgrounds = true;
             fallback.ShouldPrintHeaderAndFooter = false;
             status = await core.PrintAsync(fallback);
@@ -1520,6 +1566,18 @@ internal sealed class OffscreenPrintForm : Form
     }
 
     protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int WS_EX_TOOLWINDOW = 0x00000080;
+            const int WS_EX_NOACTIVATE = 0x08000000;
+            var cp = base.CreateParams;
+            cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            return cp;
+        }
+    }
 }
 
 /// <summary>

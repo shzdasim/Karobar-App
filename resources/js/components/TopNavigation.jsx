@@ -446,7 +446,7 @@ export default function TopNavigation() {
             <GuideBotTopbarButton
               onClick={() => {
                 if (window.karobarDesktop?.isNative && typeof window.karobarDesktop.toggleGuideBot === "function") {
-                  window.karobarDesktop.toggleGuideBot();
+                  Promise.resolve(window.karobarDesktop.toggleGuideBot()).catch(() => {});
                 } else {
                   setGuideBotOpen((v) => !v);
                 }

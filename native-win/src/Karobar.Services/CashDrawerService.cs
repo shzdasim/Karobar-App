@@ -20,6 +20,7 @@ public class CashDrawerService
     {
         "cash_purchase",
         "cash_return",
+        "cash_refund",
         "supplier_payment",
         "expense",
         "cash_out"
@@ -348,7 +349,7 @@ public class CashDrawerService
             new { sessionId }) ?? 0m;
 
         var cashOut = await _db.ExecuteScalarAsync<decimal?>(
-            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_purchase', 'cash_return', 'supplier_payment', 'expense', 'cash_out')",
+            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_purchase', 'cash_return', 'cash_refund', 'supplier_payment', 'expense', 'cash_out')",
             new { sessionId }) ?? 0m;
 
         var opening = AccountService.ToDecimal(session.GetValueOrDefault("opening_balance"));
@@ -500,7 +501,7 @@ public class CashDrawerService
             new { sessionId });
 
         var cashSalesTxns = transactions.Where(t => IsType(t, "cash_sale")).ToList();
-        var cashReturnsTxns = transactions.Where(t => IsType(t, "cash_return")).ToList();
+        var cashReturnsTxns = transactions.Where(t => IsType(t, "cash_return") || IsType(t, "cash_refund")).ToList();
         var cashPurchasesTxns = transactions.Where(t => IsType(t, "cash_purchase")).ToList();
         var purchaseReturnsTxns = transactions.Where(t => IsType(t, "purchase_return")).ToList();
         var customerPaymentsTxns = transactions.Where(t => IsType(t, "customer_payment")).ToList();

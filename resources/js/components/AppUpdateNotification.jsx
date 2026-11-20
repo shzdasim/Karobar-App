@@ -117,13 +117,31 @@ export default function AppUpdateNotification() {
             const release = await ghRes.json();
             const localVer = String(verRes.data?.version || "2.0.1").replace(/^[vV]/, "");
             const localBuild = Number(verRes.data?.build_number || 1);
-            const remoteVer = String(release.tag_name || "").replace(/^(native-)?[vV]/, "");
+            let remoteVer = String(release.tag_name || "").replace(/^(native-)?[vV]/, "");
+            if (!/^\d+\.\d+\.\d+$/.test(remoteVer)) {
+              const nameMatch = String(release.name || "").match(/\bv?(\d+\.\d+\.\d+)\b/);
+              const bodyMatch = String(release.body || "").match(/\bv?(\d+\.\d+\.\d+)\b/);
+              remoteVer = nameMatch ? nameMatch[1] : bodyMatch ? bodyMatch[1] : "";
+            }
             const buildMatch = remoteVer.match(/^2\.0\.(\d+)$/);
             const remoteBuild = buildMatch ? parseInt(buildMatch[1], 10) : 0;
-            const isNewer =
+            const compareSemverNewer = (remote, local) => {
+              const rParts = String(remote || "").split(".").map((n) => parseInt(n, 10));
+              const lParts = String(local || "").split(".").map((n) => parseInt(n, 10));
+              if (rParts.length < 3 || rParts.some(Number.isNaN) || lParts.length < 3 || lParts.some(Number.isNaN)) {
+                return false;
+              }
+              for (let i = 0; i < 3; i += 1) {
+                if (rParts[i] !== lParts[i]) return rParts[i] > lParts[i];
+              }
+              return false;
+            };
+            const isNewer = Boolean(remoteVer) && (
               remoteBuild > 0 && localBuild > 0 && remoteBuild !== localBuild
                 ? remoteBuild > localBuild
-                : remoteVer > localVer;
+                : compareSemverNewer(remoteVer, localVer)
+            );
+            const displayRemoteVer = remoteVer || localVer;
 
             const setupName = isNativeRuntime ? "Karobar-Native-Setup.exe" : "Karobar-App-Setup.exe";
             const bundleName = isNativeRuntime ? "Karobar-Native-Setup-Bundle.zip" : "Karobar-App-Setup-Bundle.zip";
@@ -137,9 +155,9 @@ export default function AppUpdateNotification() {
               app_name: isNativeRuntime ? "Karobar-App Native" : "Karobar-App",
               current_version: localVer,
               current_build: localBuild,
-              latest_version: remoteVer,
+              latest_version: displayRemoteVer,
               latest_build: remoteBuild,
-              release_name: release.name || `${isNativeRuntime ? "Karobar-App Native" : "Karobar-App"} v${remoteVer}`,
+              release_name: release.name || `${isNativeRuntime ? "Karobar-App Native" : "Karobar-App"} v${displayRemoteVer}`,
               released_at: release.published_at || "",
               notes: release.body || "New Karobar-App release available.",
               download_url: `${dlBase}/${setupName}`,
