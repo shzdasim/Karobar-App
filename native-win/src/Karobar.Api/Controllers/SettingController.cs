@@ -626,6 +626,25 @@ public class SettingController : ApiControllerBase
         }
     }
 
+    private static readonly string[] WhatsAppShareAccessPermissions =
+    [
+        "settings.view",
+        "settings.update",
+        "sale-invoice.view",
+        "customer-ledger.view",
+        "supplier-ledger.view",
+        "customer.view",
+        "payment.view",
+        "purchase-order.view",
+        "purchase-invoice.view",
+        "sale-return.view",
+        "purchase-return.view",
+        "invoice-draft.view",
+        "stock-disposal.view",
+        "cash-drawer.view",
+        "stocktake.view"
+    ];
+
     private async Task<Karobar.Core.Entities.Setting?> LoadEfSettingAsync()
     {
         if (_dbContext == null) return null;
@@ -635,8 +654,9 @@ public class SettingController : ApiControllerBase
     [HttpGet("settings/whatsapp-agent/status")]
     public async Task<IActionResult> WhatsAppAgentStatus()
     {
-        if (!await CanAsync("settings.view", "settings.update", "sale-invoice.view", "customer-ledger.view"))
+        if (!await CanAsync(WhatsAppShareAccessPermissions))
             return Forbidden();
+        await GetOrCreateSettingAsync();
         var efSetting = await LoadEfSettingAsync();
         var res = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
         return Ok(res);
@@ -645,13 +665,28 @@ public class SettingController : ApiControllerBase
     [HttpPost("settings/whatsapp-agent/start")]
     public async Task<IActionResult> WhatsAppAgentStart()
     {
-        if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
+        if (!await CanAsync(WhatsAppShareAccessPermissions))
             return Forbidden();
         try
         {
+            var settingRow = await GetOrCreateSettingAsync();
+            var settingId = Convert.ToInt64(settingRow["id"]);
             var efSetting = await LoadEfSettingAsync();
             var res = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: true, cancellationToken: HttpContext.RequestAborted);
             var ok = !res.TryGetValue("ok", out var okVal) || okVal is true;
+            if (ok)
+            {
+                var syncUpdates = new Dictionary<string, object?>
+                {
+                    ["whatsapp_enabled"] = 1,
+                    ["whatsapp_provider"] = "local_agent"
+                };
+                var agentUrl = res.GetValueOrDefault("agent_url")?.ToString();
+                var apiKey = res.GetValueOrDefault("api_key")?.ToString();
+                if (!string.IsNullOrWhiteSpace(agentUrl)) syncUpdates["whatsapp_api_url"] = agentUrl;
+                if (!string.IsNullOrWhiteSpace(apiKey)) syncUpdates["whatsapp_access_token"] = apiKey;
+                await Db.UpdateAsync("settings", settingId, syncUpdates);
+            }
             return StatusCode(ok ? 200 : 422, res);
         }
         catch (Exception ex)
@@ -663,7 +698,7 @@ public class SettingController : ApiControllerBase
     [HttpPost("settings/whatsapp-agent/pair-code")]
     public async Task<IActionResult> WhatsAppAgentPairCode()
     {
-        if (!await CanAsync("settings.update", "sale-invoice.view", "customer-ledger.view"))
+        if (!await CanAsync(WhatsAppShareAccessPermissions))
             return Forbidden();
         var body = await ReadJsonBodyAsync();
         var phone = (GetString(body, "phone") ?? "").Trim();
@@ -674,6 +709,7 @@ public class SettingController : ApiControllerBase
 
         try
         {
+            await GetOrCreateSettingAsync();
             var efSetting = await LoadEfSettingAsync();
             var res = await _waSidecar.RequestPairingCodeAsync(phone, _dbContext, efSetting, HttpContext.RequestAborted);
             var ok = res.TryGetValue("ok", out var okVal) && okVal is true;
@@ -691,6 +727,7 @@ public class SettingController : ApiControllerBase
         if (!await CanAsync("settings.update")) return Forbidden();
         try
         {
+            await GetOrCreateSettingAsync();
             var efSetting = await LoadEfSettingAsync();
             var res = await _waSidecar.LogoutAsync(_dbContext, efSetting, HttpContext.RequestAborted);
             return Ok(res);
@@ -707,6 +744,7 @@ public class SettingController : ApiControllerBase
         if (!await CanAsync("settings.update")) return Forbidden();
         try
         {
+            await GetOrCreateSettingAsync();
             var efSetting = await LoadEfSettingAsync();
             var res = await _waSidecar.StopAsync(_dbContext, efSetting, HttpContext.RequestAborted);
             return Ok(res);
@@ -834,7 +872,10 @@ public class SettingController : ApiControllerBase
             ["currency_decimal_places"] = 2,
             ["expiry_warning_days"] = 90,
             ["expiry_critical_days"] = 30,
-            ["expiry_daily_flash_limit"] = 5
+            ["expiry_daily_flash_limit"] = 5,
+            ["whatsapp_provider"] = "local_agent",
+            ["whatsapp_default_country_code"] = "92",
+            ["whatsapp_auto_fallback"] = 1
         });
 
         return (await Db.QuerySingleOrDefaultAsync("SELECT * FROM settings WHERE id = @id", new { id }))!;

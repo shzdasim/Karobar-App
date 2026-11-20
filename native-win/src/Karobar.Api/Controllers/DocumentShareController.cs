@@ -167,6 +167,25 @@ public class DocumentShareController : ApiControllerBase
             !string.IsNullOrWhiteSpace(waConfig.ApiUrl));
         var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
 
+        // Surface live local WhatsApp agent state so ShareDocumentModal shows accurate in-app readiness immediately
+        bool waAgentRunning = false;
+        string waAgentStatus = "stopped";
+        object? waAgentUser = null;
+        if (waConfig.Provider == "local_agent" || !waConfigured)
+        {
+            try
+            {
+                var efSetting = _dbContext != null
+                    ? await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted)
+                    : null;
+                var st = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+                waAgentRunning = st.TryGetValue("agent_running", out var runObj) && runObj is true;
+                waAgentStatus = st.GetValueOrDefault("status")?.ToString() ?? "stopped";
+                waAgentUser = st.GetValueOrDefault("user");
+            }
+            catch { }
+        }
+
         return Ok(new Dictionary<string, object?>
         {
             ["type"] = type,
@@ -194,6 +213,9 @@ public class DocumentShareController : ApiControllerBase
             ["whatsapp_api_configured"] = waConfigured,
             ["whatsapp_provider"] = waConfig.Provider,
             ["whatsapp_default_country_code"] = waConfig.DefaultCountryCode,
+            ["whatsapp_agent_running"] = waAgentRunning,
+            ["whatsapp_agent_status"] = waAgentStatus,
+            ["whatsapp_agent_user"] = waAgentUser,
             ["email_subject"] = ctx.EmailSubjectEn,
             ["email_subject_en"] = ctx.EmailSubjectEn,
             ["email_subject_ur"] = ctx.EmailSubjectUr,
@@ -373,43 +395,48 @@ public class DocumentShareController : ApiControllerBase
             }
         }
 
-        // If local WhatsApp agent is enabled & selected, verify live connection; auto-start once if stopped so a linked store reconnects seamlessly
-        string? localAgentBootError = null;
-        if (waConfig.Enabled && waConfig.Provider == "local_agent" && !string.IsNullOrWhiteSpace(normalizedPhone))
+        // If local WhatsApp agent is enabled & selected, verify live connection; auto-start once if stopped so a linked store reconnects seamlessly.
+        // Never kick the user out to an external browser when local_agent is active — either dispatch directly inside the app, show inline QR, or report the exact error.
+        var isLocalAgentMode = waConfig.Enabled && waConfig.Provider == "local_agent";
+        Karobar.Core.Entities.Setting? efSettingForWa = null;
+        if (isLocalAgentMode && !string.IsNullOrWhiteSpace(normalizedPhone))
         {
-            var efSetting = _dbContext != null
+            efSettingForWa = _dbContext != null
                 ? await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted)
                 : null;
-            var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSettingForWa, HttpContext.RequestAborted);
             var stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
             var isRunning = agentStatus.TryGetValue("agent_running", out var runObj) && runObj is true;
 
             if (!isRunning || string.Equals(stStr, "stopped", StringComparison.OrdinalIgnoreCase))
             {
-                agentStatus = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
+                agentStatus = await _waSidecar.StartAsync(_dbContext, efSettingForWa, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
                 stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
                 isRunning = agentStatus.TryGetValue("agent_running", out var runObj2) && runObj2 is true;
             }
 
+            // Ensure waConfig uses the exact active agent URL and API key
+            var liveUrl = agentStatus.GetValueOrDefault("agent_url")?.ToString();
+            var liveKey = agentStatus.GetValueOrDefault("api_key")?.ToString();
+            if (!string.IsNullOrWhiteSpace(liveUrl)) waConfig.ApiUrl = liveUrl;
+            if (!string.IsNullOrWhiteSpace(liveKey)) waConfig.AccessToken = liveKey;
+
             if (!isRunning)
             {
-                localAgentBootError = agentStatus.GetValueOrDefault("last_error")?.ToString()
+                var bootErr = agentStatus.GetValueOrDefault("last_error")?.ToString()
                     ?? agentStatus.GetValueOrDefault("message")?.ToString()
                     ?? "Local WhatsApp Agent could not start.";
-                if (!waConfig.AutoFallback)
-                {
-                    return Unprocessable(localAgentBootError);
-                }
-                // Fall through cleanly to browser/download fallback instead of stranding the cashier on a broken QR spinner
-                waConfig.Enabled = false;
+                return Unprocessable(bootErr);
             }
-            else if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
+
+            if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
             {
                 return Ok(new Dictionary<string, object?>
                 {
                     ["status"] = "qr_required",
                     ["mode"] = "qr_required",
-                    ["message"] = "Local WhatsApp Agent is not linked yet. Please scan the QR code or pair with phone number.",
+                    ["provider"] = "local_agent",
+                    ["message"] = "Scan the WhatsApp QR code below once to link your device and send directly inside Karobar-App.",
                     ["agent_status"] = stStr,
                     ["qr_data_url"] = agentStatus.GetValueOrDefault("qr_data_url"),
                     ["pairing_code"] = agentStatus.GetValueOrDefault("pairing_code"),
@@ -417,18 +444,39 @@ public class DocumentShareController : ApiControllerBase
                     ["normalized_phone"] = normalizedPhone
                 });
             }
+
+            // Keep local_agent dispatch strictly in-app (never silently open external wa.me on transient/recipient errors)
+            waConfig.AutoFallback = false;
         }
 
         Dictionary<string, object?> response;
         if (type == "regular_refill_reminder")
         {
-            // Regular refill reminders are text messages — dispatch cleanly via /send-text (no unnecessary PDF attachment!)
-            response = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, message, waConfig, HttpContext.RequestAborted);
-            if (!string.IsNullOrWhiteSpace(localAgentBootError))
+            try
             {
-                response["status"] = "api_fallback";
-                response["api_error"] = localAgentBootError;
-                response["message"] = $"Local WhatsApp Agent unavailable ({localAgentBootError}); opening WhatsApp chat instead.";
+                // Regular refill reminders are text messages — dispatch cleanly via /send-text (no unnecessary PDF attachment!)
+                response = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, message, waConfig, HttpContext.RequestAborted);
+            }
+            catch (Exception ex) when (isLocalAgentMode)
+            {
+                var freshSt = await _waSidecar.StatusAsync(_dbContext, efSettingForWa, HttpContext.RequestAborted);
+                var freshStatusStr = freshSt.GetValueOrDefault("status")?.ToString() ?? "stopped";
+                if (!string.Equals(freshStatusStr, "connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Ok(new Dictionary<string, object?>
+                    {
+                        ["status"] = "qr_required",
+                        ["mode"] = "qr_required",
+                        ["provider"] = "local_agent",
+                        ["message"] = "WhatsApp session reconnecting — scan QR if prompted to send directly inside Karobar-App.",
+                        ["agent_status"] = freshStatusStr,
+                        ["qr_data_url"] = freshSt.GetValueOrDefault("qr_data_url"),
+                        ["pairing_code"] = freshSt.GetValueOrDefault("pairing_code"),
+                        ["last_error"] = freshSt.GetValueOrDefault("last_error"),
+                        ["normalized_phone"] = normalizedPhone
+                    });
+                }
+                return Unprocessable(ex.Message);
             }
 
             var custId = ctx!.PartyId ?? GetNullableLong(body, "customer_id") ?? GetNullableLong(body, "id");
@@ -500,14 +548,33 @@ public class DocumentShareController : ApiControllerBase
 
         var signedPdfUrl = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/shared-pdf/{type}", signedParams, TimeSpan.FromMinutes(30));
 
-        response = await _shareEngine.SendOrBuildWhatsAppPdfAsync(
-            pdfBytes, ctx!.Filename, rawPhone, message, waConfig, signedPdfUrl, HttpContext.RequestAborted);
-        if (!string.IsNullOrWhiteSpace(localAgentBootError))
+        try
         {
-            response["status"] = "api_fallback";
-            response["api_error"] = localAgentBootError;
-            response["message"] = $"Local WhatsApp Agent unavailable ({localAgentBootError}); PDF downloaded locally & opening WhatsApp chat.";
+            response = await _shareEngine.SendOrBuildWhatsAppPdfAsync(
+                pdfBytes, ctx!.Filename, rawPhone, message, waConfig, signedPdfUrl, HttpContext.RequestAborted);
         }
+        catch (Exception ex) when (isLocalAgentMode)
+        {
+            var freshSt = await _waSidecar.StatusAsync(_dbContext, efSettingForWa, HttpContext.RequestAborted);
+            var freshStatusStr = freshSt.GetValueOrDefault("status")?.ToString() ?? "stopped";
+            if (!string.Equals(freshStatusStr, "connected", StringComparison.OrdinalIgnoreCase))
+            {
+                return Ok(new Dictionary<string, object?>
+                {
+                    ["status"] = "qr_required",
+                    ["mode"] = "qr_required",
+                    ["provider"] = "local_agent",
+                    ["message"] = "WhatsApp session reconnecting — scan QR if prompted to send directly inside Karobar-App.",
+                    ["agent_status"] = freshStatusStr,
+                    ["qr_data_url"] = freshSt.GetValueOrDefault("qr_data_url"),
+                    ["pairing_code"] = freshSt.GetValueOrDefault("pairing_code"),
+                    ["last_error"] = freshSt.GetValueOrDefault("last_error"),
+                    ["normalized_phone"] = normalizedPhone
+                });
+            }
+            return Unprocessable(ex.Message);
+        }
+
         response["signed_pdf_url"] = signedPdfUrl;
         response["mime_type"] = "application/pdf";
         response["size_bytes"] = pdfBytes.Length;

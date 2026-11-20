@@ -592,14 +592,15 @@ public sealed class DocumentShareEngine
             var body = await res.Content.ReadAsStringAsync(cancellationToken);
             if (!res.IsSuccessStatusCode)
             {
-                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {body}");
+                var errMsg = ExtractAgentJsonMessage(body) ?? body;
+                throw new InvalidOperationException(errMsg);
             }
 
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
             if (doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.False)
             {
                 var err = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : body;
-                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {err}");
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? "Built-in Free WhatsApp Agent error." : err);
             }
 
             var msgId = doc.RootElement.TryGetProperty("message_id", out var idProp) ? (idProp.GetString() ?? "local_agent_sent") : "local_agent_sent";
@@ -916,13 +917,14 @@ public sealed class DocumentShareEngine
             var body = await res.Content.ReadAsStringAsync(cancellationToken);
             if (!res.IsSuccessStatusCode)
             {
-                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {body}");
+                var errMsg = ExtractAgentJsonMessage(body) ?? body;
+                throw new InvalidOperationException(errMsg);
             }
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
             if (doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.False)
             {
                 var err = doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : body;
-                throw new InvalidOperationException($"Built-in Free WhatsApp Agent error: {err}");
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? "Built-in Free WhatsApp Agent error." : err);
             }
             var msgId = doc.RootElement.TryGetProperty("message_id", out var idProp) ? (idProp.GetString() ?? "local_agent_sent") : "local_agent_sent";
             return ("local_agent", msgId);
@@ -1204,6 +1206,23 @@ public sealed class DocumentShareEngine
     /// Purge temporary shared PDFs older than `maxAgeSeconds` (default 24 hours = 86400s) from private storage
     /// and remove any legacy files from public/shared-pdfs.
     /// </summary>
+    private static string? ExtractAgentJsonMessage(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("message", out var msgProp) &&
+                msgProp.ValueKind == JsonValueKind.String)
+            {
+                return msgProp.GetString();
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public int CleanupExpiredSharedPdfs(int maxAgeSeconds = 86400)
     {
         var deleted = 0;

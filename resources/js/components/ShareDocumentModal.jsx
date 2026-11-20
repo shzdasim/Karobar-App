@@ -142,7 +142,9 @@ export default function ShareDocumentModal({
     pairing_phone: "",
     last_error: null,
     requesting_code: false,
+    autoSendOnConnect: false,
   });
+  const [linkingAgent, setLinkingAgent] = useState(false);
 
   // Email form state
   const [emailInput, setEmailInput] = useState("");
@@ -190,6 +192,7 @@ export default function ShareDocumentModal({
   useEffect(() => {
     if (!isOpen || !qrStep.open) return;
 
+    const shouldAutoSend = Boolean(qrStep.autoSendOnConnect);
     const timer = setInterval(async () => {
       try {
         const { data } = await axios.get("/api/settings/whatsapp-agent/status", {
@@ -205,17 +208,35 @@ export default function ShareDocumentModal({
 
         if (data.status === "connected") {
           clearInterval(timer);
-          setQrStep((prev) => ({ ...prev, open: false, last_error: null }));
-          toast.success("WhatsApp linked. Dispatching PDF attachment...");
-          sendWhatsAppPdfRef.current?.();
+          setMeta((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  whatsapp_api_configured: true,
+                  whatsapp_provider: "local_agent",
+                  whatsapp_agent_running: true,
+                  whatsapp_agent_status: "connected",
+                  whatsapp_agent_user: data.user || prev.whatsapp_agent_user || null,
+                }
+              : prev
+          );
+          setQrStep((prev) => ({ ...prev, open: false, last_error: null, autoSendOnConnect: false }));
+          if (shouldAutoSend) {
+            toast.success("WhatsApp linked! Sending PDF directly inside Karobar-App...");
+            sendWhatsAppPdfRef.current?.(true);
+          } else {
+            toast.success(
+              `WhatsApp linked${data.user?.phone ? ` (+${data.user.phone})` : ""}! Click Send PDF via WhatsApp to dispatch directly.`
+            );
+          }
         }
       } catch {
         // ignore polling error
       }
-    }, 2500);
+    }, 1500);
 
     return () => clearInterval(timer);
-  }, [isOpen, qrStep.open]);
+  }, [isOpen, qrStep.open, qrStep.autoSendOnConnect]);
 
   const loadMetadataAndBuildPdf = async () => {
     setLoading(true);
@@ -304,18 +325,99 @@ export default function ShareDocumentModal({
     setTimeout(() => window.URL.revokeObjectURL(url), 5000);
   };
 
+  const isExternalCloudGateway = Boolean(
+    meta?.whatsapp_api_configured &&
+      meta?.whatsapp_provider &&
+      meta.whatsapp_provider !== "local_agent"
+  );
+  const isLocalAgentConnected = meta?.whatsapp_agent_status === "connected";
+
   /**
-   * Build the actual PDF file via backend and send it on WhatsApp as a real PDF attachment.
-   * Respects the user's configured mode: Direct API (Local Agent / Cloud Gateway) vs Standard Browser Mode.
+   * Start Built-in In-App WhatsApp Agent and display the inline QR / 8-Digit Pairing Code box
+   * without leaving the application.
    */
-  const handleSendWhatsAppPdf = async () => {
-    if (!phoneInput.trim() && meta?.whatsapp_api_configured) {
+  const handleStartInlineWhatsAppLink = async (autoSendAfterLink = false) => {
+    setLinkingAgent(true);
+    try {
+      const { data } = await axios.post("/api/settings/whatsapp-agent/start");
+      const status = data.status || (data.agent_running ? "connecting" : "stopped");
+      setMeta((prev) =>
+        prev
+          ? {
+              ...prev,
+              whatsapp_api_configured: true,
+              whatsapp_provider: "local_agent",
+              whatsapp_agent_running: Boolean(data.agent_running),
+              whatsapp_agent_status: status,
+              whatsapp_agent_user: data.user || prev.whatsapp_agent_user || null,
+            }
+          : prev
+      );
+
+      if (status === "connected") {
+        setQrStep((prev) => ({ ...prev, open: false, last_error: null, autoSendOnConnect: false }));
+        return { connected: true, data };
+      }
+
+      setQrStep((prev) => ({
+        ...prev,
+        open: true,
+        status,
+        qr_data_url: data.qr_data_url || prev.qr_data_url,
+        pairing_code: data.pairing_code || prev.pairing_code,
+        last_error: data.last_error || null,
+        autoSendOnConnect: Boolean(autoSendAfterLink),
+      }));
+      toast(
+        autoSendAfterLink
+          ? "Scan the WhatsApp QR code below once — your PDF will send automatically without leaving the app."
+          : "Scan the WhatsApp QR code below with your phone to link in-app WhatsApp.",
+        { duration: 5000 }
+      );
+      return { connected: false, data };
+    } catch (err) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.last_error ||
+        "Could not start the built-in WhatsApp Agent.";
+      setQrStep((prev) => ({
+        ...prev,
+        open: true,
+        status: "error",
+        last_error: errMsg,
+        autoSendOnConnect: false,
+      }));
+      toast.error(errMsg);
+      return { connected: false, error: errMsg };
+    } finally {
+      setLinkingAgent(false);
+    }
+  };
+
+  /**
+   * Build the actual PDF file via backend and send it on WhatsApp as a real PDF attachment
+   * directly inside Karobar-App (auto-starting the Built-in Local WhatsApp Agent with inline QR
+   * if no external cloud gateway is configured — never leaving the app!).
+   */
+  const handleSendWhatsAppPdf = async (skipPreStartCheck = false) => {
+    if (!phoneInput.trim()) {
       toast.error("Please enter a recipient WhatsApp phone number");
       return;
     }
 
     setSendingWhatsApp(true);
     try {
+      // When using the built-in in-app WhatsApp Agent (default), ensure it is started and linked
+      // right inside this modal before dispatching — never kicking the user out to a browser!
+      if (!isExternalCloudGateway && skipPreStartCheck !== true) {
+        if (!meta?.whatsapp_api_configured || !isLocalAgentConnected) {
+          const linkRes = await handleStartInlineWhatsAppLink(true);
+          if (!linkRes.connected) {
+            return;
+          }
+        }
+      }
+
       const payload = {
         ...buildRequestParams(selectedDesign),
         phone: phoneInput.trim(),
@@ -325,8 +427,8 @@ export default function ShareDocumentModal({
 
       const { data } = await axios.post("/api/share/whatsapp", payload);
 
-      if (data.mode === "cloud_api") {
-        toast.success(data.message || "PDF document sent directly to WhatsApp");
+      if (data.mode === "cloud_api" || data.status === "sent_via_api") {
+        toast.success(data.message || "PDF document sent directly on WhatsApp!");
         onClose?.();
         return;
       }
@@ -339,6 +441,7 @@ export default function ShareDocumentModal({
           qr_data_url: data.qr_data_url || prev.qr_data_url,
           pairing_code: data.pairing_code || prev.pairing_code,
           last_error: data.last_error || null,
+          autoSendOnConnect: true,
         }));
         toast("Scan the WhatsApp QR code below once to link your device and send the PDF automatically.", {
           duration: 5000,
@@ -731,7 +834,7 @@ export default function ShareDocumentModal({
                   {/* Compact WhatsApp Delivery Mode Status Card */}
                   <div
                     className={`p-3 rounded-xl border text-xs space-y-1.5 ${
-                      meta?.whatsapp_api_configured
+                      isExternalCloudGateway || isLocalAgentConnected
                         ? isDark
                           ? "bg-emerald-900/20 border-emerald-700/60 text-emerald-300"
                           : "bg-emerald-50 border-emerald-200 text-emerald-800"
@@ -744,30 +847,52 @@ export default function ShareDocumentModal({
                       <div className="flex items-center gap-1.5 font-semibold">
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
-                            meta?.whatsapp_api_configured ? "bg-emerald-500" : "bg-amber-500"
+                            isExternalCloudGateway || isLocalAgentConnected
+                              ? "bg-emerald-500"
+                              : "bg-amber-500"
                           }`}
                         />
                         <span>
-                          {meta?.whatsapp_api_configured
-                            ? `Direct WhatsApp (${meta.whatsapp_provider || "local_agent"})`
-                            : "Browser WhatsApp Mode"}
+                          {isExternalCloudGateway
+                            ? `Direct WhatsApp (${meta.whatsapp_provider})`
+                            : isLocalAgentConnected
+                            ? `In-App WhatsApp Ready${
+                                meta?.whatsapp_agent_user?.phone
+                                  ? ` (+${meta.whatsapp_agent_user.phone})`
+                                  : ""
+                              }`
+                            : "In-App WhatsApp (1-Time QR Link)"}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose?.();
-                          navigate("/settings#whatsapp");
-                        }}
-                        className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        Configure
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isExternalCloudGateway && !isLocalAgentConnected && (
+                          <button
+                            type="button"
+                            disabled={linkingAgent}
+                            onClick={() => handleStartInlineWhatsAppLink(false)}
+                            className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                          >
+                            {linkingAgent ? "Linking..." : "Link QR"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose?.();
+                            navigate("/settings#whatsapp");
+                          }}
+                          className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          Settings
+                        </button>
+                      </div>
                     </div>
                     <p className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-                      {meta?.whatsapp_api_configured
-                        ? `Sends the ${activeSizeLabel} PDF file directly as a WhatsApp attachment.`
-                        : "Downloads the PDF file and opens the recipient WhatsApp chat."}
+                      {isExternalCloudGateway
+                        ? `Sends the ${activeSizeLabel} PDF directly via ${meta.whatsapp_provider} without leaving the app.`
+                        : isLocalAgentConnected
+                        ? `Sends the ${activeSizeLabel} PDF directly inside Karobar-App without leaving the software.`
+                        : `Click "Send PDF via WhatsApp" or "Link QR" to scan once right here and send PDFs directly without leaving the app.`}
                     </p>
                   </div>
                 </div>
@@ -860,13 +985,23 @@ export default function ShareDocumentModal({
                         Link WhatsApp Device to Dispatch PDF Attachment
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setQrStep((s) => ({ ...s, open: false }))}
-                      className="text-xs text-gray-500 hover:text-gray-800 dark:text-slate-400"
-                    >
-                      Close
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={linkingAgent}
+                        onClick={() => handleStartInlineWhatsAppLink(qrStep.autoSendOnConnect)}
+                        className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+                      >
+                        {linkingAgent ? "Refreshing..." : "Refresh QR"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrStep((s) => ({ ...s, open: false, autoSendOnConnect: false }))}
+                        className="text-xs text-gray-500 hover:text-gray-800 dark:text-slate-400"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
@@ -1110,7 +1245,7 @@ export default function ShareDocumentModal({
                 <button
                   type="button"
                   disabled={sendingWhatsApp || buildingPdf}
-                  onClick={handleSendWhatsAppPdf}
+                  onClick={() => handleSendWhatsAppPdf(false)}
                   className={`px-4 py-2 text-xs font-semibold flex items-center gap-1.5 ${btnPrimary.className}`}
                   style={btnPrimary.style}
                 >

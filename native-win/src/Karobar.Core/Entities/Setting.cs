@@ -170,7 +170,7 @@ public class Setting
 
     [Column("whatsapp_provider")]
     [JsonPropertyName("whatsapp_provider")]
-    public string? WhatsappProvider { get; set; } = "whapi_cloud";
+    public string? WhatsappProvider { get; set; } = "local_agent";
 
     [Column("whatsapp_access_token")]
     [JsonPropertyName("whatsapp_access_token")]

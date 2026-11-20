@@ -488,45 +488,79 @@ public class CustomerController : ApiControllerBase
             return Unprocessable("Customer does not have a valid WhatsApp phone number.");
         }
 
-        // If local_agent is enabled, auto-wake if stopped; return qr_required if running & unlinked
-        if (waCfg.Enabled && waCfg.Provider == "local_agent")
+        // If local_agent is enabled, auto-wake if stopped; return qr_required if running & unlinked (never silently kick out to browser)
+        var isLocalAgentMode = waCfg.Enabled && waCfg.Provider == "local_agent";
+        Karobar.Core.Entities.Setting? efSettingForWa = null;
+        if (isLocalAgentMode)
         {
-            var efSetting = _dbContext != null
+            efSettingForWa = _dbContext != null
                 ? await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted)
                 : null;
-            var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            var agentStatus = await _waSidecar.StatusAsync(_dbContext, efSettingForWa, HttpContext.RequestAborted);
             var isRunning = agentStatus.TryGetValue("agent_running", out var rObj) && rObj is true;
             var stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
             if (!isRunning)
             {
-                agentStatus = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
+                agentStatus = await _waSidecar.StartAsync(_dbContext, efSettingForWa, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
                 isRunning = agentStatus.TryGetValue("agent_running", out var rObj2) && rObj2 is true;
                 stStr = agentStatus.GetValueOrDefault("status")?.ToString() ?? "stopped";
             }
+            var liveUrl = agentStatus.GetValueOrDefault("agent_url")?.ToString();
+            var liveKey = agentStatus.GetValueOrDefault("api_key")?.ToString();
+            if (!string.IsNullOrWhiteSpace(liveUrl)) waCfg.ApiUrl = liveUrl;
+            if (!string.IsNullOrWhiteSpace(liveKey)) waCfg.AccessToken = liveKey;
+
             if (!isRunning)
             {
-                if (!waCfg.AutoFallback)
-                {
-                    return Unprocessable(agentStatus.GetValueOrDefault("last_error")?.ToString() ?? "Local WhatsApp Agent is not running.");
-                }
-                waCfg.Enabled = false;
+                return Unprocessable(agentStatus.GetValueOrDefault("last_error")?.ToString()
+                    ?? agentStatus.GetValueOrDefault("message")?.ToString()
+                    ?? "Local WhatsApp Agent is not running.");
             }
-            else if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
             {
                 return Ok(new Dictionary<string, object?>
                 {
                     ["status"] = "qr_required",
                     ["mode"] = "qr_required",
+                    ["provider"] = "local_agent",
                     ["message"] = "Local WhatsApp Agent is not linked yet. Please scan the QR code to send the reminder.",
                     ["agent_status"] = stStr,
                     ["qr_data_url"] = agentStatus.GetValueOrDefault("qr_data_url"),
                     ["pairing_code"] = agentStatus.GetValueOrDefault("pairing_code"),
+                    ["last_error"] = agentStatus.GetValueOrDefault("last_error"),
                     ["normalized_phone"] = normalizedPhone
                 });
             }
+
+            waCfg.AutoFallback = false;
         }
 
-        var sendRes = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, customMessage, waCfg, HttpContext.RequestAborted);
+        Dictionary<string, object?> sendRes;
+        try
+        {
+            sendRes = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, customMessage, waCfg, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (isLocalAgentMode)
+        {
+            var freshSt = await _waSidecar.StatusAsync(_dbContext, efSettingForWa, HttpContext.RequestAborted);
+            var freshStatusStr = freshSt.GetValueOrDefault("status")?.ToString() ?? "stopped";
+            if (!string.Equals(freshStatusStr, "connected", StringComparison.OrdinalIgnoreCase))
+            {
+                return Ok(new Dictionary<string, object?>
+                {
+                    ["status"] = "qr_required",
+                    ["mode"] = "qr_required",
+                    ["provider"] = "local_agent",
+                    ["message"] = "WhatsApp session reconnecting — scan QR if prompted.",
+                    ["agent_status"] = freshStatusStr,
+                    ["qr_data_url"] = freshSt.GetValueOrDefault("qr_data_url"),
+                    ["pairing_code"] = freshSt.GetValueOrDefault("pairing_code"),
+                    ["last_error"] = freshSt.GetValueOrDefault("last_error"),
+                    ["normalized_phone"] = normalizedPhone
+                });
+            }
+            return Unprocessable(ex.Message);
+        }
         var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
         var updates = new Dictionary<string, object?>
@@ -587,6 +621,34 @@ public class CustomerController : ApiControllerBase
 
         await AttachRegularItemsAndMetadataAsync(customers);
 
+        var waCfg = await LoadWhatsAppConfigAsync();
+        if (waCfg.Enabled && waCfg.Provider == "local_agent")
+        {
+            var efSetting = _dbContext != null
+                ? await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted)
+                : null;
+            var st = await _waSidecar.StatusAsync(_dbContext, efSetting, HttpContext.RequestAborted);
+            var isRun = st.TryGetValue("agent_running", out var rObj) && rObj is true;
+            var stStr = st.GetValueOrDefault("status")?.ToString() ?? "stopped";
+            if (!isRun)
+            {
+                st = await _waSidecar.StartAsync(_dbContext, efSetting, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
+                isRun = st.TryGetValue("agent_running", out var rObj2) && rObj2 is true;
+                stStr = st.GetValueOrDefault("status")?.ToString() ?? "stopped";
+            }
+            var liveUrl = st.GetValueOrDefault("agent_url")?.ToString();
+            var liveKey = st.GetValueOrDefault("api_key")?.ToString();
+            if (!string.IsNullOrWhiteSpace(liveUrl)) waCfg.ApiUrl = liveUrl;
+            if (!string.IsNullOrWhiteSpace(liveKey)) waCfg.AccessToken = liveKey;
+
+            if (!isRun || !string.Equals(stStr, "connected", StringComparison.OrdinalIgnoreCase))
+            {
+                return Unprocessable(isRun
+                    ? "Local WhatsApp Agent is not linked yet. Please link WhatsApp via QR code in Settings -> WhatsApp API or on any customer reminder first."
+                    : (st.GetValueOrDefault("last_error")?.ToString() ?? "Local WhatsApp Agent is not running."));
+            }
+        }
+
         int sentCount = 0, fallbackCount = 0, skippedCount = 0;
         var results = new List<Dictionary<string, object?>>();
         var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
@@ -635,25 +697,27 @@ public class CustomerController : ApiControllerBase
                 : (cust["reminder_language"]?.ToString() ?? "english");
             var templates = await FormatRegularCustomerReminderAsync(cust, lang);
             var msgText = templates["message"]?.ToString() ?? "";
-            var normalizedPhone = NormalizeWhatsAppPhone(rawPhone);
+
+            var sendRes = await _shareEngine.SendOrBuildWhatsAppTextAsync(rawPhone, msgText, waCfg, HttpContext.RequestAborted);
+            var wasSentDirectly = string.Equals(sendRes.GetValueOrDefault("mode")?.ToString(), "cloud_api", StringComparison.OrdinalIgnoreCase);
 
             await Db.UpdateAsync("customers", cid, new Dictionary<string, object?>
             {
                 ["last_refill_reminded_at"] = nowStr
             });
 
-            fallbackCount++;
+            if (wasSentDirectly) sentCount++; else fallbackCount++;
             results.Add(new Dictionary<string, object?>
             {
                 ["customer_id"] = cid,
                 ["customer_name"] = cname,
                 ["phone"] = rawPhone,
-                ["status"] = "wa_me_fallback",
-                ["mode"] = "wa_me_fallback",
-                ["provider"] = "wa_me",
-                ["normalized_phone"] = normalizedPhone,
-                ["wa_me_url"] = $"https://wa.me/{normalizedPhone}?text={Uri.EscapeDataString(msgText)}",
-                ["message"] = $"WhatsApp reminder prepared for +{normalizedPhone}."
+                ["status"] = sendRes.GetValueOrDefault("status") ?? (wasSentDirectly ? "sent_via_api" : "wa_me_fallback"),
+                ["mode"] = sendRes.GetValueOrDefault("mode") ?? (wasSentDirectly ? "cloud_api" : "wa_me_fallback"),
+                ["provider"] = sendRes.GetValueOrDefault("provider") ?? waCfg.Provider,
+                ["normalized_phone"] = sendRes.GetValueOrDefault("normalized_phone") ?? _shareEngine.NormalizePhone(rawPhone, waCfg.DefaultCountryCode),
+                ["wa_me_url"] = sendRes.GetValueOrDefault("wa_me_url"),
+                ["message"] = sendRes.GetValueOrDefault("message")
             });
         }
 

@@ -32,6 +32,10 @@ export default function RegularRefillReminderModal({
     open: false,
     status: "qr_ready",
     qr_data_url: null,
+    pairing_code: null,
+    pairing_phone: "",
+    last_error: null,
+    requesting_code: false,
   });
 
   useEffect(() => {
@@ -52,7 +56,15 @@ export default function RegularRefillReminderModal({
     setLoading(true);
     setPhone(customer.phone || "");
     setAdvanceCycle(false);
-    setQrStep({ open: false, status: "qr_ready", qr_data_url: null });
+    setQrStep({
+      open: false,
+      status: "qr_ready",
+      qr_data_url: null,
+      pairing_code: null,
+      pairing_phone: "",
+      last_error: null,
+      requesting_code: false,
+    });
 
     axios
       .get(`/api/customers/${customer.id}/refill-reminder-preview`)
@@ -97,18 +109,20 @@ export default function RegularRefillReminderModal({
           ...prev,
           status: data.status || prev.status,
           qr_data_url: data.qr_data_url || prev.qr_data_url,
+          pairing_code: data.pairing_code || prev.pairing_code,
+          last_error: data.last_error || null,
         }));
 
         if (data.status === "connected") {
           clearInterval(timer);
-          setQrStep((prev) => ({ ...prev, open: false }));
-          toast.success("WhatsApp linked! Sending reminder...");
-          handleSendRef.current?.();
+          setQrStep((prev) => ({ ...prev, open: false, last_error: null }));
+          toast.success("WhatsApp linked! Sending reminder directly inside Karobar-App...");
+          handleSendRef.current?.(null, true);
         }
       } catch {
         // ignore polling error
       }
-    }, 2500);
+    }, 1500);
 
     return () => clearInterval(timer);
   }, [open, qrStep.open]);
@@ -126,7 +140,30 @@ export default function RegularRefillReminderModal({
     }
   };
 
-  const handleSend = async (e) => {
+  const handleRequestInlinePairCode = async () => {
+    if (!qrStep.pairing_phone.trim()) {
+      toast.error("Enter your own WhatsApp number to get an 8-digit pairing code");
+      return;
+    }
+    setQrStep((s) => ({ ...s, requesting_code: true }));
+    try {
+      const { data } = await axios.post("/api/settings/whatsapp-agent/pair-code", {
+        phone: qrStep.pairing_phone.trim(),
+      });
+      setQrStep((s) => ({
+        ...s,
+        requesting_code: false,
+        pairing_code: data.pairing_code || null,
+        last_error: null,
+      }));
+      toast.success("Enter the 8-digit code in WhatsApp → Linked Devices");
+    } catch (err) {
+      setQrStep((s) => ({ ...s, requesting_code: false }));
+      toast.error(err?.response?.data?.message || "Could not generate pairing code");
+    }
+  };
+
+  const handleSend = async (e, skipPreStartCheck = false) => {
     e?.preventDefault?.();
     if (!phone.trim()) {
       toast.error("Please enter the customer's WhatsApp phone number.");
@@ -139,6 +176,56 @@ export default function RegularRefillReminderModal({
 
     setSending(true);
     try {
+      const isExternalCloudGateway = Boolean(
+        previewData?.whatsapp_enabled &&
+          previewData?.whatsapp_provider &&
+          previewData.whatsapp_provider !== "local_agent"
+      );
+
+      // Default to built-in In-App Local WhatsApp Agent so reminders send directly inside the app via 1-time QR link
+      if (!isExternalCloudGateway && !skipPreStartCheck) {
+        try {
+          const { data: startData } = await axios.post("/api/settings/whatsapp-agent/start");
+          setPreviewData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  whatsapp_enabled: true,
+                  whatsapp_provider: "local_agent",
+                }
+              : prev
+          );
+          if (startData.status !== "connected") {
+            setQrStep((prev) => ({
+              ...prev,
+              open: true,
+              status: startData.status || "qr_ready",
+              qr_data_url: startData.qr_data_url || prev.qr_data_url,
+              pairing_code: startData.pairing_code || prev.pairing_code,
+              last_error: startData.last_error || null,
+            }));
+            toast(
+              "Scan the WhatsApp QR code below once — your reminder will send automatically without leaving the app.",
+              { duration: 5000 }
+            );
+            return;
+          }
+        } catch (startErr) {
+          const errMsg =
+            startErr?.response?.data?.message ||
+            startErr?.response?.data?.last_error ||
+            "Could not start the built-in WhatsApp Agent.";
+          setQrStep((prev) => ({
+            ...prev,
+            open: true,
+            status: "error",
+            last_error: errMsg,
+          }));
+          toast.error(errMsg);
+          return;
+        }
+      }
+
       const { data } = await axios.post("/api/share/whatsapp", {
         type: "regular_refill_reminder",
         id: customer.id,
@@ -160,11 +247,14 @@ export default function RegularRefillReminderModal({
       }
 
       if (data.mode === "qr_required" || data.status === "qr_required") {
-        setQrStep({
+        setQrStep((prev) => ({
+          ...prev,
           open: true,
           status: data.agent_status || "qr_ready",
-          qr_data_url: data.qr_data_url || null,
-        });
+          qr_data_url: data.qr_data_url || prev.qr_data_url,
+          pairing_code: data.pairing_code || prev.pairing_code,
+          last_error: data.last_error || null,
+        }));
         toast(
           "Scan the WhatsApp QR code below once to link your device and send the reminder automatically.",
           { duration: 5000 }
@@ -453,23 +543,63 @@ export default function RegularRefillReminderModal({
                 />
 
                 {qrStep.open && (
-                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center gap-3">
-                    {qrStep.qr_data_url ? (
-                      <img
-                        src={qrStep.qr_data_url}
-                        alt="WhatsApp Link QR Code"
-                        className="w-24 h-24 rounded-lg border border-slate-200 bg-white p-1 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-24 h-24 rounded-lg border border-slate-200 bg-white flex items-center justify-center shrink-0">
-                        <ArrowPathIcon className="w-6 h-6 animate-spin text-emerald-600" />
+                  <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border-2 border-emerald-500/50 space-y-2.5">
+                    <div className="flex items-start gap-3">
+                      {qrStep.qr_data_url ? (
+                        <img
+                          src={qrStep.qr_data_url}
+                          alt="WhatsApp Link QR Code"
+                          className="w-28 h-28 rounded-lg border border-emerald-200 bg-white p-1 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 rounded-lg border border-emerald-200 bg-white flex flex-col items-center justify-center gap-1 shrink-0 text-center px-2">
+                          <ArrowPathIcon className="w-6 h-6 animate-spin text-emerald-600" />
+                          <span className="text-[10px] text-slate-600">Generating QR...</span>
+                        </div>
+                      )}
+                      <div className="text-xs text-slate-800 dark:text-slate-200 flex-1 space-y-2">
+                        <div>
+                          <p className="font-bold text-emerald-900 dark:text-emerald-200">
+                            Link WhatsApp Once to Send Directly Inside App
+                          </p>
+                          <p className="text-[11px] mt-0.5 text-slate-600 dark:text-slate-300">
+                            Open WhatsApp on your phone → <strong>Linked Devices</strong> → <strong>Link a Device</strong> and scan this QR code. Your reminder sends automatically once connected.
+                          </p>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="tel"
+                            autoComplete="tel"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            value={qrStep.pairing_phone}
+                            onChange={(e) =>
+                              setQrStep((s) => ({ ...s, pairing_phone: e.target.value }))
+                            }
+                            placeholder="Or link by phone (0300...)"
+                            className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs"
+                          />
+                          <button
+                            type="button"
+                            disabled={qrStep.requesting_code}
+                            onClick={handleRequestInlinePairCode}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 shrink-0"
+                          >
+                            {qrStep.requesting_code ? "..." : "Get 8-Digit Code"}
+                          </button>
+                        </div>
+                        {qrStep.pairing_code && (
+                          <div className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-300 text-center font-mono font-bold text-sm tracking-widest text-emerald-700 dark:text-emerald-300">
+                            {qrStep.pairing_code}
+                          </div>
+                        )}
+                        {qrStep.last_error && (
+                          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-[11px] text-amber-800 dark:text-amber-300 break-words">
+                            <strong>Status Note:</strong> {qrStep.last_error}
+                          </div>
+                        )}
                       </div>
-                    )}
-                    <div className="text-xs text-amber-900 dark:text-amber-200">
-                      <p className="font-bold">Link WhatsApp Once to Send Directly</p>
-                      <p className="text-[11px] mt-1">
-                        Open WhatsApp on your phone → Linked Devices → Link a Device and scan this QR code. Your reminder will be sent automatically once connected.
-                      </p>
                     </div>
                   </div>
                 )}
@@ -480,9 +610,9 @@ export default function RegularRefillReminderModal({
           {/* Footer */}
           <div className="flex items-center justify-between gap-3 pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
             <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              {previewData?.whatsapp_enabled
-                ? `Active Provider: ${previewData.whatsapp_provider || "local_agent"} (Direct 1-Click Send)`
-                : "Will open WhatsApp chat with pre-filled message"}
+              {previewData?.whatsapp_enabled && previewData?.whatsapp_provider && previewData.whatsapp_provider !== "local_agent"
+                ? `Active Provider: ${previewData.whatsapp_provider} (Direct In-App Send)`
+                : "In-App Built-in WhatsApp Agent (QR Link & Direct Send — Never Leaves App)"}
             </span>
 
             <div className="flex items-center gap-2.5">

@@ -584,7 +584,7 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
             if (check.TryGetValue("agent_running", out var isRun) && isRun is true)
             {
                 var st = check.TryGetValue("status", out var s) ? s?.ToString() : "";
-                if (st is "qr_ready" or "connected" || i >= 12)
+                if (st is "qr_ready" or "connected" || i >= 18)
                 {
                     return check;
                 }
@@ -748,10 +748,30 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         var body = await res.Content.ReadAsStringAsync(cancellationToken);
         if (!res.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Failed to request 8-digit pairing code from WhatsApp: {body}");
+            var errMsg = ExtractJsonErrorMessage(body);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errMsg)
+                ? $"Failed to request 8-digit pairing code from WhatsApp: {body}"
+                : errMsg);
         }
 
         return JsonSerializer.Deserialize<Dictionary<string, object?>>(body) ?? new Dictionary<string, object?> { ["ok"] = true };
+    }
+
+    private static string? ExtractJsonErrorMessage(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("message", out var msgProp) &&
+                msgProp.ValueKind == JsonValueKind.String)
+            {
+                return msgProp.GetString();
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>

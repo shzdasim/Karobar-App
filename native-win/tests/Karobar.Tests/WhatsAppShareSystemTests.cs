@@ -12,6 +12,10 @@ using FluentAssertions;
 using Karobar.Background;
 using Karobar.Host;
 using Karobar.Printing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using static Karobar.Tests.Wave9And10LiveHttpIntegrationTests;
 
@@ -52,6 +56,9 @@ public class WhatsAppShareSystemTests
         KarobarDesktopBridge.IsProtectedPatchPath("storage/app/whatsapp-agent/auth/creds.json").Should().BeTrue();
         KarobarDesktopBridge.IsProtectedPatchPath(@"storage\app\whatsapp-agent\auth\creds.json").Should().BeTrue();
         KarobarDesktopBridge.IsProtectedPatchPath("storage/app/.app-key").Should().BeTrue();
+
+        // Default Setting entity uses local_agent for seamless in-app QR link & send
+        new Karobar.Core.Entities.Setting().WhatsappProvider.Should().Be("local_agent");
     }
 
     [Fact]
@@ -227,7 +234,6 @@ public class WhatsAppShareSystemTests
             try
             {
                 using var isolatedMgr = new LocalWhatsAppSidecarManager(emptyRoot);
-                // If AppContext.BaseDirectory doesn't contain whatsapp-agent.mjs, StartAsync must report ok=false when script is absent
                 if (isolatedMgr.ResolveAgentScriptPath() == null)
                 {
                     var startRes = await isolatedMgr.StartAsync(null, null, enableInSettings: false);
@@ -242,6 +248,157 @@ public class WhatsAppShareSystemTests
         }
         finally
         {
+            await CleanupAsync(app, client, tempRoot, prevRoot);
+        }
+    }
+
+    [Fact]
+    public async Task InAppLocalWhatsAppAgent_QrRequired_ThenConnectedDirectPdfAndBulkRefill_NeverLeavesApp()
+    {
+        var (app, client, db, tempRoot, prevRoot) = await StartLiveTestServerAsync();
+        System.Net.Sockets.TcpListener? portPicker = null;
+        WebApplication? mockAgent = null;
+        try
+        {
+            var token = await LoginAsync(client, "qa-w910-admin@karobar.local", "AdminPass123!");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // Spin up an in-process mock Local WhatsApp Agent on an ephemeral localhost port
+            portPicker = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            portPicker.Start();
+            var agentPort = ((IPEndPoint)portPicker.LocalEndpoint).Port;
+            portPicker.Stop();
+            portPicker = null;
+
+            var agentConnected = false;
+            var receivedDocs = new List<string>();
+            var receivedTexts = new List<string>();
+
+            var agentBuilder = WebApplication.CreateBuilder();
+            agentBuilder.Logging.ClearProviders();
+            agentBuilder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(agentPort));
+            mockAgent = agentBuilder.Build();
+            mockAgent.MapGet("/status", () => Results.Json(new
+            {
+                ok = true,
+                status = agentConnected ? "connected" : "qr_ready",
+                qr_data_url = agentConnected ? null : "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+                user = agentConnected ? new { id = "923009998877@s.whatsapp.net", phone = "923009998877", name = "Store Pharmacy" } : null
+            }));
+            mockAgent.MapPost("/send-document", async (HttpContext ctx) =>
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                receivedDocs.Add(body);
+                return Results.Json(new { ok = true, sent = true, message_id = "wa_pdf_001" });
+            });
+            mockAgent.MapPost("/send-text", async (HttpContext ctx) =>
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                receivedTexts.Add(body);
+                return Results.Json(new { ok = true, sent = true, message_id = "wa_txt_001" });
+            });
+            await mockAgent.StartAsync();
+
+            var agentUrl = $"http://127.0.0.1:{agentPort}";
+            var cfgResp = await client.PostAsync("/api/settings", JsonBody(new
+            {
+                whatsapp_enabled = true,
+                whatsapp_provider = "local_agent",
+                whatsapp_api_url = agentUrl,
+                whatsapp_access_token = "karobar_wa_mock_key_1234",
+                whatsapp_default_country_code = "92"
+            }));
+            cfgResp.StatusCode.Should().Be(HttpStatusCode.OK, await cfgResp.Content.ReadAsStringAsync());
+
+            var custId = await db.InsertAsync("customers", new Dictionary<string, object?>
+            {
+                ["name"] = "In-App WA Customer",
+                ["phone"] = "0300-5556677",
+                ["is_regular"] = 1,
+                ["next_refill_date"] = DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd")
+            });
+            var invId = await db.InsertAsync("sale_invoices", new Dictionary<string, object?>
+            {
+                ["customer_id"] = custId,
+                ["user_id"] = 1,
+                ["posted_number"] = "SI-INAPP-01",
+                ["date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                ["gross_amount"] = 750m,
+                ["total"] = 750m,
+                ["total_receive"] = 750m,
+                ["sale_type"] = "retail",
+                ["invoice_type"] = "debit",
+                ["status"] = "posted"
+            });
+
+            // 1. Before QR scan -> /api/share/metadata surfaces live agent status & /api/share/whatsapp returns inline qr_required (never leaves app!)
+            var metaBefore = await client.GetAsync($"/api/share/metadata?type=sale_invoice&id={invId}");
+            metaBefore.StatusCode.Should().Be(HttpStatusCode.OK);
+            using (var mDoc = JsonDocument.Parse(await metaBefore.Content.ReadAsStringAsync()))
+            {
+                mDoc.RootElement.GetProperty("whatsapp_agent_running").GetBoolean().Should().BeTrue();
+                mDoc.RootElement.GetProperty("whatsapp_agent_status").GetString().Should().Be("qr_ready");
+            }
+
+            var qrResp = await client.PostAsync("/api/share/whatsapp", JsonBody(new
+            {
+                type = "sale_invoice",
+                id = invId,
+                phone = "0300-5556677",
+                message = "Please find your invoice attached."
+            }));
+            qrResp.StatusCode.Should().Be(HttpStatusCode.OK, await qrResp.Content.ReadAsStringAsync());
+            using (var qDoc = JsonDocument.Parse(await qrResp.Content.ReadAsStringAsync()))
+            {
+                qDoc.RootElement.GetProperty("mode").GetString().Should().Be("qr_required");
+                qDoc.RootElement.GetProperty("qr_data_url").GetString().Should().StartWith("data:image/png;base64,");
+            }
+
+            // 2. Simulate user scanning QR code on their phone -> status becomes "connected"
+            agentConnected = true;
+
+            var sendPdfResp = await client.PostAsync("/api/share/whatsapp", JsonBody(new
+            {
+                type = "sale_invoice",
+                id = invId,
+                phone = "0300-5556677",
+                message = "Please find your invoice attached."
+            }));
+            sendPdfResp.StatusCode.Should().Be(HttpStatusCode.OK, await sendPdfResp.Content.ReadAsStringAsync());
+            using (var pDoc = JsonDocument.Parse(await sendPdfResp.Content.ReadAsStringAsync()))
+            {
+                pDoc.RootElement.GetProperty("mode").GetString().Should().Be("cloud_api");
+                pDoc.RootElement.GetProperty("status").GetString().Should().Be("sent_via_api");
+                pDoc.RootElement.GetProperty("provider").GetString().Should().Be("local_agent");
+                pDoc.RootElement.TryGetProperty("pdf_base64", out _).Should().BeFalse();
+            }
+            receivedDocs.Should().HaveCount(1);
+            receivedDocs[0].Should().Contain("923005556677");
+
+            // 3. Bulk refill reminders dispatch directly via /send-text inside the app
+            var bulkResp = await client.PostAsync("/api/customers/send-bulk-refill-reminders", JsonBody(new
+            {
+                customer_ids = new[] { custId },
+                only_stock_ready = false
+            }));
+            bulkResp.StatusCode.Should().Be(HttpStatusCode.OK, await bulkResp.Content.ReadAsStringAsync());
+            using (var bDoc = JsonDocument.Parse(await bulkResp.Content.ReadAsStringAsync()))
+            {
+                bDoc.RootElement.GetProperty("sent_count").GetInt32().Should().Be(1);
+                bDoc.RootElement.GetProperty("fallback_count").GetInt32().Should().Be(0);
+            }
+            receivedTexts.Should().HaveCount(1);
+            receivedTexts[0].Should().Contain("923005556677");
+        }
+        finally
+        {
+            portPicker?.Stop();
+            if (mockAgent != null)
+            {
+                try { await mockAgent.StopAsync(); await mockAgent.DisposeAsync(); } catch { }
+            }
             await CleanupAsync(app, client, tempRoot, prevRoot);
         }
     }

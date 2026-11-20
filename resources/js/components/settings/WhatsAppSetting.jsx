@@ -238,7 +238,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
 
     const timer = setInterval(() => {
       fetchLocalAgentStatus(true);
-    }, 3000);
+    }, 1500);
 
     return () => clearInterval(timer);
   }, [activeProvider, agentState.starting, agentState.agent_running, agentState.status, fetchLocalAgentStatus]);
