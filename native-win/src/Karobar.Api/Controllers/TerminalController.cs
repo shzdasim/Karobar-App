@@ -271,6 +271,37 @@ public class TerminalController : ApiControllerBase
         });
     }
 
+    private static readonly string[] TerminalReferenceTables =
+    {
+        "cash_drawer_sessions",
+        "cash_drawer_transactions",
+        "sale_invoices",
+        "sale_returns",
+        "payments",
+        "expenses",
+        "invoice_drafts",
+        "document_histories"
+    };
+
+    private async Task DetachTerminalReferencesAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        IReadOnlyCollection<long> terminalIds)
+    {
+        if (terminalIds.Count == 0) return;
+
+        foreach (var table in TerminalReferenceTables)
+        {
+            if (await Db.HasTableAsync(table) && await Db.HasColumnAsync(table, "terminal_id"))
+            {
+                await conn.ExecuteAsync(
+                    $"UPDATE \"{table}\" SET terminal_id = NULL WHERE terminal_id IN @ids",
+                    new { ids = terminalIds },
+                    tx);
+            }
+        }
+    }
+
     [HttpDelete("terminals/{id:long}")]
     [Authorize]
     public async Task<IActionResult> Destroy(long id)
@@ -280,8 +311,27 @@ public class TerminalController : ApiControllerBase
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM terminals WHERE id = @id", new { id });
         if (existing == null) return NotFound();
 
-        await Db.ExecuteAsync("DELETE FROM terminals WHERE id = @id", new { id });
-        return Ok(new { message = "Terminal removed successfully." });
+        if (CurrentTerminalId.HasValue && CurrentTerminalId.Value == id)
+        {
+            return Unprocessable("You cannot delete the active terminal you are currently using. Remove the other (duplicate or offline) terminal instead.");
+        }
+
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+        try
+        {
+            await DetachTerminalReferencesAsync(conn, tx, new[] { id });
+            await conn.ExecuteAsync("DELETE FROM terminals WHERE id = @id", new { id }, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
+        SyncPulseService.Bump("terminals", "drawer");
+        return Ok(new { message = "Terminal removed successfully. All historical sales and cash drawer shifts were safely preserved." });
     }
 
     [HttpGet("server/export-database")]
@@ -716,9 +766,33 @@ public class TerminalController : ApiControllerBase
                 if (await Db.HasTableAsync("terminals"))
                 {
                     var cutoff = DateTime.UtcNow.AddSeconds(-45).ToString("yyyy-MM-dd HH:mm:ss");
-                    deleted = await Db.ExecuteAsync("DELETE FROM terminals WHERE last_seen_at IS NULL OR last_seen_at < @cutoff", new { cutoff });
+                    var activeTid = CurrentTerminalId ?? -1L;
+                    var offlineRows = await Db.QueryListAsync(
+                        "SELECT id FROM terminals WHERE (last_seen_at IS NULL OR last_seen_at < @cutoff) AND id != @activeTid",
+                        new { cutoff, activeTid });
+                    var offlineIds = offlineRows
+                        .Select(r => AccountService.ToLong(r.GetValueOrDefault("id")))
+                        .Where(tid => tid > 0)
+                        .ToList();
+
+                    if (offlineIds.Count > 0)
+                    {
+                        await using var pruneConn = await Db.OpenConnectionAsync();
+                        await using var pruneTx = await pruneConn.BeginTransactionAsync();
+                        try
+                        {
+                            await DetachTerminalReferencesAsync(pruneConn, pruneTx, offlineIds);
+                            deleted = await pruneConn.ExecuteAsync("DELETE FROM terminals WHERE id IN @ids", new { ids = offlineIds }, pruneTx);
+                            await pruneTx.CommitAsync();
+                        }
+                        catch
+                        {
+                            await pruneTx.RollbackAsync();
+                            throw;
+                        }
+                    }
                 }
-                SyncPulseService.Bump("terminals");
+                SyncPulseService.Bump("terminals", "drawer");
                 return Ok(new
                 {
                     ok = true,

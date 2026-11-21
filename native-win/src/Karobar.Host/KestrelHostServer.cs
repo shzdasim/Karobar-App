@@ -849,16 +849,15 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 return;
             }
 
-            // Inject X-Terminal-* headers ONLY for local loopback WebView2 requests on this PC.
-            // Remote LAN terminals send their own X-Terminal-* and X-Network-Token headers; never overwrite them with the server's identity!
+            // Authoritatively inject X-Terminal-* headers for local loopback WebView2 requests on this PC.
+            // Overwriting ensures the local PC always uses its single canonical network-mode.json TerminalId and
+            // can never accidentally register a second ghost terminal (e.g. a random TERM-DESK-* from localStorage).
+            // Remote LAN terminals send their own X-Terminal-* and X-Network-Token headers and are never touched here.
             if (IsLoopbackRequest(context))
             {
                 foreach (var kv in _networkConfig.GetTerminalIdentityHeaders())
                 {
-                    if (!context.Request.Headers.ContainsKey(kv.Key))
-                    {
-                        context.Request.Headers[kv.Key] = kv.Value;
-                    }
+                    context.Request.Headers[kv.Key] = kv.Value;
                 }
             }
 

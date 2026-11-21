@@ -393,17 +393,24 @@ export function initAxiosAuth() {
         config.headers.Authorization = `Bearer ${token}`;
       }
       try {
+        const isDesktopApp = Boolean(window.karobarDesktop?.isDesktop);
         let termUid = localStorage.getItem("karobar_terminal_uid");
-        if (!termUid) {
+        // In the native desktop app, never invent a random TERM-DESK-* ID before getNetworkConfig() loads;
+        // KestrelHostServer authoritatively injects the PC's canonical TerminalId from network-mode.json.
+        if (isDesktopApp && termUid && termUid.startsWith("TERM-DESK-")) {
+          localStorage.removeItem("karobar_terminal_uid");
+          termUid = null;
+        }
+        if (!termUid && !isDesktopApp) {
           const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
-          termUid = window.karobarDesktop?.isDesktop ? `TERM-DESK-${rand}` : `TERM-WEB-${rand}`;
+          termUid = `TERM-WEB-${rand}`;
           localStorage.setItem("karobar_terminal_uid", termUid);
         }
         const termName = localStorage.getItem("karobar_terminal_name") || "";
-        const termMode = localStorage.getItem("karobar_terminal_mode") || (window.karobarDesktop?.isDesktop ? "standalone" : "browser");
+        const termMode = localStorage.getItem("karobar_terminal_mode") || (isDesktopApp ? "standalone" : "browser");
         const termHost = localStorage.getItem("karobar_terminal_hostname") || "";
         const pairingToken = localStorage.getItem("karobar_pairing_token") || "";
-        if (!config.headers["X-Terminal-Id"]) {
+        if (termUid && !config.headers["X-Terminal-Id"]) {
           config.headers["X-Terminal-Id"] = termUid;
         }
         if (termName && !config.headers["X-Terminal-Name"]) {

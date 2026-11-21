@@ -936,4 +936,70 @@ public class CashDrawerAccountParityTests
         }
         finally { Cleanup(p); }
     }
+
+    [Fact]
+    public async Task S26_DeleteDuplicateTerminal_WithCashDrawerSessions_SucceedsWithoutConstraintViolation_And_SamePcGhostTerminalsCountAsSinglePc()
+    {
+        var (db, p, cashId, _) = await SetupFreshAsync();
+        try
+        {
+            // Simulate a single Windows PC that accidentally registered TWO terminal rows (same loopback IP / hostname)
+            await db.ExecuteAsync("UPDATE terminals SET hostname = 'SHOP-PC', ip_address = '127.0.0.1', mode = 'standalone' WHERE id IN (1, 2)");
+            var drawer = new CashDrawerService(db);
+
+            // Physical machine count MUST collapse both ghost rows to 1 single PC
+            (await drawer.GetActiveTerminalCountAsync()).Should().Be(1, "Two terminal rows on the same PC/hostname must count as 1 physical PC");
+
+            // Open shift on Terminal #2 (the duplicate ghost terminal), and also link a sale invoice to Terminal #2
+            var s2 = await drawer.OpenSessionAsync(1, 12000m, "Ghost terminal shift", terminalId: 2);
+            var s2Id = AccountService.ToLong(s2["id"]);
+            await db.InsertAsync("sale_invoices", new Dictionary<string, object?>
+            {
+                ["user_id"] = 1, ["customer_id"] = 1, ["posted_number"] = "SI-TERM2-001", ["date"] = "2026-11-21",
+                ["gross_amount"] = 500m, ["total"] = 500m, ["total_receive"] = 500m,
+                ["invoice_type"] = "debit", ["sale_type"] = "retail", ["status"] = "posted",
+                ["payment_method"] = "cash", ["account_id"] = cashId, ["terminal_id"] = 2
+            });
+
+            var exportSvc = new SqliteExportService(db);
+            // Deleting currently active Terminal #1 MUST be blocked with 422
+            var termCtrlSelf = AttachAdmin(
+                new TerminalController(db, new LicenseService(db), exportSvc, new BackupService(db, exportSvc), new DocumentSequenceService(db)),
+                userId: 1, terminalId: 1);
+            var selfDelRes = await termCtrlSelf.Destroy(1);
+            (selfDelRes as ObjectResult)!.StatusCode.Should().Be(422);
+
+            // Deleting duplicate Terminal #2 MUST succeed with 200 (NO SQLite FK constraint violation!) and preserve shift + invoice
+            var delRes = await termCtrlSelf.Destroy(2);
+            delRes.Should().BeOfType<OkObjectResult>("Deleting a duplicate terminal with cash_drawer_sessions & sale_invoices must never fail with FK constraint violation");
+
+            var remainingTerms = await db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals");
+            remainingTerms.Should().Be(1);
+
+            var preservedShift = await db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE id = @id", new { id = s2Id });
+            preservedShift.Should().NotBeNull("Historical shift must be preserved when duplicate terminal is removed");
+            preservedShift!["terminal_id"].Should().BeNull("Detached shift should have terminal_id = NULL");
+
+            var preservedSale = await db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE posted_number = 'SI-TERM2-001'");
+            preservedSale.Should().NotBeNull("Historical invoice must be preserved when duplicate terminal is removed");
+            preservedSale!["terminal_id"].Should().BeNull();
+
+            // Also verify prune_offline_terminals detaches FK references cleanly
+            var term3Id = await db.InsertAsync("terminals", new Dictionary<string, object?>
+            {
+                ["terminal_uid"] = "TERM-OLD-OFFLINE", ["name"] = "Old Ghost", ["hostname"] = "SHOP-PC",
+                ["ip_address"] = "127.0.0.1", ["mode"] = "standalone", ["is_authorized"] = 1,
+                ["last_seen_at"] = "2025-01-01 00:00:00"
+            });
+            await db.ExecuteAsync("UPDATE cash_drawer_sessions SET terminal_id = @tid WHERE id = @sid", new { tid = term3Id, sid = s2Id });
+
+            var pruneCtrl = AttachAdmin(
+                new TerminalController(db, new LicenseService(db), exportSvc, new BackupService(db, exportSvc), new DocumentSequenceService(db)),
+                userId: 1, jsonBody: JsonSerializer.Serialize(new { action = "prune_offline_terminals" }), terminalId: 1);
+            var pruneRes = await pruneCtrl.Troubleshoot();
+            pruneRes.Should().BeOfType<OkObjectResult>();
+            (await db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE id = @id", new { id = term3Id })).Should().Be(0);
+        }
+        finally { Cleanup(p); }
+    }
 }

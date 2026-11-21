@@ -416,22 +416,7 @@ public class CashDrawerController : ApiControllerBase
             }
         }
 
-        var activeTerminalsCount = 0;
-        if (await Db.HasTableAsync("terminals"))
-        {
-            if (await Db.HasColumnAsync("terminals", "is_authorized"))
-            {
-                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_authorized = 1");
-            }
-            else if (await Db.HasColumnAsync("terminals", "is_active"))
-            {
-                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_active = 1");
-            }
-            else
-            {
-                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals");
-            }
-        }
+        var activeTerminalsCount = await _cashDrawerService.GetActiveTerminalCountAsync();
 
         var distinctNonNullTerminalIds = openSessions
             .Select(s => AccountService.ToLong(s.GetValueOrDefault("terminal_id")))
@@ -440,7 +425,7 @@ public class CashDrawerController : ApiControllerBase
             .Count();
         var duplicateSinglePcOpen = openSessions.Count > 1 &&
                                     activeTerminalsCount <= 1 &&
-                                    distinctNonNullTerminalIds < openSessions.Count;
+                                    (distinctNonNullTerminalIds < openSessions.Count || activeTerminalsCount == 1);
 
         // Also detect any other active 'cash' accounts (e.g. Petty Cash) separate from Cash in Hand (Drawer)
         var otherCashAccounts = new List<Dictionary<string, object?>>();

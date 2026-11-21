@@ -31,24 +31,53 @@ public class CashDrawerService
         _db = db;
     }
 
-    private async Task<int> GetActiveTerminalCountAsync()
+    public async Task<int> GetActiveTerminalCountAsync()
     {
         if (!await _db.HasTableAsync("terminals"))
         {
             return 0;
         }
 
+        string whereClause = "";
         if (await _db.HasColumnAsync("terminals", "is_authorized"))
         {
-            return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_authorized = 1");
+            whereClause = "WHERE is_authorized = 1";
         }
-
-        if (await _db.HasColumnAsync("terminals", "is_active"))
+        else if (await _db.HasColumnAsync("terminals", "is_active"))
         {
-            return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_active = 1");
+            whereClause = "WHERE is_active = 1";
         }
 
-        return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals");
+        var rows = await _db.QueryListAsync($"SELECT id, hostname, ip_address, mode FROM terminals {whereClause}");
+        if (rows.Count <= 1)
+        {
+            return rows.Count;
+        }
+
+        // Deduplicate ghost terminal rows created by the SAME physical PC (e.g., identical non-empty hostname
+        // or multiple loopback 127.0.0.1 / ::1 registrations on a standalone PC) so a single PC is never
+        // mistaken for a multi-counter LAN setup.
+        var distinctMachines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            var host = (r.GetValueOrDefault("hostname")?.ToString() ?? "").Trim();
+            var ip = (r.GetValueOrDefault("ip_address")?.ToString() ?? "").Trim();
+            var isLoopback = ip is "127.0.0.1" or "::1" or "::ffff:127.0.0.1" or "localhost";
+            if (!string.IsNullOrEmpty(host))
+            {
+                distinctMachines.Add($"host:{host}");
+            }
+            else if (isLoopback)
+            {
+                distinctMachines.Add("loopback:local");
+            }
+            else
+            {
+                distinctMachines.Add($"id:{AccountService.ToLong(r.GetValueOrDefault("id"))}");
+            }
+        }
+
+        return distinctMachines.Count;
     }
 
     public async Task<Dictionary<string, object?>?> GetCurrentSessionAsync(long? userId = null, bool strictUser = true, long? terminalId = null)
@@ -84,16 +113,16 @@ public class CashDrawerService
                 }
             }
 
-            // Single-counter PC that has an open shift created before terminal registration (terminal_id IS NULL):
+            // Single-counter PC (even if an old shift has terminal_id IS NULL or a duplicate ghost terminal_id):
             // surface that active shift instead of showing "CLOSED" and risking a duplicate open.
             if (activeTerminals <= 1)
             {
-                var singlePcUnassigned = await _db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY opened_at DESC, id DESC LIMIT 1");
-                if (singlePcUnassigned != null)
+                var singlePcOpen = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1");
+                if (singlePcOpen != null)
                 {
-                    await AttachUserAsync(singlePcUnassigned);
-                    return singlePcUnassigned;
+                    await AttachUserAsync(singlePcOpen);
+                    return singlePcOpen;
                 }
             }
 
@@ -210,12 +239,12 @@ public class CashDrawerService
                 "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @tid LIMIT 1",
                 new { tid = terminalId.Value });
 
-            // Prevent mixed NULL-vs-terminalId duplicate open on a single-counter PC (or for the same user).
+            // Prevent mixed NULL-vs-terminalId or ghost-terminal duplicate open on a single-counter PC (or for the same user).
             if (existing == null)
             {
                 existing = activeTerminals <= 1
                     ? await _db.QuerySingleOrDefaultAsync(
-                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY id DESC LIMIT 1")
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1")
                     : await _db.QuerySingleOrDefaultAsync(
                         "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid AND terminal_id IS NULL ORDER BY id DESC LIMIT 1",
                         new { uid = userId });

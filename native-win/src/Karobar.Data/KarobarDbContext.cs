@@ -268,6 +268,14 @@ public class KarobarDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        modelBuilder.Entity<CashDrawerSession>(entity =>
+        {
+            entity.HasOne(x => x.Terminal)
+                .WithMany(t => t.CashDrawerSessions)
+                .HasForeignKey(x => x.TerminalId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<PurchaseInvoice>(entity =>
         {
             entity.HasOne(x => x.User)

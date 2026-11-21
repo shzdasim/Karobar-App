@@ -275,9 +275,11 @@ export default function NetworkTerminalSettings() {
       return;
     }
     try {
-      await axios.delete(`/api/terminals/${term.id}`);
-      toast.success(`Removed ${term.name}`);
+      const { data } = await axios.delete(`/api/terminals/${term.id}`);
+      toast.success(data?.message || `Removed ${term.name}`);
       fetchTerminalsAndServer(true);
+      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to remove terminal.");
     }
