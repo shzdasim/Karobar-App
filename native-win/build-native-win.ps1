@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Automated Native Windows Single-Binary (.NET 9 + Kestrel + WebView2) Build,
     Authenticode Code Signing & Zero-Data-Loss Inno Setup Release Pipeline for Karobar-App Native.
