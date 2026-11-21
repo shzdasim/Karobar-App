@@ -25,6 +25,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { printCurrentView } from "@/utils/printHelper.js";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import CashDrawerParityBanner from "@/components/CashDrawerParityBanner.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
@@ -628,6 +629,15 @@ export default function AccountingPage() {
           </div>
         </div>
       </div>
+
+      {/* Cash Drawer <-> Cash in Hand Parity Alert (shown on Accounting whenever mismatched) */}
+      <CashDrawerParityBanner
+        compact
+        showWhenBalanced={false}
+        showDrawerLink={true}
+        showAccountsLink={true}
+        onSynced={fetchOverview}
+      />
 
       {/* Tabs + Period Filter Bar */}
       <div className="p-3.5 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-gray-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">

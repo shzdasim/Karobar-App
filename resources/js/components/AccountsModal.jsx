@@ -22,6 +22,7 @@ import {
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import AccountIcon from "./AccountIcon.jsx";
+import CashDrawerParityBanner from "./CashDrawerParityBanner.jsx";
 
 const DEFAULT_PAKISTAN_PRESETS = [
   // Major Banks
@@ -598,6 +599,24 @@ export default function AccountsModal({ isOpen, onClose, onAccountUpdated, onOpe
           {/* OVERVIEW TAB */}
           {activeTab === "overview" && (
             <div className="space-y-4">
+              <CashDrawerParityBanner
+                compact
+                showWhenBalanced={true}
+                showDrawerLink={Boolean(onOpenCashDrawer)}
+                onOpenDrawer={
+                  onOpenCashDrawer
+                    ? () => {
+                        onClose();
+                        onOpenCashDrawer();
+                      }
+                    : null
+                }
+                onSynced={async () => {
+                  await fetchAccounts();
+                  notifyChange();
+                }}
+              />
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {accounts.map((acc) => {
                   const isPositive = Number(acc.current_balance) >= 0;
@@ -644,11 +663,15 @@ export default function AccountsModal({ isOpen, onClose, onAccountUpdated, onOpe
                           </div>
                         )}
 
-                        {/* If cash in hand, show drawer status */}
+                        {/* If cash in hand, show drawer linkage note */}
                         {isCash && (
                           <div className="mb-2 flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>Auto-synced with Cash Drawer Shift</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>
+                              {acc.is_default || acc.code === "cash_drawer"
+                                ? "Linked to Cash Drawer Register"
+                                : "Separate Cash Account"}
+                            </span>
                           </div>
                         )}
                       </div>

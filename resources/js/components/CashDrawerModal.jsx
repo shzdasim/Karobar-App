@@ -19,6 +19,7 @@ import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 import { printHtmlViaIframe, printSlipUrl } from "@/utils/printHelper.js";
+import CashDrawerParityBanner from "./CashDrawerParityBanner.jsx";
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: "cash_in", label: "Cash In (Add Money / Float)" },
@@ -626,6 +627,18 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
 
         {/* Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+          {activeTab === "overview" && (
+            <CashDrawerParityBanner
+              compact
+              currentSessionId={session?.id || null}
+              showWhenBalanced={true}
+              onSynced={() => {
+                fetchCurrentDrawer();
+                if (onSessionUpdated) onSessionUpdated();
+              }}
+            />
+          )}
+
           {/* View 1: When drawer is CLOSED -> Open Shift Form */}
           {!isOpenShift && activeTab === "overview" && (
             canOpenShift ? (

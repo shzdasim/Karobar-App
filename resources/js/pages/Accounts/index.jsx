@@ -34,6 +34,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput, GlassToolbar, GlassBtn } from "@/components";
 import AccountIcon from "@/components/AccountIcon.jsx";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import CashDrawerParityBanner from "@/components/CashDrawerParityBanner.jsx";
 
 // ─── Transaction type labels ──────────────────────────────────────────────────
 const TXN_TYPE_LABELS = {
@@ -182,19 +183,6 @@ export default function AccountsPage() {
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustSaving, setAdjustSaving] = useState(false);
 
-  // ── Cash Drawer Parity Check ───────────────────────────────────────────────
-  const [drawerRecon, setDrawerRecon] = useState(null);
-  const [reconcilingDrawer, setReconcilingDrawer] = useState(false);
-
-  const fetchDrawerRecon = useCallback(async () => {
-    try {
-      const { data } = await axios.get("/api/cash-drawer/reconciliation-check");
-      setDrawerRecon(data);
-    } catch {
-      setDrawerRecon(null);
-    }
-  }, []);
-
   // ── Load accounts ──────────────────────────────────────────────────────────
   const fetchAccounts = useCallback(async () => {
     setLoadingAccounts(true);
@@ -208,34 +196,7 @@ export default function AccountsPage() {
     } finally {
       setLoadingAccounts(false);
     }
-    fetchDrawerRecon();
-  }, [fetchDrawerRecon]);
-
-  const handleReconcileCashInHand = async () => {
-    if (!drawerRecon || reconcilingDrawer) return;
-    const diff = Number(drawerRecon.difference || 0);
-    const openTotal = Number(drawerRecon.open_drawers_expected_total || 0);
-    const accBal = Number(drawerRecon.cash_account_balance || 0);
-    const ok = window.confirm(
-      `Sync Cash in Hand (${formatCurrency(accBal)}) to match your Open Cash Drawer total (${formatCurrency(openTotal)})?\n\n` +
-      `This will post an audited reconciliation adjustment of ${diff > 0 ? "-" : "+"}${formatCurrency(Math.abs(diff))} so both screens show the exact same balance.`
-    );
-    if (!ok) return;
-    setReconcilingDrawer(true);
-    try {
-      const { data } = await axios.post("/api/cash-drawer/reconcile", {
-        reason: "Reconciled Cash in Hand to match active Cash Drawer balance",
-      });
-      toast.success(data?.message || "Cash in Hand synced with Cash Drawer.");
-      await fetchAccounts();
-      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-    } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to reconcile Cash in Hand.");
-    } finally {
-      setReconcilingDrawer(false);
-    }
-  };
+  }, []);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -546,42 +507,12 @@ export default function AccountsPage() {
         </GlassCard>
       </div>
 
-      {/* ── Cash in Hand ↔ Cash Drawer Parity Alert (when mismatched) ──────── */}
-      {drawerRecon && drawerRecon.open_sessions_count > 0 && !drawerRecon.is_balanced && (
-        <GlassCard className={`p-4 border-l-4 border-l-amber-500 ${
-          isDark ? "bg-amber-950/20 border-amber-800/60" : "bg-amber-50/80 border-amber-300"
-        }`}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-sm">
-                <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                Cash in Hand differs from Open Cash Drawer{drawerRecon.open_sessions_count > 1 ? `s (${drawerRecon.open_sessions_count})` : ""}
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                Cash in Hand: <strong className="font-mono">{formatCurrency(drawerRecon.cash_account_balance)}</strong> ·{" "}
-                Open Drawer Total: <strong className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(drawerRecon.open_drawers_expected_total)}</strong> ·{" "}
-                Difference: <strong className="font-mono text-red-600 dark:text-red-400">
-                  {Number(drawerRecon.difference) >= 0 ? "+" : "−"}{formatCurrency(Math.abs(Number(drawerRecon.difference || 0)))}
-                </strong>
-                {drawerRecon.open_sessions_count > 1 && (
-                  <span>
-                    {" "}({drawerRecon.open_sessions.map((s) => `Shift #${s.session_id}${s.user_name ? ` ${s.user_name}` : ""}: ${formatCurrency(s.calculated_expected)}`).join(" + ")})
-                  </span>
-                )}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={reconcilingDrawer}
-              onClick={handleReconcileCashInHand}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-60 shadow-sm transition-colors"
-            >
-              <ArrowPathIcon className={`w-4 h-4 ${reconcilingDrawer ? "animate-spin" : ""}`} />
-              {reconcilingDrawer ? "Syncing…" : "Sync Cash in Hand to Drawer"}
-            </button>
-          </div>
-        </GlassCard>
-      )}
+      {/* ── Cash in Hand ↔ Cash Drawer Parity Card ──────── */}
+      <CashDrawerParityBanner
+        showWhenBalanced={true}
+        showDrawerLink={true}
+        onSynced={fetchAccounts}
+      />
 
       {/* ── Account Cards Grid ────────────────────────────────────────────── */}
       {loadingAccounts ? (

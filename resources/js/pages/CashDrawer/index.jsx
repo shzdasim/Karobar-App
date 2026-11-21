@@ -32,6 +32,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
 import { usePermissions } from "@/api/usePermissions.js";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import CashDrawerParityBanner from "@/components/CashDrawerParityBanner.jsx";
 import { printSlipUrl } from "@/utils/printHelper.js";
 import { Link } from "react-router-dom";
 
@@ -1729,74 +1730,6 @@ export default function CashDrawerPage() {
   const [printingThermalId, setPrintingThermalId] = useState(null);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
-  const [reconData, setReconData] = useState(null);
-  const [reconciling, setReconciling] = useState(false);
-  const [closingExtraId, setClosingExtraId] = useState(null);
-
-  const fetchReconciliation = useCallback(async () => {
-    try {
-      const { data } = await axios.get("/api/cash-drawer/reconciliation-check");
-      setReconData(data);
-    } catch {
-      setReconData(null);
-    }
-  }, []);
-
-  const handleReconcileCashAccount = useCallback(async () => {
-    if (!reconData || reconciling) return;
-    const diff = Number(reconData.difference || 0);
-    const openTotal = Number(reconData.open_drawers_expected_total || 0);
-    const accBal = Number(reconData.cash_account_balance || 0);
-    const ok = window.confirm(
-      `Sync Cash in Hand (Accounts) to match your open Cash Drawer total?\n\n` +
-      `• Current Cash in Hand (Accounts): ${formatCurrency(accBal)}\n` +
-      `• Open Cash Drawer(s) Total: ${formatCurrency(openTotal)}\n` +
-      `• Audited Adjustment to Cash in Hand: ${diff > 0 ? "-" : "+"}${formatCurrency(Math.abs(diff))}\n\n` +
-      `This posts a documented reconciliation entry in Financial Accounts without altering any sales or drawer history.`
-    );
-    if (!ok) return;
-    setReconciling(true);
-    try {
-      const { data } = await axios.post("/api/cash-drawer/reconcile", {
-        reason: "Reconciled Cash in Hand to match active Cash Drawer balance",
-      });
-      toast.success(data?.message || "Cash in Hand synced with Cash Drawer.");
-      await Promise.all([fetchCurrent(), fetchReconciliation(), fetchHistory(1)]);
-      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-      window.dispatchEvent(new CustomEvent("accounts-changed"));
-      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
-    } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to reconcile Cash in Hand.");
-    } finally {
-      setReconciling(false);
-    }
-  }, [reconData, reconciling, formatCurrency]);
-
-  const handleCloseExtraSession = useCallback(async (extraSess) => {
-    if (!extraSess?.session_id || closingExtraId) return;
-    const expected = Number(extraSess.calculated_expected || 0);
-    const ok = window.confirm(
-      `Close Shift #${extraSess.session_id}${extraSess.user_name ? ` (${extraSess.user_name})` : ""} with its expected cash balance of ${formatCurrency(expected)}?`
-    );
-    if (!ok) return;
-    setClosingExtraId(extraSess.session_id);
-    try {
-      await axios.post("/api/cash-drawer/close", {
-        session_id: extraSess.session_id,
-        closing_balance_actual: expected,
-        notes: "Closed extra/previous open shift from Cash Drawer parity panel",
-      });
-      toast.success(`Closed Shift #${extraSess.session_id}.`);
-      await Promise.all([fetchCurrent(), fetchReconciliation(), fetchHistory(1)]);
-      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-      window.dispatchEvent(new CustomEvent("accounts-changed"));
-    } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to close shift.");
-    } finally {
-      setClosingExtraId(null);
-    }
-  }, [closingExtraId, formatCurrency]);
 
   const handlePrintThermalSlip = useCallback(async (targetSessionId) => {
     if (!targetSessionId) return;
@@ -1848,23 +1781,20 @@ export default function CashDrawerPage() {
 
   useEffect(() => {
     fetchCurrent();
-    fetchReconciliation();
     fetchHistory(1);
     const onDrawerChange = () => {
       fetchCurrent();
-      fetchReconciliation();
       fetchHistory(1);
     };
     window.addEventListener("cash-drawer-changed", onDrawerChange);
     return () => window.removeEventListener("cash-drawer-changed", onDrawerChange);
-  }, [fetchCurrent, fetchReconciliation, fetchHistory]);
+  }, [fetchCurrent, fetchHistory]);
 
   function handleActionSuccess() {
     setShowOpenModal(false);
     setShowTxnModal(null);
     setShowCloseModal(false);
     fetchCurrent();
-    fetchReconciliation();
     fetchHistory(1);
     window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
     window.dispatchEvent(new CustomEvent("accounts-changed"));
@@ -1908,7 +1838,7 @@ export default function CashDrawerPage() {
               {showHowItWorks ? "Hide Formula & Guide" : "How Cash Drawer Works"}
             </button>
             <button
-              onClick={() => { fetchCurrent(); fetchReconciliation(); fetchHistory(historyPage); }}
+              onClick={() => { fetchCurrent(); fetchHistory(historyPage); window.dispatchEvent(new CustomEvent("cash-drawer-changed")); }}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium ${btnSecondary.className}`}
               style={btnSecondary.style}
             >
@@ -2053,106 +1983,13 @@ export default function CashDrawerPage() {
       )}
 
       {/* ── Cash Drawer ↔ Financial Account (Cash in Hand) Parity Card ──────── */}
-      {!loadingCurrent && reconData && reconData.open_sessions_count > 0 && (
-        reconData.is_balanced ? (
-          <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-xl border text-xs ${
-            isDark
-              ? "bg-emerald-950/25 border-emerald-800/50 text-emerald-300"
-              : "bg-emerald-50/70 border-emerald-200 text-emerald-800"
-          }`}>
-            <div className="flex items-center gap-2">
-              <CheckCircleIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-              <span>
-                <strong>Cash Drawer &amp; Cash in Hand (Accounts) are Equal</strong> —{" "}
-                <span className="font-mono font-bold">{formatCurrency(reconData.cash_account_balance)}</span>
-                {reconData.open_sessions_count > 1 && ` across ${reconData.open_sessions_count} open counters`}
-              </span>
-            </div>
-            <Link to="/accounts" className="font-semibold underline hover:opacity-80">
-              View Financial Accounts
-            </Link>
-          </div>
-        ) : (
-          <GlassCard className={`p-4 border-l-4 border-l-amber-500 ${
-            isDark ? "bg-amber-950/20 border-amber-800/60" : "bg-amber-50/80 border-amber-300"
-          }`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1.5 flex-1 min-w-[260px]">
-                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-sm">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                  Cash Drawer &amp; Cash in Hand (Accounts) Mismatch Detected
-                </div>
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-                  <span className="text-slate-600 dark:text-slate-300">
-                    Cash in Hand (Accounts): <strong className="font-mono text-slate-900 dark:text-white">{formatCurrency(reconData.cash_account_balance)}</strong>
-                  </span>
-                  <span className="text-slate-600 dark:text-slate-300">
-                    Open Cash Drawer{reconData.open_sessions_count > 1 ? `s (${reconData.open_sessions_count})` : ""}:{" "}
-                    <strong className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(reconData.open_drawers_expected_total)}</strong>
-                  </span>
-                  <span className="text-red-600 dark:text-red-400 font-bold">
-                    Difference: <span className="font-mono">{Number(reconData.difference) >= 0 ? "+" : "−"}{formatCurrency(Math.abs(Number(reconData.difference || 0)))}</span>
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  This usually happens from a previous double-opened drawer, an unclosed shift on another login/counter, or cash transactions entered while the drawer was closed. Review open shifts below or click <strong>Sync Cash in Hand to Drawer</strong> to align both balances with an audited reconciliation entry.
-                </p>
-
-                {Array.isArray(reconData.open_sessions) && reconData.open_sessions.length > 0 && (
-                  <div className="pt-1.5 flex flex-wrap gap-2">
-                    {reconData.open_sessions.map((os) => (
-                      <div
-                        key={os.session_id}
-                        className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs ${
-                          isDark ? "bg-slate-900/60 border-slate-700 text-slate-200" : "bg-white border-amber-200 text-slate-700"
-                        }`}
-                      >
-                        <span>
-                          <strong>Shift #{os.session_id}</strong>
-                          {os.user_name ? ` · ${os.user_name}` : ""}
-                          {os.terminal_name ? ` (${os.terminal_name})` : ""}
-                          {" · "}
-                          <strong className="font-mono">{formatCurrency(os.calculated_expected)}</strong>
-                        </span>
-                        {canCloseShift && (!session || os.session_id !== session.id) && (
-                          <button
-                            type="button"
-                            disabled={closingExtraId === os.session_id}
-                            onClick={() => handleCloseExtraSession(os)}
-                            className="px-2 py-0.5 rounded bg-red-600 text-white font-semibold hover:bg-red-500 disabled:opacity-60"
-                          >
-                            {closingExtraId === os.session_id ? "Closing…" : "Close Shift"}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {canCloseShift && (
-                  <button
-                    type="button"
-                    disabled={reconciling}
-                    onClick={handleReconcileCashAccount}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-60 shadow-sm transition-colors"
-                  >
-                    <ArrowPathIcon className={`w-4 h-4 ${reconciling ? "animate-spin" : ""}`} />
-                    {reconciling ? "Syncing…" : "Sync Cash in Hand to Drawer"}
-                  </button>
-                )}
-                <Link
-                  to="/accounts"
-                  className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold ${btnSecondary.className}`}
-                  style={btnSecondary.style}
-                >
-                  Open Accounts
-                </Link>
-              </div>
-            </div>
-          </GlassCard>
-        )
+      {!loadingCurrent && (
+        <CashDrawerParityBanner
+          currentSessionId={session?.id || null}
+          showWhenBalanced={true}
+          showAccountsLink={true}
+          onSynced={handleActionSuccess}
+        />
       )}
 
       {/* ── Closed State: Last Closed Shift Summary Card ────────────────────── */}

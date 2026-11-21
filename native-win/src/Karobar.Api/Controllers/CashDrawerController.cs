@@ -416,22 +416,108 @@ public class CashDrawerController : ApiControllerBase
             }
         }
 
+        var activeTerminalsCount = 0;
+        if (await Db.HasTableAsync("terminals"))
+        {
+            if (await Db.HasColumnAsync("terminals", "is_authorized"))
+            {
+                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_authorized = 1");
+            }
+            else if (await Db.HasColumnAsync("terminals", "is_active"))
+            {
+                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_active = 1");
+            }
+            else
+            {
+                activeTerminalsCount = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals");
+            }
+        }
+
+        var distinctNonNullTerminalIds = openSessions
+            .Select(s => AccountService.ToLong(s.GetValueOrDefault("terminal_id")))
+            .Where(tid => tid > 0)
+            .Distinct()
+            .Count();
+        var duplicateSinglePcOpen = openSessions.Count > 1 &&
+                                    activeTerminalsCount <= 1 &&
+                                    distinctNonNullTerminalIds < openSessions.Count;
+
+        // Also detect any other active 'cash' accounts (e.g. Petty Cash) separate from Cash in Hand (Drawer)
+        var otherCashAccounts = new List<Dictionary<string, object?>>();
+        decimal otherCashAccountsTotal = 0m;
+        if (cashAccountId > 0 && await Db.HasTableAsync("accounts"))
+        {
+            var extraCashRows = await Db.QueryListAsync(
+                "SELECT id, name, code, current_balance FROM accounts WHERE type = 'cash' AND is_active = 1 AND id != @cashAccountId ORDER BY id ASC",
+                new { cashAccountId });
+            foreach (var row in extraCashRows)
+            {
+                var bal = Math.Round(AccountService.ToDecimal(row.GetValueOrDefault("current_balance")), 2);
+                otherCashAccountsTotal = Math.Round(otherCashAccountsTotal + bal, 2);
+                otherCashAccounts.Add(new Dictionary<string, object?>
+                {
+                    ["id"] = row["id"],
+                    ["name"] = row.GetValueOrDefault("name"),
+                    ["code"] = row.GetValueOrDefault("code"),
+                    ["current_balance"] = bal
+                });
+            }
+        }
+
+        Dictionary<string, object?>? lastClosedDiag = null;
+        decimal closedDifference = 0m;
+        if (openSessions.Count == 0 && await Db.HasTableAsync("cash_drawer_sessions"))
+        {
+            var lastClosed = await Db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'closed' ORDER BY closed_at DESC, id DESC LIMIT 1");
+            if (lastClosed != null)
+            {
+                var lcUid = AccountService.ToLong(lastClosed.GetValueOrDefault("user_id"));
+                string? lcUserName = lcUid > 0 && await Db.HasTableAsync("users")
+                    ? await Db.ExecuteScalarAsync<string?>("SELECT name FROM users WHERE id = @uid", new { uid = lcUid })
+                    : null;
+                var lcActual = Math.Round(AccountService.ToDecimal(lastClosed.GetValueOrDefault("closing_balance_actual")), 2);
+                var lcExpected = Math.Round(AccountService.ToDecimal(lastClosed.GetValueOrDefault("closing_balance_expected")), 2);
+                closedDifference = Math.Round(cashAccountBalance - lcActual, 2);
+                lastClosedDiag = new Dictionary<string, object?>
+                {
+                    ["session_id"] = AccountService.ToLong(lastClosed["id"]),
+                    ["user_name"] = lcUserName,
+                    ["closed_at"] = lastClosed.GetValueOrDefault("closed_at"),
+                    ["closing_balance_expected"] = lcExpected,
+                    ["closing_balance_actual"] = lcActual
+                };
+            }
+        }
+
         var diff = Math.Round(cashAccountBalance - openCalcTotal, 2);
+        var effectiveDiff = openSessions.Count > 0 ? diff : (lastClosedDiag != null ? closedDifference : 0m);
+        var isBalanced = openSessions.Count > 0
+            ? (Math.Abs(diff) < 0.01m && !duplicateSinglePcOpen)
+            : (lastClosedDiag != null ? Math.Abs(closedDifference) < 0.01m : true);
+
         return Ok(new Dictionary<string, object?>
         {
             ["ok"] = true,
             ["cash_account_id"] = cashAccount?.GetValueOrDefault("id"),
             ["cash_account_name"] = cashAccount?.GetValueOrDefault("name"),
             ["cash_account_balance"] = cashAccountBalance,
+            ["all_cash_accounts_total"] = Math.Round(cashAccountBalance + otherCashAccountsTotal, 2),
+            ["other_cash_accounts_total"] = otherCashAccountsTotal,
+            ["other_cash_accounts"] = otherCashAccounts,
             ["account_ledger_sum"] = accountLedgerSum,
             ["account_balance_vs_ledger_diff"] = Math.Round(cashAccountBalance - accountLedgerSum, 2),
+            ["active_terminals_count"] = activeTerminalsCount,
+            ["duplicate_single_pc_open"] = duplicateSinglePcOpen,
             ["open_sessions_count"] = openSessions.Count,
             ["stale_open_sessions_count"] = staleSessionsCount,
             ["open_drawers_expected_total"] = openCalcTotal,
             ["open_drawers_stored_before_refresh"] = openStoredTotal,
-            ["difference"] = diff,
+            ["last_closed_session"] = lastClosedDiag,
+            ["closed_difference"] = closedDifference,
+            ["difference"] = effectiveDiff,
             ["unassigned_safe_pool"] = Math.Max(0m, diff),
-            ["is_balanced"] = openSessions.Count > 0 ? Math.Abs(diff) < 0.01m : true,
+            ["is_balanced"] = isBalanced,
             ["unmatched_open_shift_account_txns"] = unmatchedAccountTxns,
             ["open_sessions"] = sessionDiagnostics
         });
@@ -459,20 +545,54 @@ public class CashDrawerController : ApiControllerBase
             ? await Db.QueryListAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id ASC")
             : new List<Dictionary<string, object?>>();
 
-        if (openSessions.Count == 0)
-        {
-            return Unprocessable("No open cash drawer session found to reconcile against.");
-        }
+        decimal targetBalance;
+        string mode;
 
-        decimal openTotal = 0m;
-        foreach (var sess in openSessions)
+        if (openSessions.Count > 0)
         {
-            openTotal = Math.Round(openTotal + await _cashDrawerService.RecalculateExpectedBalanceAsync(AccountService.ToLong(sess["id"]), syncAccount: false), 2);
+            var specificSessionId = GetNullableLong(body, "session_id");
+            var sessionsToSum = specificSessionId.HasValue && specificSessionId.Value > 0
+                ? openSessions.Where(s => AccountService.ToLong(s["id"]) == specificSessionId.Value).ToList()
+                : openSessions;
+
+            if (sessionsToSum.Count == 0)
+            {
+                return Unprocessable($"Open cash drawer session #{specificSessionId} was not found.");
+            }
+
+            targetBalance = 0m;
+            foreach (var sess in sessionsToSum)
+            {
+                targetBalance = Math.Round(targetBalance + await _cashDrawerService.RecalculateExpectedBalanceAsync(AccountService.ToLong(sess["id"]), syncAccount: false), 2);
+            }
+            mode = "open_drawer";
+        }
+        else if (body.ContainsKey("target_balance"))
+        {
+            var requestedTarget = GetDecimal(body, "target_balance", -1m);
+            if (requestedTarget < 0m)
+            {
+                return Unprocessable("Target balance must be at least 0.");
+            }
+            targetBalance = Math.Round(requestedTarget, 2);
+            mode = "manual_target";
+        }
+        else
+        {
+            var lastClosed = await Db.HasTableAsync("cash_drawer_sessions")
+                ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE status = 'closed' ORDER BY closed_at DESC, id DESC LIMIT 1")
+                : null;
+            if (lastClosed == null)
+            {
+                return Unprocessable("No open or closed cash drawer session found to reconcile against.");
+            }
+            targetBalance = Math.Round(AccountService.ToDecimal(lastClosed.GetValueOrDefault("closing_balance_actual")), 2);
+            mode = "last_closed_shift";
         }
 
         var cashId = AccountService.ToLong(cashAccount["id"]);
         var currentBal = Math.Round(AccountService.ToDecimal(cashAccount.GetValueOrDefault("current_balance")), 2);
-        var delta = Math.Round(openTotal - currentBal, 2);
+        var delta = Math.Round(targetBalance - currentBal, 2);
 
         if (Math.Abs(delta) < 0.01m)
         {
@@ -480,9 +600,11 @@ public class CashDrawerController : ApiControllerBase
             {
                 ["ok"] = true,
                 ["reconciled"] = false,
-                ["message"] = "Cash in Hand is already balanced with open Cash Drawer(s).",
+                ["mode"] = mode,
+                ["message"] = "Cash in Hand is already balanced with Cash Drawer.",
                 ["cash_account_balance"] = currentBal,
-                ["open_drawers_expected_total"] = openTotal,
+                ["target_balance"] = targetBalance,
+                ["open_drawers_expected_total"] = openSessions.Count > 0 ? targetBalance : 0m,
                 ["adjustment_amount"] = 0m
             });
         }
@@ -504,10 +626,14 @@ public class CashDrawerController : ApiControllerBase
         {
             ["ok"] = true,
             ["reconciled"] = true,
-            ["message"] = $"Reconciled Cash in Hand by {delta:+0.00;-0.00;0.00} to match open Cash Drawer total ({openTotal:N2}).",
+            ["mode"] = mode,
+            ["message"] = mode == "last_closed_shift"
+                ? $"Reconciled Cash in Hand by {delta:+0.00;-0.00;0.00} to match Last Closed Shift ({targetBalance:N2})."
+                : $"Reconciled Cash in Hand by {delta:+0.00;-0.00;0.00} to match Cash Drawer total ({targetBalance:N2}).",
             ["previous_balance"] = currentBal,
             ["cash_account_balance"] = newBal,
-            ["open_drawers_expected_total"] = openTotal,
+            ["target_balance"] = targetBalance,
+            ["open_drawers_expected_total"] = openSessions.Count > 0 ? targetBalance : 0m,
             ["adjustment_amount"] = delta
         });
     }

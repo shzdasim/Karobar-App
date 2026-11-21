@@ -859,6 +859,80 @@ public class CashDrawerAccountParityTests
 
             // Cash in Hand MUST remain 50,000 (never doubled to 100,000!)
             await AssertParityAsync(db, cashId, s1Id, 50000m, "S24 single-PC duplicate open blocked");
+
+            // User 2 on the same single-PC shop sees Shift #1 as the active open shift (not "CLOSED")
+            var seenByUser2 = await drawer.GetCurrentSessionAsync(userId: 2, strictUser: true, terminalId: null);
+            seenByUser2.Should().NotBeNull();
+            AccountService.ToLong(seenByUser2!["id"]).Should().Be(s1Id);
+        }
+        finally { Cleanup(p); }
+    }
+
+    [Fact]
+    public async Task S25_SinglePc_MixedNullAndTerminalIdDuplicateOpenBlocked_And_ClosedStateReconcileWorks()
+    {
+        var (db, p, cashId, _) = await SetupFreshAsync();
+        try
+        {
+            // Simulate a standard single-PC shop (only 1 authorized server terminal, no remote LAN counters)
+            await db.ExecuteAsync("DELETE FROM terminals WHERE id != 1");
+            var drawer = new CashDrawerService(db);
+
+            // Shift #1 opened with terminalId = null (legacy/pre-registration shift) for Rs. 25,000
+            var s1 = await drawer.OpenSessionAsync(1, 25000m, "Shift 1", terminalId: null);
+            var s1Id = AccountService.ToLong(s1["id"]);
+
+            // Same single PC now sends terminalId = 1 -> MUST still block duplicate open (no double Cash in Hand!)
+            Func<Task> mixedDup = async () => await drawer.OpenSessionAsync(2, 25000m, "Shift 2", terminalId: 1);
+            await mixedDup.Should().ThrowAsync<InvalidOperationException>();
+
+            // User 2 on terminalId = 1 immediately sees Shift #1 as OPEN
+            var seenByTerm1 = await drawer.GetCurrentSessionAsync(userId: 2, strictUser: true, terminalId: 1);
+            seenByTerm1.Should().NotBeNull();
+            AccountService.ToLong(seenByTerm1!["id"]).Should().Be(s1Id);
+
+            // Close Shift #1 cleanly at 25,000, then simulate legacy drift in Cash in Hand (50,000 vs 25,000) while CLOSED
+            await drawer.CloseSessionAsync(s1Id, 25000m, "End shift", null, 1);
+            await db.ExecuteAsync("UPDATE accounts SET current_balance = 50000 WHERE id = @id", new { id = cashId });
+
+            // ReconciliationCheck MUST detect closed-state difference (+25,000 vs Last Closed Shift)
+            var checkClosed = await AttachAdmin(new CashDrawerController(db), 1).ReconciliationCheck();
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize((checkClosed as ObjectResult)!.Value)))
+            {
+                doc.RootElement.GetProperty("open_sessions_count").GetInt32().Should().Be(0);
+                doc.RootElement.GetProperty("is_balanced").GetBoolean().Should().BeFalse();
+                doc.RootElement.GetProperty("difference").GetDecimal().Should().Be(25000m);
+                doc.RootElement.GetProperty("last_closed_session").GetProperty("session_id").GetInt64().Should().Be(s1Id);
+            }
+
+            // ReconcileCashAccount while CLOSED MUST sync Cash in Hand to Last Closed Shift (25,000)
+            var recClosed = await AttachAdmin(new CashDrawerController(db), 1, JsonSerializer.Serialize(new { sync_to_last_closed = true, reason = "Sync closed drawer drift" })).ReconcileCashAccount();
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize((recClosed as ObjectResult)!.Value)))
+            {
+                doc.RootElement.GetProperty("reconciled").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("mode").GetString().Should().Be("last_closed_shift");
+                doc.RootElement.GetProperty("cash_account_balance").GetDecimal().Should().Be(25000m);
+                doc.RootElement.GetProperty("adjustment_amount").GetDecimal().Should().Be(-25000m);
+            }
+
+            // Simulate historical duplicate single-PC open shifts (both terminal_id IS NULL) with Cash in Hand equal to sum:
+            // ReconciliationCheck MUST flag duplicate_single_pc_open = true and is_balanced = false!
+            await db.InsertAsync("cash_drawer_sessions", new Dictionary<string, object?>
+            {
+                ["user_id"] = 1, ["opened_at"] = "2026-11-21 08:00:00", ["status"] = "open",
+                ["opening_balance"] = 10000m, ["closing_balance_expected"] = 10000m, ["difference"] = 0m
+            });
+            await db.InsertAsync("cash_drawer_sessions", new Dictionary<string, object?>
+            {
+                ["user_id"] = 2, ["opened_at"] = "2026-11-21 09:00:00", ["status"] = "open",
+                ["opening_balance"] = 15000m, ["closing_balance_expected"] = 15000m, ["difference"] = 0m
+            });
+            var checkDup = await AttachAdmin(new CashDrawerController(db), 1).ReconciliationCheck();
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize((checkDup as ObjectResult)!.Value)))
+            {
+                doc.RootElement.GetProperty("duplicate_single_pc_open").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("is_balanced").GetBoolean().Should().BeFalse("Duplicate single-PC open shifts must never report green balanced");
+            }
         }
         finally { Cleanup(p); }
     }

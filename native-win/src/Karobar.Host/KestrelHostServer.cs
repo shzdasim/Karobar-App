@@ -616,9 +616,13 @@ public sealed class KestrelHostServer : IAsyncDisposable
         }
 
         var fileInfo = new FileInfo(targetFile);
+        var isMutableMetaAsset = decodedPath.Equals("/version.json", StringComparison.OrdinalIgnoreCase) ||
+                                 decodedPath.Equals("/build/manifest.json", StringComparison.OrdinalIgnoreCase);
         var cacheControl = isImmutableBuildAsset
             ? "public, max-age=31536000, immutable"
-            : "public, max-age=300";
+            : isMutableMetaAsset
+                ? "no-store, no-cache, must-revalidate"
+                : "public, max-age=300";
 
         if (HttpMethods.IsGet(method) &&
             isImmutableBuildAsset &&
@@ -869,7 +873,8 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.ContentLength = spaBytes.Length;
-                context.Response.Headers.CacheControl = "no-cache";
+                context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
 
                 if (!HttpMethods.IsHead(context.Request.Method))
                 {
@@ -895,7 +900,8 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.ContentLength = spaBytes.Length;
-                context.Response.Headers.CacheControl = "no-cache";
+                context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
                 if (!HttpMethods.IsHead(context.Request.Method))
                 {
                     await context.Response.Body.WriteAsync(spaBytes, context.RequestAborted);

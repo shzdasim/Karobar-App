@@ -31,6 +31,26 @@ public class CashDrawerService
         _db = db;
     }
 
+    private async Task<int> GetActiveTerminalCountAsync()
+    {
+        if (!await _db.HasTableAsync("terminals"))
+        {
+            return 0;
+        }
+
+        if (await _db.HasColumnAsync("terminals", "is_authorized"))
+        {
+            return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_authorized = 1");
+        }
+
+        if (await _db.HasColumnAsync("terminals", "is_active"))
+        {
+            return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals WHERE is_active = 1");
+        }
+
+        return await _db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM terminals");
+    }
+
     public async Task<Dictionary<string, object?>?> GetCurrentSessionAsync(long? userId = null, bool strictUser = true, long? terminalId = null)
     {
         if (!await _db.HasTableAsync("cash_drawer_sessions"))
@@ -39,6 +59,7 @@ public class CashDrawerService
         }
 
         var hasTerminalCol = await _db.HasColumnAsync("cash_drawer_sessions", "terminal_id");
+        var activeTerminals = await GetActiveTerminalCountAsync();
 
         if (hasTerminalCol && terminalId.HasValue && terminalId.Value > 0)
         {
@@ -63,6 +84,19 @@ public class CashDrawerService
                 }
             }
 
+            // Single-counter PC that has an open shift created before terminal registration (terminal_id IS NULL):
+            // surface that active shift instead of showing "CLOSED" and risking a duplicate open.
+            if (activeTerminals <= 1)
+            {
+                var singlePcUnassigned = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY opened_at DESC, id DESC LIMIT 1");
+                if (singlePcUnassigned != null)
+                {
+                    await AttachUserAsync(singlePcUnassigned);
+                    return singlePcUnassigned;
+                }
+            }
+
             if (strictUser)
             {
                 return null;
@@ -78,6 +112,23 @@ public class CashDrawerService
             {
                 await AttachUserAsync(userSession);
                 return userSession;
+            }
+
+            // Standalone PC request (no terminalId): any open shift with terminal_id IS NULL belongs to this PC
+            // (and if <= 1 active terminal exists, ANY open shift belongs to this PC), so User B immediately sees
+            // User A's active open shift instead of seeing "CLOSED" and hitting a duplicate-open error.
+            var sharedOpen = activeTerminals <= 1
+                ? await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1")
+                : (hasTerminalCol
+                    ? await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY opened_at DESC, id DESC LIMIT 1")
+                    : await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1"));
+            if (sharedOpen != null)
+            {
+                await AttachUserAsync(sharedOpen);
+                return sharedOpen;
             }
 
             if (strictUser)
@@ -150,6 +201,7 @@ public class CashDrawerService
         long? terminalId = null)
     {
         var hasTerminalCol = await _db.HasColumnAsync("cash_drawer_sessions", "terminal_id");
+        var activeTerminals = await GetActiveTerminalCountAsync();
 
         Dictionary<string, object?>? existing;
         if (hasTerminalCol && terminalId.HasValue && terminalId.Value > 0)
@@ -157,13 +209,27 @@ public class CashDrawerService
             existing = await _db.QuerySingleOrDefaultAsync(
                 "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @tid LIMIT 1",
                 new { tid = terminalId.Value });
+
+            // Prevent mixed NULL-vs-terminalId duplicate open on a single-counter PC (or for the same user).
+            if (existing == null)
+            {
+                existing = activeTerminals <= 1
+                    ? await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY id DESC LIMIT 1")
+                    : await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid AND terminal_id IS NULL ORDER BY id DESC LIMIT 1",
+                        new { uid = userId });
+            }
         }
         else if (hasTerminalCol)
         {
             // Single-PC standalone mode (no terminal_id): only ONE physical drawer can be open at a time on this PC,
-            // even across different logged-in users, so Cash in Hand is never double-counted by a second open.
-            existing = await _db.QuerySingleOrDefaultAsync(
-                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY id DESC LIMIT 1");
+            // even across different logged-in users or a prior terminal-tagged shift when <= 1 active terminal exists.
+            existing = activeTerminals <= 1
+                ? await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+                : await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY id DESC LIMIT 1");
         }
         else
         {
