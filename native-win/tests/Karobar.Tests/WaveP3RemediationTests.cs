@@ -357,16 +357,25 @@ public class WaveP3RemediationTests
 
         var tempDbPath = Path.Combine(tempRoot, "database", "database.sqlite");
         var sourceFactory = new DbConnectionFactory();
-        File.Copy(sourceFactory.SqlitePath, tempDbPath, overwrite: true);
+        if (File.Exists(sourceFactory.SqlitePath) && new FileInfo(sourceFactory.SqlitePath).Length > 0)
+        {
+            File.Copy(sourceFactory.SqlitePath, tempDbPath, overwrite: true);
+        }
 
         var prevRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH");
+        var prevAppRoot = Environment.GetEnvironmentVariable("KAROBAR_APP_ROOT");
         Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", tempRoot);
         Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", tempRoot);
+        KarobarDb.FlushSchemaCache();
         try
         {
             var services = new ServiceCollection();
             services.AddKarobarData(explicitSqlitePath: tempDbPath);
             using var sp = services.BuildServiceProvider();
+
+            var bootstrapper = sp.GetRequiredService<DatabaseBootstrapper>();
+            await bootstrapper.EnsureSchemaReadyAsync();
+            KarobarDb.FlushSchemaCache();
 
             var cliLogger = new CapturingLogger<KarobarCliCommandRunner>();
             var schedLogger = new CapturingLogger<KarobarSchedulerHostedService>();
@@ -376,6 +385,22 @@ public class WaveP3RemediationTests
             using (var scope = sp.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<KarobarDbContext>();
+                var settingRow = await db.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync();
+                if (settingRow == null)
+                {
+                    db.Settings.Add(new Setting
+                    {
+                        StoreName = "M3 QA Store",
+                        CurrencySymbol = "Rs.",
+                        CurrencyCode = "PKR",
+                        CurrencyDecimalPlaces = 2,
+                        WhatsappProvider = "local_agent",
+                        WhatsappApiUrl = "http://127.0.0.1:3002",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+
                 var schedule = await db.BackupSchedules.OrderBy(s => s.Id).FirstOrDefaultAsync();
                 if (schedule == null)
                 {
@@ -389,7 +414,26 @@ public class WaveP3RemediationTests
                 schedule.LastRunStatus = "never";
                 schedule.LastErrorMessage = null;
 
-                var product = await db.Products.OrderBy(p => p.Id).FirstAsync();
+                var product = await db.Products.OrderBy(p => p.Id).FirstOrDefaultAsync();
+                if (product == null)
+                {
+                    product = new Product
+                    {
+                        Name = "M3 QA Test Product",
+                        ProductCode = "M3-QA-001",
+                        PackSize = 10,
+                        PackPurchasePrice = 100m,
+                        PackSalePrice = 120m,
+                        UnitPurchasePrice = 10m,
+                        UnitSalePrice = 12m,
+                        Quantity = 5,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    db.Products.Add(product);
+                    await db.SaveChangesAsync();
+                }
+
                 db.UserDemands.Add(new UserDemand
                 {
                     ProductId = product.Id,
@@ -448,7 +492,6 @@ public class WaveP3RemediationTests
 
             // (a) Verify DatabaseBootstrapper one-time 3001 -> 3002 migration + non-reversion if admin explicitly sets 3001
             var factory = sp.GetRequiredService<IDbConnectionFactory>();
-            var bootstrapper = sp.GetRequiredService<DatabaseBootstrapper>();
             await using (var preConn = await factory.OpenConnectionAsync())
             {
                 await preConn.ExecuteAsync(
@@ -561,7 +604,8 @@ public class WaveP3RemediationTests
         finally
         {
             Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", prevRoot);
-            Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", prevRoot);
+            Environment.SetEnvironmentVariable("KAROBAR_APP_ROOT", prevAppRoot);
+            KarobarDb.FlushSchemaCache();
             try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
             try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
         }
