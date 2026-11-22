@@ -22,6 +22,7 @@ public static class QaVerificationRunner
 
         var passed = 0;
         var failed = 0;
+        var failures = new List<string>();
         var totalSw = Stopwatch.StartNew();
 
         foreach (var testClass in testClasses)
@@ -51,14 +52,27 @@ public static class QaVerificationRunner
                     sw.Stop();
                     failed++;
                     var inner = ex is TargetInvocationException tie && tie.InnerException != null ? tie.InnerException : ex;
+                    var detail = inner.InnerException != null
+                        ? $"{inner.GetType().Name}: {inner.Message} --> {inner.InnerException.GetType().Name}: {inner.InnerException.Message}"
+                        : $"{inner.GetType().Name}: {inner.Message}";
                     Console.WriteLine($"  FAIL  {method.Name} ({sw.ElapsedMilliseconds} ms)");
-                    Console.WriteLine($"        {inner.GetType().Name}: {inner.Message}");
+                    Console.WriteLine($"        {detail}");
+                    failures.Add($"[{testClass.Name}.{method.Name}] {detail}");
                 }
             }
         }
 
         totalSw.Stop();
         Console.WriteLine("\n==========================================================================");
+        if (failures.Count > 0)
+        {
+            Console.WriteLine(" Failed Tests Summary:");
+            foreach (var f in failures)
+            {
+                Console.WriteLine($"  - {f}");
+            }
+            Console.WriteLine("--------------------------------------------------------------------------");
+        }
         Console.WriteLine($" QA Results: {passed} Passed, {failed} Failed (Total Time: {totalSw.ElapsedMilliseconds} ms)");
         Console.WriteLine("==========================================================================");
 

@@ -417,10 +417,39 @@ public class WaveP3RemediationTests
                 var product = await db.Products.OrderBy(p => p.Id).FirstOrDefaultAsync();
                 if (product == null)
                 {
+                    var cat = await db.Categories.OrderBy(c => c.Id).FirstOrDefaultAsync();
+                    if (cat == null)
+                    {
+                        cat = new Category
+                        {
+                            Name = "M3 QA Category",
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        db.Categories.Add(cat);
+                        await db.SaveChangesAsync();
+                    }
+
+                    var brand = await db.Brands.OrderBy(b => b.Id).FirstOrDefaultAsync();
+                    if (brand == null)
+                    {
+                        brand = new Brand
+                        {
+                            Name = "M3 QA Brand",
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        db.Brands.Add(brand);
+                        await db.SaveChangesAsync();
+                    }
+
                     product = new Product
                     {
                         Name = "M3 QA Test Product",
                         ProductCode = "M3-QA-001",
+                        Barcode = "890000000001",
+                        CategoryId = cat.Id,
+                        BrandId = brand.Id,
                         PackSize = 10,
                         PackPurchasePrice = 100m,
                         PackSalePrice = 120m,
@@ -578,7 +607,32 @@ public class WaveP3RemediationTests
                 INNER JOIN roles r ON r.id = mhr.role_id
                 WHERE LOWER(r.name) IN ('admin', 'super-admin', 'super admin')
                 ORDER BY u.id ASC LIMIT 1");
-            var adminUid = adminUser != null ? Convert.ToInt64(adminUser["id"]) : 1L;
+            long adminUid;
+            if (adminUser != null)
+            {
+                adminUid = Convert.ToInt64(adminUser["id"]);
+            }
+            else
+            {
+                var adminRole = await kDbForTest.QuerySingleOrDefaultAsync("SELECT id FROM roles WHERE LOWER(name) = 'admin' LIMIT 1");
+                var roleId = adminRole != null
+                    ? Convert.ToInt64(adminRole["id"])
+                    : await kDbForTest.InsertAsync("roles", new Dictionary<string, object?>
+                    {
+                        ["name"] = "Admin",
+                        ["guard_name"] = "sanctum"
+                    });
+                adminUid = await kDbForTest.InsertAsync("users", new Dictionary<string, object?>
+                {
+                    ["name"] = "M3 QA Admin",
+                    ["email"] = "m3-qa-admin@karobar.local",
+                    ["password"] = "hash",
+                    ["is_active"] = 1
+                });
+                await kDbForTest.ExecuteAsync(
+                    "INSERT INTO model_has_roles (role_id, model_type, model_id) VALUES (@roleId, 'App\\Models\\User', @uid)",
+                    new { roleId, uid = adminUid });
+            }
             var testHttpCtx = new DefaultHttpContext();
             testHttpCtx.Items["KarobarUserId"] = adminUid;
             testHttpCtx.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, adminUid.ToString())], "Sanctum"));
