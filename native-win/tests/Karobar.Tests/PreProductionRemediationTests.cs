@@ -1200,6 +1200,7 @@ public class PreProductionRemediationTests
         // --- FORMAT 1: .sqlite with colliding id=1 across parents, children, and polymorphic FKs ---
         var sourceSqlitePath = Path.Combine(host.TempRoot, "r56_source.sqlite");
         await new DatabaseBootstrapper(new DbConnectionFactory(explicitSqlitePath: sourceSqlitePath)).EnsureSchemaReadyAsync();
+        SqliteConnection.ClearAllPools();
         await using (var src = new SqliteConnection($"Data Source={sourceSqlitePath};Pooling=False;"))
         {
             await src.OpenAsync();
