@@ -59,5 +59,7 @@ Thumbs.db
 /native-win/src/*/obj/
 /native-win/tests/*/bin/
 /native-win/tests/*/obj/
-/.local/
+.local/
+.aspnet/
+*.pfx
 /Library/

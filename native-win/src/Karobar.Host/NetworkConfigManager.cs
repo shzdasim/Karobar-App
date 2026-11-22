@@ -178,9 +178,9 @@ public sealed class NetworkConfigManager
             try
             {
                 if (Directory.Exists(dir) &&
-                    ((File.Exists(Path.Combine(dir, "artisan")) && File.Exists(Path.Combine(dir, "public", "index.php"))) ||
-                     File.Exists(Path.Combine(dir, "resources", "views", "index.blade.php")) ||
-                     File.Exists(Path.Combine(dir, "public", "build", "manifest.json"))))
+                    (File.Exists(Path.Combine(dir, "public", "index.html")) ||
+                     File.Exists(Path.Combine(dir, "public", "build", "manifest.json")) ||
+                     (Directory.Exists(Path.Combine(dir, "database")) && Directory.Exists(Path.Combine(dir, "public")))))
                 {
                     return dir;
                 }

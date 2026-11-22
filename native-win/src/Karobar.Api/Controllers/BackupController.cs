@@ -6,6 +6,7 @@ using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Karobar.Api.Controllers;
 
@@ -110,6 +111,7 @@ public class BackupController : ApiControllerBase
     }
 
     [HttpPost("{id:long}/restore")]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> Restore(long id)
     {
         if (!await CanAsync("backup.restore", "settings.update")) return Forbidden();
@@ -463,6 +465,7 @@ public class BackupController : ApiControllerBase
     }
 
     [HttpPost("upload/restore")]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> RestoreFromUpload()
     {
         if (!await CanAsync("backup.restore", "settings.update")) return Forbidden();

@@ -25,7 +25,7 @@ namespace Karobar.Background;
 /// </summary>
 public sealed class LocalWhatsAppSidecarManager : IDisposable
 {
-    public const int DefaultPort = 3001;
+    public const int DefaultPort = 3002;
     public const string DefaultHost = "127.0.0.1";
 
     private readonly string _appRoot;
@@ -59,7 +59,8 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 8 && !string.IsNullOrEmpty(dir); i++)
         {
-            if (File.Exists(Path.Combine(dir, "artisan")) || File.Exists(Path.Combine(dir, "scripts", "whatsapp-agent.mjs")))
+            if (File.Exists(Path.Combine(dir, "scripts", "whatsapp-agent.mjs")) ||
+                File.Exists(Path.Combine(dir, "runtime", "whatsapp-agent", "whatsapp-agent.mjs")))
             {
                 return dir;
             }
@@ -190,14 +191,26 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
     {
         var configured = (setting?.WhatsappApiUrl ?? "").Trim();
         if (!string.IsNullOrEmpty(configured) &&
-            (configured.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
-             configured.Contains("localhost", StringComparison.OrdinalIgnoreCase)) &&
-            Uri.TryCreate(configured, UriKind.Absolute, out var uri))
+            Uri.TryCreate(configured, UriKind.Absolute, out var uri) &&
+            (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+             uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)) &&
+            IsLoopbackHost(uri.Host))
         {
-            var port = uri.Port > 0 ? uri.Port : DefaultPort;
-            return $"{uri.Scheme}://{uri.Host}:{port}";
+            var port = uri.IsDefaultPort ? DefaultPort : uri.Port;
+            if (port <= 0) port = DefaultPort;
+            var host = uri.Host.Contains(':') && !uri.Host.StartsWith('[') ? $"[{uri.Host}]" : uri.Host;
+            return $"{uri.Scheme.ToLowerInvariant()}://{host}:{port}";
         }
         return $"http://{DefaultHost}:{DefaultPort}";
+    }
+
+    private static bool IsLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return false;
+        return host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+               host.Equals("::1", StringComparison.OrdinalIgnoreCase) ||
+               host.Equals("[::1]", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<string> EnsureApiKeyAsync(
@@ -351,7 +364,7 @@ public sealed class LocalWhatsAppSidecarManager : IDisposable
         }
         catch
         {
-            // Agent process is not running on port 3001
+            // Agent process is not running on port 3002
         }
 
         return new Dictionary<string, object?>

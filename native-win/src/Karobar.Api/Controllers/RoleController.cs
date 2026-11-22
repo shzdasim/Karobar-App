@@ -18,7 +18,7 @@ public class RoleController : ApiControllerBase
     private static bool IsReservedAdminRoleName(string name)
     {
         var n = (name ?? "").Trim().ToLowerInvariant();
-        return n is "admin" or "super-admin";
+        return n is "admin" or "super-admin" or "super admin";
     }
 
     [HttpGet("")]
@@ -193,7 +193,7 @@ public class RoleController : ApiControllerBase
 
         await Db.UpdateAsync("roles", id, new Dictionary<string, object?> { ["name"] = newName });
 
-        if (newName.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        if (IsReservedAdminRoleName(newName))
         {
             var allPerms = await Db.QueryListAsync("SELECT name FROM permissions WHERE guard_name = 'sanctum'");
             var allNames = allPerms.Select(p => p.GetValueOrDefault("name")?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s));

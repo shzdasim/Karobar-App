@@ -81,7 +81,7 @@ public class InvoiceCalculationService
                     if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) continue;
 
                     var uid = ToLong(u.GetValueOrDefault("id"));
-                    bool isEligible = await _db.UserHasRoleAsync(uid, "Admin", "admin", "super-admin")
+                    bool isEligible = await _db.UserHasRoleAsync(uid, KarobarDb.AdminRoleNames)
                                       || (!string.IsNullOrEmpty(permission) && await _db.UserCanAsync(uid, permission));
                     if (!isEligible) continue;
 

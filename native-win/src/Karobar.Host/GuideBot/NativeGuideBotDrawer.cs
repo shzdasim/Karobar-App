@@ -105,6 +105,10 @@ public sealed class NativeGuideBotDrawer : Panel
     private bool _suppressSlashAutoPopup;
     private bool _isRenderingChat;
     private int _lastRenderedChatWidth;
+    private Action? _contextChangedHandler;
+    private Action? _messagesChangedHandler;
+    private Action<CubeBackgroundTaskSnapshot>? _bgStateChangedHandler;
+    private CubeBackgroundTaskManager? _subscribedBgTaskManager;
 
     public event Action<string, string>? NavigateRequested;
     public event Action<string, string?>? StartSpotlightTourRequested;
@@ -644,11 +648,15 @@ public sealed class NativeGuideBotDrawer : Panel
         Controls.Add(headerPanel);
 
         // Subscribe to session & background task updates
-        _session.ContextChanged += () => SafeUi(RefreshActiveScreenContext);
-        _session.MessagesChanged += () => SafeUi(RenderChatFeed);
-        if (_session.BackgroundTaskManager != null)
+        _contextChangedHandler = () => SafeUi(RefreshActiveScreenContext);
+        _messagesChangedHandler = () => SafeUi(RenderChatFeed);
+        _session.ContextChanged += _contextChangedHandler;
+        _session.MessagesChanged += _messagesChangedHandler;
+        _subscribedBgTaskManager = _session.BackgroundTaskManager;
+        if (_subscribedBgTaskManager != null)
         {
-            _session.BackgroundTaskManager.StateChanged += snap => SafeUi(() => ApplyTaskSnapshot(snap));
+            _bgStateChangedHandler = snap => SafeUi(() => ApplyTaskSnapshot(snap));
+            _subscribedBgTaskManager.StateChanged += _bgStateChangedHandler;
         }
 
         _avatarAnimTimer = new System.Windows.Forms.Timer { Interval = 80 };
@@ -1736,6 +1744,22 @@ public sealed class NativeGuideBotDrawer : Panel
     {
         if (disposing)
         {
+            if (_contextChangedHandler != null)
+            {
+                _session.ContextChanged -= _contextChangedHandler;
+                _contextChangedHandler = null;
+            }
+            if (_messagesChangedHandler != null)
+            {
+                _session.MessagesChanged -= _messagesChangedHandler;
+                _messagesChangedHandler = null;
+            }
+            if (_subscribedBgTaskManager != null && _bgStateChangedHandler != null)
+            {
+                _subscribedBgTaskManager.StateChanged -= _bgStateChangedHandler;
+                _bgStateChangedHandler = null;
+                _subscribedBgTaskManager = null;
+            }
             try { _avatarAnimTimer.Stop(); _avatarAnimTimer.Dispose(); } catch { }
             try { _terminalTaskPollTimer.Stop(); _terminalTaskPollTimer.Dispose(); } catch { }
             try { _slashMenu.Dispose(); } catch { }

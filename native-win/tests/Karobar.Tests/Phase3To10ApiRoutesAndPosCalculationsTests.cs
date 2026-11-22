@@ -83,7 +83,7 @@ public class Phase3To10ApiRoutesAndPosCalculationsTests
     }
 
     [Fact]
-    public void Every_Api_Route_In_Routes_Api_Php_And_Web_Route_In_Routes_Web_Php_Is_Mapped_In_Karobar_Api()
+    public void Every_Required_Native_Api_And_Web_Route_Is_Mapped_In_Karobar_Api()
     {
         var apiAssembly = typeof(KarobarApiServiceExtensions).Assembly;
         var mappedEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -154,7 +154,7 @@ public class Phase3To10ApiRoutesAndPosCalculationsTests
             }
         }
 
-        // Critical API & Web routes across all 12 Phases from routes/api.php and routes/web.php
+        // Critical API & Web routes across all 12 Phases in Karobar.Api
         string[] requiredEndpoints =
         [
             // Phase 3: Auth, License, Users, Roles, Permissions, PINs

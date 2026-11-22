@@ -56,7 +56,7 @@ public abstract class ApiControllerBase : ControllerBase
     {
         var uid = CurrentUserId;
         if (uid == null) return false;
-        return await Db.UserHasRoleAsync(uid.Value, "Admin", "admin", "super-admin");
+        return await Db.UserHasRoleAsync(uid.Value, KarobarDb.AdminRoleNames);
     }
 
     protected async Task<bool> CanAsync(params string[] permissions)

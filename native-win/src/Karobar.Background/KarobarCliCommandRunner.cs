@@ -16,6 +16,7 @@ using Karobar.Core.Entities;
 using Karobar.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 using Org.BouncyCastle.Security;
@@ -101,11 +102,16 @@ public sealed class KarobarCliCommandRunner
 
     private readonly string _appRoot;
     private readonly WaseelaAndSqliteImportEngine _importEngine;
+    private readonly ILogger<KarobarCliCommandRunner>? _logger;
 
-    public KarobarCliCommandRunner(string? appRoot = null, WaseelaAndSqliteImportEngine? importEngine = null)
+    public KarobarCliCommandRunner(
+        string? appRoot = null,
+        WaseelaAndSqliteImportEngine? importEngine = null,
+        ILogger<KarobarCliCommandRunner>? logger = null)
     {
         _appRoot = ResolveAppRoot(appRoot);
         _importEngine = importEngine ?? new WaseelaAndSqliteImportEngine(_appRoot);
+        _logger = logger;
     }
 
     private static string ResolveAppRoot(string? explicitRoot = null)
@@ -123,7 +129,7 @@ public sealed class KarobarCliCommandRunner
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 8 && !string.IsNullOrEmpty(dir); i++)
         {
-            if (File.Exists(Path.Combine(dir, "artisan")) || Directory.Exists(Path.Combine(dir, "database")))
+            if (Directory.Exists(Path.Combine(dir, "database")))
             {
                 return dir;
             }
@@ -506,19 +512,33 @@ public sealed class KarobarCliCommandRunner
             };
         }
 
-        if (args.TryGetValue("verify-sha", out var expectedSha) && !string.IsNullOrWhiteSpace(expectedSha))
+        if (!args.TryGetValue("verify-sha", out var expectedSha) ||
+            string.IsNullOrWhiteSpace(expectedSha) ||
+            !Regex.IsMatch(expectedSha.Trim(), "^[0-9a-fA-F]{64}$"))
         {
-            var bytes = await File.ReadAllBytesAsync(patchZip, cancellationToken);
-            var actualSha = Convert.ToHexStringLower(SHA256.HashData(bytes));
-            if (!string.Equals(actualSha, expectedSha.Trim(), StringComparison.OrdinalIgnoreCase))
+            return new CliCommandResult
             {
-                return new CliCommandResult
+                ExitCode = 1,
+                Output = "Missing or invalid required --verify-sha SHA-256 checksum.",
+                Data = new Dictionary<string, object?>
                 {
-                    ExitCode = 1,
-                    Output = $"SHA-256 checksum mismatch. Expected: {expectedSha}, Actual: {actualSha}",
-                    Data = new Dictionary<string, object?> { ["ok"] = false, ["patch_applied"] = false }
-                };
-            }
+                    ["ok"] = false,
+                    ["patch_applied"] = false,
+                    ["message"] = "Missing or invalid required --verify-sha SHA-256 checksum."
+                }
+            };
+        }
+
+        var bytes = await File.ReadAllBytesAsync(patchZip, cancellationToken);
+        var actualSha = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        if (!string.Equals(actualSha, expectedSha.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return new CliCommandResult
+            {
+                ExitCode = 1,
+                Output = $"SHA-256 checksum mismatch. Expected: {expectedSha}, Actual: {actualSha}",
+                Data = new Dictionary<string, object?> { ["ok"] = false, ["patch_applied"] = false }
+            };
         }
 
         // Pre-patch safety backup (WAL-safe SQLite Online Backup API)
@@ -546,28 +566,39 @@ public sealed class KarobarCliCommandRunner
             ZipFile.ExtractToDirectory(patchZip, stagingDir, overwriteFiles: true);
             var appliedFiles = 0;
 
+            var fullRoot = Path.GetFullPath(_appRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             foreach (var file in Directory.GetFiles(stagingDir, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(stagingDir, file).Replace('\\', '/');
-                if (rel.StartsWith("storage/", StringComparison.OrdinalIgnoreCase) ||
-                    rel.StartsWith("runtime/", StringComparison.OrdinalIgnoreCase) ||
-                    rel.Contains("database.sqlite", StringComparison.OrdinalIgnoreCase) ||
-                    rel.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
+                var allowWhatsAppScript = rel.Equals("runtime/whatsapp-agent/whatsapp-agent.mjs", StringComparison.OrdinalIgnoreCase);
+                if (!allowWhatsAppScript &&
+                    (rel.StartsWith("storage/", StringComparison.OrdinalIgnoreCase) ||
+                     rel.StartsWith("runtime/", StringComparison.OrdinalIgnoreCase) ||
+                     rel.Contains("database.sqlite", StringComparison.OrdinalIgnoreCase) ||
+                     rel.StartsWith(".env", StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }
 
-                var targetPath = Path.Combine(_appRoot, rel.Replace('/', Path.DirectorySeparatorChar));
+                var targetPath = Path.GetFullPath(Path.Combine(_appRoot, rel.Replace('/', Path.DirectorySeparatorChar)));
+                if (!targetPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
                 File.Copy(file, targetPath, overwrite: true);
                 appliedFiles++;
             }
+
+            var prunedAssets = PruneStaleBuildAssets(_appRoot, stagingDir);
 
             var data = new Dictionary<string, object?>
             {
                 ["ok"] = true,
                 ["patch_applied"] = true,
                 ["files_updated"] = appliedFiles,
+                ["pruned_assets"] = prunedAssets,
                 ["message"] = "Differential patch applied successfully with zero data loss."
             };
 
@@ -581,6 +612,159 @@ public sealed class KarobarCliCommandRunner
         finally
         {
             try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, recursive: true); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Prunes obsolete hashed Vite assets under <c>public/build/assets/</c> when the incoming staged patch
+    /// includes <c>public/build/assets/</c> or <c>public/build/manifest.json</c>. Never deletes
+    /// <c>public/index.html</c>, <c>public/version.json</c>, <c>public/build/manifest.json</c>, or any file outside
+    /// <c>public/build/assets/</c>.
+    /// </summary>
+    public static int PruneStaleBuildAssets(string appRoot, string stagedRoot)
+    {
+        if (string.IsNullOrWhiteSpace(appRoot) || string.IsNullOrWhiteSpace(stagedRoot))
+        {
+            return 0;
+        }
+
+        var targetAssetsDir = Path.Combine(appRoot, "public", "build", "assets");
+        if (!Directory.Exists(targetAssetsDir))
+        {
+            return 0;
+        }
+
+        var stagedAssetsDir = Path.Combine(stagedRoot, "public", "build", "assets");
+        var stagedManifestPath = Path.Combine(stagedRoot, "public", "build", "manifest.json");
+        var hasStagedAssetsDir = Directory.Exists(stagedAssetsDir);
+        var hasStagedManifest = File.Exists(stagedManifestPath);
+
+        if (!hasStagedAssetsDir && !hasStagedManifest)
+        {
+            return 0;
+        }
+
+        var keepRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (hasStagedAssetsDir)
+        {
+            foreach (var stagedFile in Directory.GetFiles(stagedAssetsDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(stagedAssetsDir, stagedFile).Replace('\\', '/').TrimStart('/');
+                if (!string.IsNullOrWhiteSpace(rel))
+                {
+                    keepRelativePaths.Add(rel);
+                }
+            }
+        }
+
+        if (hasStagedManifest)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(stagedManifestPath));
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    if (!hasStagedAssetsDir)
+                    {
+                        return 0;
+                    }
+                }
+                else
+                {
+                    foreach (var entryProp in doc.RootElement.EnumerateObject())
+                    {
+                        var entry = entryProp.Value;
+                        if (entry.ValueKind != JsonValueKind.Object) continue;
+
+                        if (entry.TryGetProperty("file", out var fileEl) && fileEl.ValueKind == JsonValueKind.String)
+                        {
+                            AddManifestAssetPath(fileEl.GetString(), keepRelativePaths);
+                        }
+
+                        foreach (var arrayPropName in new[] { "css", "assets" })
+                        {
+                            if (entry.TryGetProperty(arrayPropName, out var arrEl) && arrEl.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var item in arrEl.EnumerateArray())
+                                {
+                                    if (item.ValueKind == JsonValueKind.String)
+                                    {
+                                        AddManifestAssetPath(item.GetString(), keepRelativePaths);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // If manifest.json is unreadable and no staged assets dir exists, fail safe without deleting everything.
+                if (!hasStagedAssetsDir)
+                {
+                    return 0;
+                }
+            }
+        }
+
+        var targetAssetsFull = Path.GetFullPath(targetAssetsDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var pruned = 0;
+
+        foreach (var existingFile in Directory.GetFiles(targetAssetsDir, "*", SearchOption.AllDirectories))
+        {
+            var fullPath = Path.GetFullPath(existingFile);
+            if (!fullPath.StartsWith(targetAssetsFull, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var rel = Path.GetRelativePath(targetAssetsDir, existingFile).Replace('\\', '/').TrimStart('/');
+            if (!keepRelativePaths.Contains(rel))
+            {
+                try
+                {
+                    File.Delete(existingFile);
+                    pruned++;
+                }
+                catch
+                {
+                    // Best-effort cleanup of stale chunk
+                }
+            }
+        }
+
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(targetAssetsDir, "*", SearchOption.AllDirectories)
+                         .OrderByDescending(d => d.Length))
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                {
+                    Directory.Delete(dir, recursive: false);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore empty dir cleanup errors
+        }
+
+        return pruned;
+    }
+
+    private static void AddManifestAssetPath(string? rawPath, HashSet<string> keepRelativePaths)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath)) return;
+        var norm = rawPath.Replace('\\', '/').TrimStart('/');
+        const string assetsPrefix = "assets/";
+        if (norm.StartsWith(assetsPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            norm = norm[assetsPrefix.Length..];
+        }
+        if (!string.IsNullOrWhiteSpace(norm))
+        {
+            keepRelativePaths.Add(norm);
         }
     }
 
@@ -661,7 +845,7 @@ public sealed class KarobarCliCommandRunner
         {
             var inspection = await _importEngine.InspectAndProposeMappingAsync(token, cancellationToken);
             var importSummary = await _importEngine.ExecuteImportAsync(db, token, mode, cancellationToken);
-            var reconciliation = await _importEngine.RunPostImportReconciliationAsync(db, cancellationToken);
+            var reconciliation = importSummary.TryGetValue("reconciliation", out var recObj) ? recObj : null;
 
             return new CliCommandResult
             {
@@ -1583,7 +1767,6 @@ public sealed class KarobarCliCommandRunner
         }
 
         var backupDir = Path.Combine(_appRoot, "storage", "app", "backups");
-        Directory.CreateDirectory(backupDir);
         var filename = $"karobar-backup-{now:yyyy-MM-dd-HHmmss}.zip";
         var fullPath = Path.Combine(backupDir, filename);
 
@@ -1591,70 +1774,105 @@ public sealed class KarobarCliCommandRunner
         string? tempSnapshot = null;
         try
         {
-            if (File.Exists(sourceDb))
-            {
-                tempSnapshot = Path.Combine(Path.GetTempPath(), $"karobar-sched-snap-{Guid.NewGuid():N}.sqlite");
-                using (var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;Pooling=False;"))
-                using (var dstConn = new SqliteConnection($"Data Source={tempSnapshot};Mode=ReadWriteCreate;Pooling=False;"))
-                {
-                    await srcConn.OpenAsync(cancellationToken);
-                    await dstConn.OpenAsync(cancellationToken);
-                    srcConn.BackupDatabase(dstConn);
-                }
-            }
-
-            using (var zipStream = new FileStream(fullPath, FileMode.Create))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
-            {
-                if (tempSnapshot != null && File.Exists(tempSnapshot))
-                {
-                    archive.CreateEntryFromFile(tempSnapshot, "database.sqlite", CompressionLevel.Optimal);
-                }
-                else
-                {
-                    var entry = archive.CreateEntry("manifest.json");
-                    await using var writer = new StreamWriter(entry.Open());
-                    await writer.WriteAsync(JsonSerializer.Serialize(new { created_at = now.ToString("O"), type = schedule.BackupType }));
-                }
-            }
-        }
-        finally
-        {
-            try { if (tempSnapshot != null && File.Exists(tempSnapshot)) File.Delete(tempSnapshot); } catch { }
-        }
-
-        if (schedule.StorageDestination == "custom_folder" &&
-            !string.IsNullOrWhiteSpace(schedule.CustomBackupPath) &&
-            Directory.Exists(schedule.CustomBackupPath))
-        {
+            Directory.CreateDirectory(backupDir);
             try
             {
-                File.Copy(fullPath, Path.Combine(schedule.CustomBackupPath, filename), overwrite: true);
+                if (File.Exists(sourceDb))
+                {
+                    tempSnapshot = Path.Combine(Path.GetTempPath(), $"karobar-sched-snap-{Guid.NewGuid():N}.sqlite");
+                    using (var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;Pooling=False;"))
+                    using (var dstConn = new SqliteConnection($"Data Source={tempSnapshot};Mode=ReadWriteCreate;Pooling=False;"))
+                    {
+                        await srcConn.OpenAsync(cancellationToken);
+                        await dstConn.OpenAsync(cancellationToken);
+                        srcConn.BackupDatabase(dstConn);
+                    }
+                }
+
+                using (var zipStream = new FileStream(fullPath, FileMode.Create))
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
+                {
+                    if (tempSnapshot != null && File.Exists(tempSnapshot))
+                    {
+                        archive.CreateEntryFromFile(tempSnapshot, "database.sqlite", CompressionLevel.Optimal);
+                    }
+                    else
+                    {
+                        var entry = archive.CreateEntry("manifest.json");
+                        await using var writer = new StreamWriter(entry.Open());
+                        await writer.WriteAsync(JsonSerializer.Serialize(new { created_at = now.ToString("O"), type = schedule.BackupType }));
+                    }
+                }
             }
-            catch
+            finally
             {
-                // Ignore mirror error
+                try { if (tempSnapshot != null && File.Exists(tempSnapshot)) File.Delete(tempSnapshot); } catch { }
             }
+
+            if (schedule.StorageDestination == "custom_folder" &&
+                !string.IsNullOrWhiteSpace(schedule.CustomBackupPath) &&
+                Directory.Exists(schedule.CustomBackupPath))
+            {
+                try
+                {
+                    File.Copy(fullPath, Path.Combine(schedule.CustomBackupPath, filename), overwrite: true);
+                }
+                catch (Exception mirrorEx)
+                {
+                    _logger?.LogWarning(mirrorEx, "Scheduled backup mirror copy to {CustomBackupPath} failed.", schedule.CustomBackupPath);
+                }
+            }
+
+            var fileSize = new FileInfo(fullPath).Length;
+            var log = new BackupLog
+            {
+                Filename = filename,
+                Path = $"backups/{filename}",
+                Type = schedule.BackupType ?? "full",
+                Size = fileSize,
+                Status = "completed",
+                IsAutomated = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.BackupLogs.Add(log);
+
+            schedule.LastRunAt = DateTime.UtcNow;
+            schedule.LastRunStatus = "success";
+            schedule.LastErrorMessage = null;
+            await db.SaveChangesAsync(cancellationToken);
         }
-
-        var fileSize = new FileInfo(fullPath).Length;
-        var log = new BackupLog
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Filename = filename,
-            Path = $"backups/{filename}",
-            Type = schedule.BackupType ?? "full",
-            Size = fileSize,
-            Status = "completed",
-            IsAutomated = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-        db.BackupLogs.Add(log);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Scheduled backup failed for {BackupPath}.", fullPath);
+            schedule.LastRunAt = DateTime.UtcNow;
+            schedule.LastRunStatus = "failed";
+            schedule.LastErrorMessage = ex.Message;
+            try
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception saveEx)
+            {
+                _logger?.LogWarning(saveEx, "Failed to persist scheduled backup failure status.");
+            }
 
-        schedule.LastRunAt = DateTime.UtcNow;
-        schedule.LastRunStatus = "success";
-        schedule.LastErrorMessage = null;
-        await db.SaveChangesAsync(cancellationToken);
+            return new CliCommandResult
+            {
+                ExitCode = 1,
+                Output = $"Scheduled backup failed: {ex.Message}",
+                Data = new Dictionary<string, object?>
+                {
+                    ["ok"] = false,
+                    ["ran"] = false,
+                    ["error"] = ex.Message
+                }
+            };
+        }
 
         // Apply retention pruning on automated backups if MaxBackupsKeep > 0 or RetentionDays > 0
         if (schedule.MaxBackupsKeep > 0 || schedule.RetentionDays > 0)
@@ -1737,34 +1955,101 @@ public sealed class KarobarCliCommandRunner
         var now = DateTime.UtcNow;
         var cutoff = now.AddDays(-1);
 
-        var query = db.UserDemands.Where(d => d.Status == "pending");
+        var query = db.UserDemands
+            .Include(d => d.Product)
+            .Include(d => d.Customer)
+            .Where(d => d.Status == "pending");
         if (!force)
         {
             query = query.Where(d => d.LastNotifiedAt == null || d.LastNotifiedAt < cutoff);
         }
 
-        var dueDemands = await query.ToListAsync(cancellationToken);
+        var dueDemands = await query
+            .OrderBy(d => d.Id)
+            .ToListAsync(cancellationToken);
+
+        var notifications = new List<Dictionary<string, object?>>();
+        var notifiedIds = new List<long>();
+        var digestLines = new List<string>();
+        var notifiedAtIso = now.ToString("O");
+
         foreach (var demand in dueDemands)
         {
             demand.LastNotifiedAt = now;
+            demand.UpdatedAt = now;
+            notifiedIds.Add(demand.Id);
+
+            var itemName = !string.IsNullOrWhiteSpace(demand.Product?.Name)
+                ? demand.Product!.Name
+                : (!string.IsNullOrWhiteSpace(demand.RequestedName) ? demand.RequestedName! : $"Demand #{demand.Id}");
+            var customerName = demand.Customer?.Name;
+
+            notifications.Add(new Dictionary<string, object?>
+            {
+                ["demand_id"] = demand.Id,
+                ["product_id"] = demand.ProductId,
+                ["product_name"] = itemName,
+                ["requested_quantity"] = demand.RequestedQuantity,
+                ["customer_name"] = customerName,
+                ["notes"] = demand.Notes,
+                ["route"] = "/user-demands",
+                ["notified_at"] = notifiedAtIso
+            });
+
+            var customerSegment = string.IsNullOrWhiteSpace(customerName) ? "" : $" | Customer: {customerName}";
+            var noteSegment = string.IsNullOrWhiteSpace(demand.Notes) ? "" : $" | Notes: {demand.Notes}";
+            digestLines.Add($"- [Demand #{demand.Id}] {itemName} x{demand.RequestedQuantity}{customerSegment}{noteSegment} -> /user-demands");
         }
 
         if (dueDemands.Count > 0)
         {
             await db.SaveChangesAsync(cancellationToken);
+
+            _logger?.LogInformation(
+                "demands:notify stamped {Count} pending user demand(s): {DemandIds}",
+                dueDemands.Count,
+                string.Join(",", notifiedIds));
+
+            try
+            {
+                var logDir = Path.Combine(_appRoot, "storage", "logs");
+                Directory.CreateDirectory(logDir);
+                var logPath = Path.Combine(logDir, "demand-notifications.log");
+                if (File.Exists(logPath) && new FileInfo(logPath).Length > 2 * 1024 * 1024)
+                {
+                    File.WriteAllText(logPath, string.Empty, new UTF8Encoding(false));
+                }
+                var entry = $"[{notifiedAtIso}] Notified {dueDemands.Count} pending user demand(s):\n"
+                            + string.Join("\n", digestLines) + "\n";
+                await File.AppendAllTextAsync(logPath, entry, new UTF8Encoding(false), cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger?.LogWarning(ex, "Could not append to storage/logs/demand-notifications.log.");
+            }
         }
 
         var pendingCount = await db.UserDemands.CountAsync(d => d.Status == "pending", cancellationToken);
+        var outputBuilder = new StringBuilder();
+        outputBuilder.Append($"User demands notified: {dueDemands.Count}\nPending user demands still active: {pendingCount}");
+        if (digestLines.Count > 0)
+        {
+            outputBuilder.Append('\n');
+            outputBuilder.Append(string.Join('\n', digestLines));
+        }
 
         return new CliCommandResult
         {
             ExitCode = 0,
-            Output = $"User demands notified: {dueDemands.Count}\nPending user demands still active: {pendingCount}",
+            Output = outputBuilder.ToString(),
             Data = new Dictionary<string, object?>
             {
                 ["ok"] = true,
                 ["notified_count"] = dueDemands.Count,
-                ["pending_count"] = pendingCount
+                ["pending_count"] = pendingCount,
+                ["notified_ids"] = notifiedIds,
+                ["notifications"] = notifications,
+                ["notified_at"] = notifiedAtIso
             }
         };
     }

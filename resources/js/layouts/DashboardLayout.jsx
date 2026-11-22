@@ -170,11 +170,10 @@ export default function DashboardLayout({ children }) {
       "/user-demands": "User Demands",
       "/user-demands/create": "Request Product",
       "/settings": "Settings",
-      "/server-dashboard": "Linux Server & Attached Terminals Dashboard",
-      "/terminals": "Linux Server & Attached Terminals Dashboard",
+      "/server-dashboard": "Server & Attached Terminals Dashboard",
+      "/terminals": "Server & Attached Terminals Dashboard",
       "/settings/sqlite-import": "SQLite Data Import & Migration Studio",
       "/sqlite-import": "SQLite Data Import & Migration Studio",
-      "/reports": "Reports",
       "/users": "Users",
       "/users/create": "Add User",
       "/roles": "Roles",
@@ -191,7 +190,6 @@ export default function DashboardLayout({ children }) {
       "/reports/sale-returns": "Sale Returns Report",
       "/reports/purchase-summary": "Purchase Summary Report",
       "/reports/outstanding-aging": "Outstanding Aging Report",
-      "/reports/overdue-work-queue": "Overdue Work Queue",
       "/reports/reorder": "Low Stock & Reorder Report",
       "/supplier-ledger": "Supplier Ledger",
       "/customer-ledger": "Customer Ledger",
@@ -301,8 +299,6 @@ export default function DashboardLayout({ children }) {
         window.dispatchEvent(new CustomEvent("open-accounts-register"));
       } else if (cmd === "open-cash-drawer") {
         window.dispatchEvent(new CustomEvent("open-cash-drawer"));
-      } else if (cmd === "open-license-viewer") {
-        window.dispatchEvent(new CustomEvent("open-license-viewer"));
       } else if (cmd === "open-shortcuts-modal") {
         window.dispatchEvent(new CustomEvent("open-shortcuts-modal"));
       } else if (cmd === "open-page-search") {

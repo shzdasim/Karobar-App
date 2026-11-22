@@ -6654,130 +6654,6 @@
       "workflowId": null
     },
     {
-      "id": "screen:/reports",
-      "route": "/reports",
-      "category": "reports",
-      "title": {
-        "en": "Business Reports Center",
-        "ur": "کاروباری رپورٹس کا مرکز"
-      },
-      "section": {
-        "en": "Reports",
-        "ur": "رپورٹس اور تجزیہ"
-      },
-      "summary": {
-        "en": "Comprehensive suite of Financial, Tax, Sales, Purchase, Return, and Inventory reports with date filtering, PDF download, and direct printing.",
-        "ur": "مالیاتی، ٹیکس، سیلز، خریداری اور اسٹاک کی تمام تفصیلی رپورٹس۔ ہر رپورٹ کو تاریخ کے لحاظ سے فلٹر کیا جا سکتا ہے اور PDF یا پرنٹ نکالا جا سکتا ہے۔"
-      },
-      "features": {
-        "en": [
-          "Financial & Tax Reports (P&L, Tax Return, COGS, Aging).",
-          "Sales & Purchase Detail/Summary Reports.",
-          "Stock Valuation, Low Stock Reorder, Comprehensive Ledger & Near-Expiry Reports."
-        ],
-        "ur": [
-          "نفع و نقصان، ٹیکس گوشوارہ، لاگت (COGS) اور بقایاجات کی رپورٹس۔",
-          "سیلز، پرچیز اور ریٹرنز کی تفصیلی رپورٹس۔",
-          "موجودہ اسٹاک کی مالیت، کم اسٹاک اور ایکسپائری رپورٹس۔"
-        ]
-      },
-      "steps": {
-        "en": [
-          "Pick any report from the Reports menu in the sidebar or search via Ctrl+K."
-        ],
-        "ur": [
-          "سائیڈ بار کے Reports مینو سے یا Ctrl+K دبا کر مطلوبہ رپورٹ منتخب کریں۔"
-        ]
-      },
-      "impacts": {
-        "en": "Read-only analytical reporting suite.",
-        "ur": "کاروباری تجزیے اور پرنٹنگ کے لیے رپورٹس۔"
-      },
-      "shortcuts": [
-        {
-          "keys": [
-            "Ctrl",
-            "K"
-          ],
-          "en": "Quick Search Any Report",
-          "ur": "کوئی بھی رپورٹ فوری تلاش کریں"
-        }
-      ],
-      "faqs": [],
-      "fields": [
-        {
-          "term": {
-            "en": "Control / Feature 1",
-            "ur": "خصوصیت 1"
-          },
-          "type": "Filter / Column",
-          "en": "Financial & Tax Reports (P&L, Tax Return, COGS, Aging).",
-          "ur": "نفع و نقصان، ٹیکس گوشوارہ، لاگت (COGS) اور بقایاجات کی رپورٹس۔"
-        },
-        {
-          "term": {
-            "en": "Control / Feature 2",
-            "ur": "خصوصیت 2"
-          },
-          "type": "Filter / Column",
-          "en": "Sales & Purchase Detail/Summary Reports.",
-          "ur": "سیلز، پرچیز اور ریٹرنز کی تفصیلی رپورٹس۔"
-        },
-        {
-          "term": {
-            "en": "Control / Feature 3",
-            "ur": "خصوصیت 3"
-          },
-          "type": "Filter / Column",
-          "en": "Stock Valuation, Low Stock Reorder, Comprehensive Ledger & Near-Expiry Reports.",
-          "ur": "موجودہ اسٹاک کی مالیت، کم اسٹاک اور ایکسپائری رپورٹس۔"
-        }
-      ],
-      "example": {
-        "title": {
-          "en": "How to Audit with Business Reports Center",
-          "ur": "اس رپورٹ سے آڈٹ کرنے کا طریقہ"
-        },
-        "en": "Select your target date range at the top of **Business Reports Center**, review the summary KPI totals, and click any invoice or party row to verify its underlying source transaction.",
-        "ur": "اوپر تاریخ منتخب کریں، کل اعداد و شمار (KPIs) چیک کریں اور تفصیل دیکھنے کے لیے متعلقہ لائن کا جائزہ لیں۔"
-      },
-      "impactMatrix": {
-        "stock": {
-          "en": "Read-only analytical report — never alters live stock.",
-          "ur": "صرف معلوماتی رپورٹ—اسٹاک تبدیل نہیں کرتی۔"
-        },
-        "ledger": {
-          "en": "Read-only — reflects posted Customer & Supplier ledgers.",
-          "ur": "صرف معلوماتی—پوسٹ شدہ کھاتے دکھاتی ہے۔"
-        },
-        "treasury": {
-          "en": "Read-only — reflects posted Cash & Bank movements.",
-          "ur": "صرف معلوماتی—کیش اور بینک کا خلاصہ۔"
-        },
-        "gl": {
-          "en": "Read-only — reconciles with General Ledger balances.",
-          "ur": "صرف معلوماتی—جنرل لیجر کے مطابق۔"
-        }
-      },
-      "commonMistake": {
-        "en": "If a recent bill isn't appearing in the report, check the top Date Range filter and ensure the invoice was Saved (not left on Hold).",
-        "ur": "اگر کوئی نیا بل رپورٹ میں نظر نہ آئے تو اوپر تاریخ کا فلٹر چیک کریں۔"
-      },
-      "relatedRoutes": [
-        {
-          "path": "/reports/net-profit",
-          "en": "Net Profit (P&L)",
-          "ur": "نفع و نقصان (P&L)"
-        },
-        {
-          "path": "/reports/current-stock",
-          "en": "Current Stock Report",
-          "ur": "موجودہ اسٹاک رپورٹ"
-        }
-      ],
-      "workflowId": null
-    },
-    {
       "id": "screen:/reports/net-profit",
       "route": "/reports/net-profit",
       "category": "reports",
@@ -7230,21 +7106,25 @@
       "features": {
         "en": [
           "Aging Buckets showing how long balances have been outstanding.",
+          "Collections Work Queue tab prioritizing overdue invoices by days past their payment Due Date and balance amount.",
           "Direct contact numbers and printable aging schedules for recovery staff."
         ],
         "ur": [
           "واضح ایجنگ کالم (30، 60، 90+ دن) جن سے معلوم ہوتا ہے کہ کون سا ادھار کتنا پرانا ہے۔",
+          "Collections Work Queue ٹیب: ان ادھار بلوں کی فہرست جن کی ادائیگی کی مقررہ تاریخ (Due Date) گزر چکی ہے اور بقایا رقم کی تفصیل۔",
           "ریکوری اسٹاف کے لیے پرنٹ اور پی ڈی ایف ایکسپورٹ۔"
         ]
       },
       "steps": {
         "en": [
           "Review the aging buckets and identify accounts in the 60+ or 90+ day columns.",
+          "Switch to the Collections Work Queue tab to contact customers with past-due invoices and record payments in Customer Ledger.",
           "Print or export the PDF for collection follow-up."
         ],
         "ur": [
           "پرانے بقایاجات والے گاہکوں کی فہرست چیک کریں۔",
-          "ریکوری کے لیے رپورٹ پرنٹ کریں یا کسٹمر کھاتے میں جا کر وصولی درج کریں۔"
+          "Collections Work Queue ٹیب کھول کر مقررہ تاریخ سے گزر جانے والے بلوں پر گاہکوں سے رابطہ کریں اور کسٹمر کھاتے میں وصولی درج کریں۔",
+          "ریکوری کے لیے رپورٹ پرنٹ کریں یا PDF ایکسپورٹ کریں۔"
         ]
       },
       "impacts": {
@@ -7266,7 +7146,16 @@
         {
           "term": {
             "en": "Control / Feature 2",
-            "ur": "خصوصیت 2"
+            "ur": "Collections Work Queue ٹیب"
+          },
+          "type": "Filter / Column",
+          "en": "Collections Work Queue tab prioritizing overdue invoices by days past their payment Due Date and balance amount.",
+          "ur": "Collections Work Queue ٹیب: ان ادھار بلوں کی فہرست جن کی ادائیگی کی مقررہ تاریخ (Due Date) گزر چکی ہے اور بقایا رقم کی تفصیل۔"
+        },
+        {
+          "term": {
+            "en": "Control / Feature 3",
+            "ur": "خصوصیت 3"
           },
           "type": "Filter / Column",
           "en": "Direct contact numbers and printable aging schedules for recovery staff.",
@@ -7313,94 +7202,6 @@
           "path": "/supplier-ledger",
           "en": "Supplier Ledger",
           "ur": "سپلائر کھاتہ"
-        }
-      ],
-      "workflowId": null
-    },
-    {
-      "id": "screen:/reports/overdue-work-queue",
-      "route": "/reports/overdue-work-queue",
-      "category": "reports",
-      "title": {
-        "en": "Overdue Collections Work Queue",
-        "ur": "واجب الادا وصولیوں کی فہرست (Overdue Queue)"
-      },
-      "section": {
-        "en": "Reports — Financial & Tax",
-        "ur": "رپورٹس — مالیاتی اور ٹیکس"
-      },
-      "summary": {
-        "en": "Actionable follow-up queue of invoices that have passed their payment Due Date.",
-        "ur": "ان ادھار بلوں کی فہرست جن کی ادائیگی کی مقررہ تاریخ (Due Date) گزر چکی ہے تاکہ گاہکوں سے فوری رابطہ کیا جا سکے۔"
-      },
-      "features": {
-        "en": [
-          "Prioritizes overdue invoices by days past due and balance amount."
-        ],
-        "ur": [
-          "مقررہ تاریخ سے اوپر ہونے والے دنوں اور بقایا رقم کی تفصیل۔"
-        ]
-      },
-      "steps": {
-        "en": [
-          "Contact customers listed in the queue and record payments in Customer Ledger."
-        ],
-        "ur": [
-          "فہرست میں موجود گاہکوں سے رابطہ کریں اور وصولی درج کریں۔"
-        ]
-      },
-      "impacts": {
-        "en": "Read-only collections queue.",
-        "ur": "ریکوری فالو اپ رپورٹ۔"
-      },
-      "shortcuts": [],
-      "faqs": [],
-      "fields": [
-        {
-          "term": {
-            "en": "Control / Feature 1",
-            "ur": "خصوصیت 1"
-          },
-          "type": "Filter / Column",
-          "en": "Prioritizes overdue invoices by days past due and balance amount.",
-          "ur": "مقررہ تاریخ سے اوپر ہونے والے دنوں اور بقایا رقم کی تفصیل۔"
-        }
-      ],
-      "example": {
-        "title": {
-          "en": "How to Audit with Overdue Collections Work Queue",
-          "ur": "اس رپورٹ سے آڈٹ کرنے کا طریقہ"
-        },
-        "en": "Select your target date range at the top of **Overdue Collections Work Queue**, review the summary KPI totals, and click any invoice or party row to verify its underlying source transaction.",
-        "ur": "اوپر تاریخ منتخب کریں، کل اعداد و شمار (KPIs) چیک کریں اور تفصیل دیکھنے کے لیے متعلقہ لائن کا جائزہ لیں۔"
-      },
-      "impactMatrix": {
-        "stock": {
-          "en": "Read-only analytical report — never alters live stock.",
-          "ur": "صرف معلوماتی رپورٹ—اسٹاک تبدیل نہیں کرتی۔"
-        },
-        "ledger": {
-          "en": "Read-only — reflects posted Customer & Supplier ledgers.",
-          "ur": "صرف معلوماتی—پوسٹ شدہ کھاتے دکھاتی ہے۔"
-        },
-        "treasury": {
-          "en": "Read-only — reflects posted Cash & Bank movements.",
-          "ur": "صرف معلوماتی—کیش اور بینک کا خلاصہ۔"
-        },
-        "gl": {
-          "en": "Read-only — reconciles with General Ledger balances.",
-          "ur": "صرف معلوماتی—جنرل لیجر کے مطابق۔"
-        }
-      },
-      "commonMistake": {
-        "en": "If a recent bill isn't appearing in the report, check the top Date Range filter and ensure the invoice was Saved (not left on Hold).",
-        "ur": "اگر کوئی نیا بل رپورٹ میں نظر نہ آئے تو اوپر تاریخ کا فلٹر چیک کریں۔"
-      },
-      "relatedRoutes": [
-        {
-          "path": "/reports/outstanding-aging",
-          "en": "Outstanding Aging",
-          "ur": "ایجنگ رپورٹ"
         }
       ],
       "workflowId": null
@@ -11723,18 +11524,13 @@
         "en": "How to Check Overdue Bills & 30/60/90-Day Aging Reports",
         "ur": "پرانے بقایاجات (Aging Report) اور واجب الادا بلوں کی ریکوری لسٹ"
       },
-      "en": "To follow up on old unpaid balances:\n\n1. **Outstanding Aging Report (`/reports/outstanding-aging`):** Groups customer receivables and supplier payables into **0–30**, **31–60**, **61–90**, and **90+ Days Overdue** buckets.\n2. **Overdue Collections Work Queue (`/reports/overdue-work-queue`):** Lists every credit invoice that has passed its promised **Due Date** so recovery staff can call customers directly.",
-      "ur": "پرانے ادھار کی ریکوری کے لیے یہ **2 رپورٹس** دیکھیں:\n\n1. **بقایاجات ایجنگ رپورٹ (`/reports/outstanding-aging`):** گاہکوں کے ادھار کو `30`، `60` اور `90+` دنوں کے حساب سے الگ الگ دکھاتی ہے۔\n2. **واجب الادا وصولیوں کی فہرست (`/reports/overdue-work-queue`):** ان بلوں کی فہرست جن کی ادائیگی کی تاریخ (Due Date) گزر چکی ہے۔",
+      "en": "To follow up on old unpaid balances, open **Outstanding Aging Report (`/reports/outstanding-aging`)**:\n\n1. **Aging Buckets:** Groups customer receivables and supplier payables into **0–30**, **31–60**, **61–90**, and **90+ Days Overdue** buckets.\n2. **Collections Work Queue Tab:** Switch to the **Collections Work Queue** tab inside `/reports/outstanding-aging` to see every credit invoice that has passed its promised **Due Date** so recovery staff can call customers directly.",
+      "ur": "پرانے ادھار کی ریکوری کے لیے **بقایاجات ایجنگ رپورٹ (`/reports/outstanding-aging`)** کھولیں:\n\n1. **ایجنگ کالم:** گاہکوں کے ادھار کو `30`، `60` اور `90+` دنوں کے حساب سے الگ الگ دکھاتی ہے۔\n2. **واجب الادا وصولیوں کی فہرست (Collections Work Queue ٹیب):** اسی اسکرین کے **Collections Work Queue** ٹیب میں ان بلوں کی فہرست ملتی ہے جن کی ادائیگی کی تاریخ (Due Date) گزر چکی ہے۔",
       "links": [
         {
           "path": "/reports/outstanding-aging",
-          "en": "Outstanding Aging Report",
-          "ur": "ایجنگ رپورٹ کھولیں"
-        },
-        {
-          "path": "/reports/overdue-work-queue",
-          "en": "Overdue Work Queue",
-          "ur": "واجب الادا وصولیاں"
+          "en": "Outstanding Aging & Collections Work Queue",
+          "ur": "ایجنگ رپورٹ اور واجب الادا وصولیاں"
         }
       ]
     },

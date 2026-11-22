@@ -39,9 +39,8 @@ public static class CommandLineRouter
         {
             var arg = args[i]?.Trim() ?? "";
 
-            // Support `--cli <command> [args...]` or `--cli=<command>` or `artisan <command> [args...]`
-            if (string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(arg, "artisan", StringComparison.OrdinalIgnoreCase))
+            // Support `--cli <command> [args...]` or `--cli=<command>`
+            if (string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase))
             {
                 var cmd = i + 1 < args.Length ? args[i + 1] : "list";
                 var rest = i + 2 < args.Length ? args[(i + 2)..] : [];

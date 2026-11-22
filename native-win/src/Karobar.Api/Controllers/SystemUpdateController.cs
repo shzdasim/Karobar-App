@@ -3,6 +3,7 @@ using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Karobar.Api.Controllers;
 
@@ -116,6 +117,7 @@ public class SystemUpdateController : ApiControllerBase
 
     [HttpPost("install-update")]
     [Authorize]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> InstallUpdate()
     {
         if (!await IsAdminAsync())

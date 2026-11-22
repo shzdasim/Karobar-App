@@ -1,4 +1,5 @@
 using Karobar.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 
 namespace Karobar.Api.Middleware;
@@ -14,6 +15,11 @@ public class CheckTokenExpiryMiddleware
 
     public async Task InvokeAsync(HttpContext context, KarobarDb db)
     {
+        if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() != null)
+        {
+            await _next(context);
+            return;
+        }
         if (context.Items.TryGetValue("KarobarUser", out var userObj) &&
             userObj is Dictionary<string, object?> user)
         {

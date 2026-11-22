@@ -53,6 +53,8 @@ jobs:
         env:
           KAROBAR_APP_VERSION: ${{ inputs.app_version }}
           KAROBAR_SKIP_NPM_BUILD: "1"
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: ./native-win/build-native-win.ps1
 
       - name: Attest Build Provenance to GitHub (shzdasim/Karobar-App)

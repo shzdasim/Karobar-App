@@ -191,6 +191,15 @@ public sealed class PdfDocumentGenerator
                         headerCol.Item().PaddingTop(2).AlignCenter().Background(primaryHex).PaddingHorizontal(5).PaddingVertical(1.5f)
                             .Text($"{title} #{request.DocumentNumber}").Bold().FontSize(6.5f).FontColor(Colors.White);
                         headerCol.Item().AlignCenter().Text($"Date: {request.DocumentDate}").FontSize(5.8f);
+                        if (string.Equals(request.PdfDesign, "barcode", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var docNumPayload = string.IsNullOrWhiteSpace(request.DocumentNumber)
+                                ? "0000"
+                                : request.DocumentNumber.Trim();
+                            var barcodeSvg = PrintTemplateRenderer.GenerateCode128Svg(docNumPayload, 130, 28);
+                            headerCol.Item().PaddingTop(2).AlignCenter().Width(130).Height(28).Svg(barcodeSvg);
+                            headerCol.Item().AlignCenter().Text($"REF: {docNumPayload}").FontSize(5.5f).FontColor(secondaryHex);
+                        }
                         headerCol.Item().PaddingVertical(2).LineHorizontal(0.6f).LineColor(primaryHex);
                     }
                     else
@@ -220,8 +229,15 @@ public sealed class PdfDocumentGenerator
                                 right.Item().AlignRight().Text($"Date: {request.DocumentDate}").FontSize(9.5f).FontColor(secondaryHex);
                                 if (string.Equals(request.PdfDesign, "barcode", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    right.Item().PaddingTop(3).AlignRight().Border(1).BorderColor("#d4d4d8").Background("#f4f4f5")
-                                        .PaddingHorizontal(6).PaddingVertical(2).Text($"REF: {request.DocumentNumber}").FontSize(8.5f);
+                                    var docNumPayload = string.IsNullOrWhiteSpace(request.DocumentNumber)
+                                        ? "0000"
+                                        : request.DocumentNumber.Trim();
+                                    var barcodeSvg = PrintTemplateRenderer.GenerateCode128Svg(docNumPayload, 140, 32);
+                                    right.Item().PaddingTop(4).AlignRight().Column(barCol =>
+                                    {
+                                        barCol.Item().AlignRight().Width(140).Height(32).Svg(barcodeSvg);
+                                        barCol.Item().PaddingTop(1).AlignRight().Text($"REF: {docNumPayload}").FontSize(7.5f).FontColor(secondaryHex);
+                                    });
                                 }
                             });
                         });

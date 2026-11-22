@@ -4,6 +4,7 @@ using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Karobar.Api.Controllers;
 
@@ -29,6 +30,7 @@ public class LicenseController : ApiControllerBase
     }
 
     [HttpPost("activate")]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> Activate()
     {
         var userId = CurrentUserId;
@@ -38,7 +40,7 @@ public class LicenseController : ApiControllerBase
             SELECT COUNT(1)
             FROM model_has_roles mhr
             INNER JOIN roles r ON r.id = mhr.role_id
-            WHERE LOWER(r.name) = 'admin'") > 0;
+            WHERE LOWER(r.name) IN ('admin', 'super-admin', 'super admin')") > 0;
 
         if (hasAnyAdmins && !await IsAdminAsync() && !await CanAsync("settings.update"))
         {
@@ -74,6 +76,7 @@ public class LicenseController : ApiControllerBase
     }
 
     [HttpPost("deactivate")]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> Deactivate()
     {
         var userId = CurrentUserId;

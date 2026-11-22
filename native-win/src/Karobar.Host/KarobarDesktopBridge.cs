@@ -108,6 +108,7 @@ public sealed class KarobarDesktopBridge
     private readonly WebView2WindowManager _windowManager;
     private readonly Func<IServiceProvider?>? _serviceProviderAccessor;
     private readonly Karobar.Host.Mascot.MascotPreferencesStore _mascotPrefs = new();
+    private readonly Karobar.Printing.Win32RawPrinterService _rawPrinterService;
 
     private List<PrinterInfoDto>? _cachedPrinters;
     private long _cachedPrintersAt;
@@ -127,6 +128,17 @@ public sealed class KarobarDesktopBridge
         _networkConfig = networkConfig;
         _windowManager = windowManager;
         _serviceProviderAccessor = serviceProviderAccessor;
+        _rawPrinterService = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
+        _rawPrinterService.NativePdfPrintFallback = async (pdfPathArg, printerNameArg, isThermalArg, _) =>
+        {
+            if (NativeSilentPrintExecutor == null || string.IsNullOrWhiteSpace(pdfPathArg) || !File.Exists(pdfPathArg))
+            {
+                return (false, null, "Desktop silent print host is unavailable.");
+            }
+            var pdfFileUri = new Uri(Path.GetFullPath(pdfPathArg)).AbsoluteUri;
+            var res = await NativeSilentPrintExecutor(pdfFileUri, null, printerNameArg, isThermalArg);
+            return (res.Ok, res.Engine ?? "webview2-pdf-fallback", res.Error);
+        };
         _windowManager.OnRunBackupRequested = async () => await RunBackupNowAsync();
     }
 
@@ -152,6 +164,7 @@ public sealed class KarobarDesktopBridge
     /// Signature: (targetUrl, targetHtml, printerName, isThermal) => (Ok, Engine, Error).
     /// </summary>
     public Func<string?, string?, string, bool, Task<(bool Ok, string? Engine, string? Error)>>? NativeSilentPrintExecutor { get; set; }
+    public Func<Task<IReadOnlyList<PrinterInfoDto>>>? PrinterListProvider { get; set; }
     public Func<Task>? OnStopBackendServices { get; set; }
 
     // =========================================================================
@@ -568,98 +581,54 @@ public sealed class KarobarDesktopBridge
             return _cachedPrinters;
         }
 
+        if (PrinterListProvider != null)
+        {
+            var customList = (await PrinterListProvider()).ToList();
+            _cachedPrinters = customList;
+            _cachedPrintersAt = Environment.TickCount64;
+            return customList;
+        }
+
         var preferredName = ReadPreferredPrinterConfig();
         var printers = new List<PrinterInfoDto>();
-        var wmiSucceeded = !OperatingSystem.IsWindows();
 
         if (OperatingSystem.IsWindows())
         {
-            Process? proc = null;
             try
             {
-                proc = new Process
+                var nativePrinters = await _rawPrinterService.GetPrintersAsync(forceRefresh);
+                foreach (var np in nativePrinters)
                 {
-                    StartInfo = new ProcessStartInfo
+                    printers.Add(new PrinterInfoDto
                     {
-                        FileName = "powershell.exe",
-                        Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance -ClassName Win32_Printer -Property Name,Default,WorkOffline,PrinterStatus,PortName,DriverName | Select-Object Name,Default,WorkOffline,PrinterStatus,PortName,DriverName | ConvertTo-Json -Compress\"",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        StandardOutputEncoding = Encoding.UTF8
-                    }
-                };
-
-                proc.Start();
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(4500));
-                var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
-                await proc.WaitForExitAsync(cts.Token);
-                wmiSucceeded = proc.ExitCode == 0;
-
-                if (!string.IsNullOrWhiteSpace(stdout))
-                {
-                    using var doc = JsonDocument.Parse(stdout.Trim());
-                    var items = doc.RootElement.ValueKind == JsonValueKind.Array
-                        ? doc.RootElement.EnumerateArray().ToList()
-                        : [doc.RootElement];
-
-                    foreach (var row in items)
-                    {
-                        var pName = row.TryGetProperty("Name", out var nProp) && nProp.ValueKind == JsonValueKind.String
-                            ? nProp.GetString() ?? ""
-                            : "";
-                        if (string.IsNullOrWhiteSpace(pName)) continue;
-
-                        var isDef = row.TryGetProperty("Default", out var dProp) && dProp.ValueKind == JsonValueKind.True;
-                        var workOff = row.TryGetProperty("WorkOffline", out var wProp) && wProp.ValueKind == JsonValueKind.True;
-                        var pStatus = row.TryGetProperty("PrinterStatus", out var sProp) && sProp.TryGetInt32(out var st) ? st : 0;
-                        var port = row.TryGetProperty("PortName", out var ptProp) && ptProp.ValueKind == JsonValueKind.String
-                            ? ptProp.GetString()
-                            : "";
-                        var driver = row.TryGetProperty("DriverName", out var drProp) && drProp.ValueKind == JsonValueKind.String
-                            ? drProp.GetString()
-                            : "";
-
-                        printers.Add(ClassifyPrinterInfo(
-                            pName,
-                            pName,
-                            driver,
-                            port,
-                            statusMask: 0,
-                            wmiPrinterStatus: pStatus,
-                            isDefault: isDef,
-                            wmiWorkOffline: workOff,
-                            preferredName: preferredName));
-                    }
-                    wmiSucceeded = true;
+                        Name = np.Name,
+                        DisplayName = np.DisplayName,
+                        DriverName = np.DriverName,
+                        PortName = np.PortName,
+                        Status = np.Status,
+                        IsDefault = np.IsDefault,
+                        IsVirtual = np.IsVirtual,
+                        WorkOffline = np.WorkOffline,
+                        IsOnline = np.IsOnline,
+                        IsThermalPos = np.IsThermalPos,
+                        IsPreferred = !string.IsNullOrWhiteSpace(preferredName) &&
+                                      string.Equals(np.Name, preferredName, StringComparison.OrdinalIgnoreCase),
+                        IsLastUsedInChromium = false
+                    });
                 }
             }
             catch
             {
-                try
+                if (_cachedPrinters != null)
                 {
-                    if (proc is { HasExited: false })
-                    {
-                        proc.Kill(entireProcessTree: true);
-                    }
+                    return _cachedPrinters;
                 }
-                catch { }
-            }
-            finally
-            {
-                proc?.Dispose();
             }
         }
 
-        if (wmiSucceeded)
-        {
-            _cachedPrinters = printers;
-            _cachedPrintersAt = Environment.TickCount64;
-            return printers;
-        }
-
-        // Preserve any previously known good printer list on transient WMI timeout/failure
-        return _cachedPrinters ?? printers;
+        _cachedPrinters = printers;
+        _cachedPrintersAt = Environment.TickCount64;
+        return printers;
     }
 
     public Task<IReadOnlyList<PrinterInfoDto>> getPrinters() => GetPrintersAsync(true);
@@ -802,11 +771,16 @@ public sealed class KarobarDesktopBridge
 
         var candidates = new[]
         {
+            Path.Combine(_networkConfig.AppRoot, "assets", "SumatraPDF.exe"),
+            Path.Combine(_networkConfig.AppRoot, "assets", "SumatraPDF-3.4.6-32.exe"),
+            Path.Combine(_networkConfig.AppRoot, "native-win", "assets", "SumatraPDF.exe"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "SumatraPDF.exe"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "SumatraPDF-3.4.6-32.exe"),
             Path.Combine(_networkConfig.AppRoot, "desktop", "SumatraPDF.exe"),
             Path.Combine(_networkConfig.AppRoot, "desktop", "SumatraPDF-3.4.6-32.exe"),
             Path.Combine(AppContext.BaseDirectory, "desktop", "SumatraPDF.exe"),
             Path.Combine(AppContext.BaseDirectory, "SumatraPDF.exe"),
-            Path.Combine(_networkConfig.AppRoot, "desktop", "node_modules", "pdf-to-printer", "dist", "SumatraPDF-3.4.6-32.exe")
+            Path.Combine(AppContext.BaseDirectory, "SumatraPDF-3.4.6-32.exe")
         };
 
         foreach (var candidate in candidates)
@@ -861,10 +835,11 @@ public sealed class KarobarDesktopBridge
         var targetPrinter = strategy.DeviceName;
         var effectiveIsThermal = isThermal || (strategy.PrinterInfo?.IsThermalPos == true);
         var sumatraExe = ResolveSumatraPdfBinary();
+        var hasPdfFile = !string.IsNullOrWhiteSpace(pdfPath) && File.Exists(pdfPath);
 
-        if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(sumatraExe) && !string.IsNullOrWhiteSpace(pdfPath) && File.Exists(pdfPath))
+        if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(sumatraExe) && hasPdfFile)
         {
-            var sumatraRes = await SpoolPdfViaSumatraAsync(sumatraExe, pdfPath, targetPrinter, effectiveIsThermal, scaleMode, cancellationToken);
+            var sumatraRes = await SpoolPdfViaSumatraAsync(sumatraExe, pdfPath!, targetPrinter, effectiveIsThermal, scaleMode, cancellationToken);
             if (sumatraRes.Ok)
             {
                 return new
@@ -876,26 +851,61 @@ public sealed class KarobarDesktopBridge
             }
         }
 
+        var effectiveTargetUrl = targetUrl;
+        var effectiveTargetHtml = targetHtml;
+        if (hasPdfFile && string.IsNullOrWhiteSpace(effectiveTargetUrl) && string.IsNullOrWhiteSpace(effectiveTargetHtml))
+        {
+            effectiveTargetUrl = new Uri(Path.GetFullPath(pdfPath!)).AbsoluteUri;
+        }
+
         if (NativeSilentPrintExecutor != null)
         {
-            var nativeRes = await NativeSilentPrintExecutor(targetUrl, targetHtml, targetPrinter, effectiveIsThermal);
-            if (!nativeRes.Ok)
+            var nativeRes = await NativeSilentPrintExecutor(effectiveTargetUrl, effectiveTargetHtml, targetPrinter, effectiveIsThermal);
+            if (nativeRes.Ok)
             {
                 return new
                 {
-                    ok = false,
+                    ok = true,
                     printer = targetPrinter,
-                    engine = nativeRes.Engine ?? "webview2-silent-print",
-                    error = nativeRes.Error ?? $"Failed to print to '{targetPrinter}'."
+                    engine = nativeRes.Engine ?? (hasPdfFile ? "webview2-pdf-fallback" : "webview2-silent-print")
                 };
+            }
+
+            if (hasPdfFile && OperatingSystem.IsWindows())
+            {
+                var shellRes = await _rawPrinterService.SpoolPdfViaShellPrintToAsync(pdfPath!, targetPrinter, cancellationToken);
+                if (shellRes.Ok)
+                {
+                    return new
+                    {
+                        ok = true,
+                        printer = targetPrinter,
+                        engine = shellRes.Engine ?? "shell-printto"
+                    };
+                }
             }
 
             return new
             {
-                ok = true,
+                ok = false,
                 printer = targetPrinter,
-                engine = nativeRes.Engine ?? "webview2-silent-print"
+                engine = nativeRes.Engine ?? (hasPdfFile ? "webview2-pdf-fallback" : "webview2-silent-print"),
+                error = nativeRes.Error ?? $"Failed to print to '{targetPrinter}'."
             };
+        }
+
+        if (hasPdfFile && OperatingSystem.IsWindows())
+        {
+            var shellRes = await _rawPrinterService.SpoolPdfViaShellPrintToAsync(pdfPath!, targetPrinter, cancellationToken);
+            if (shellRes.Ok)
+            {
+                return new
+                {
+                    ok = true,
+                    printer = targetPrinter,
+                    engine = shellRes.Engine ?? "shell-printto"
+                };
+            }
         }
 
         return new
@@ -920,8 +930,7 @@ public sealed class KarobarDesktopBridge
             printerName = ReadPreferredPrinterConfig();
         }
 
-        var rawSvc = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
-        var res = await rawSvc.KickCashDrawerAsync(string.IsNullOrWhiteSpace(printerName) ? null : printerName);
+        var res = await _rawPrinterService.KickCashDrawerAsync(string.IsNullOrWhiteSpace(printerName) ? null : printerName);
         return new
         {
             ok = res.Ok,
@@ -952,9 +961,8 @@ public sealed class KarobarDesktopBridge
                 : ReadPreferredPrinterConfig();
         }
 
-        var rawSvc = new Karobar.Printing.Win32RawPrinterService(_networkConfig.AppRoot);
-        var bytes = rawSvc.BuildEscPosReceiptPayload(text, kickDrawer: kickDrawer);
-        var res = rawSvc.SendRawBytesToPrinter(printerName, bytes, "Karobar Thermal Receipt");
+        var bytes = _rawPrinterService.BuildEscPosReceiptPayload(text, kickDrawer: kickDrawer);
+        var res = _rawPrinterService.SendRawBytesToPrinter(printerName, bytes, "Karobar Thermal Receipt");
         return new
         {
             ok = res.Ok,
@@ -997,11 +1005,7 @@ public sealed class KarobarDesktopBridge
             resolvedUrl += (resolvedUrl.Contains('?') ? "&" : "?") + "silent_print=1";
         }
 
-        return await _windowManager.RunOffscreenPrintJobAsync(async printWin =>
-        {
-            printWin.LoadUrl(resolvedUrl);
-            return await ExecuteSilentPrintCoreAsync(payload, targetUrl: resolvedUrl, targetHtml: null, cancellationToken);
-        });
+        return await ExecuteSilentPrintCoreAsync(payload, targetUrl: resolvedUrl, targetHtml: null, cancellationToken);
     }
 
     public Task<object> printUrl(JsonElement payload) => PrintUrlAsync(payload);
@@ -1030,37 +1034,7 @@ public sealed class KarobarDesktopBridge
         sanitizedHtml = Regex.Replace(sanitizedHtml, @"window\.close\s*\(\s*\)", "void(0)");
         sanitizedHtml = InjectBaseHrefForPrintHtml(sanitizedHtml, _networkConfig.GetAppBaseUrl());
 
-        var tempFilePath = Path.Combine(
-            Path.GetTempPath(),
-            $"karobar-print-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Convert.ToHexString(RandomNumberGenerator.GetBytes(3)).ToLowerInvariant()}.html");
-
-        try
-        {
-            await File.WriteAllTextAsync(tempFilePath, sanitizedHtml, Encoding.UTF8, cancellationToken);
-            var fileUri = new Uri(tempFilePath).AbsoluteUri;
-            return await _windowManager.RunOffscreenPrintJobAsync(async printWin =>
-            {
-                printWin.LoadUrl(fileUri);
-                return await ExecuteSilentPrintCoreAsync(payload, targetUrl: fileUri, targetHtml: null, cancellationToken);
-            });
-        }
-        finally
-        {
-            _ = Task.Delay(15000).ContinueWith(_ =>
-            {
-                try
-                {
-                    if (File.Exists(tempFilePath))
-                    {
-                        File.Delete(tempFilePath);
-                    }
-                }
-                catch
-                {
-                    // Ignore temp file cleanup errors
-                }
-            });
-        }
+        return await ExecuteSilentPrintCoreAsync(payload, targetUrl: null, targetHtml: sanitizedHtml, cancellationToken);
     }
 
     public Task<object> printHtml(JsonElement payload) => PrintHtmlAsync(payload);
@@ -1153,39 +1127,29 @@ public sealed class KarobarDesktopBridge
     // 11 & 12. Native Dialogs (selectDirectory, selectSqliteFile)
     // =========================================================================
 
-    public async Task<string?> SelectDirectoryAsync()
+#if WINDOWS_DESKTOP
+    private System.Windows.Forms.Form? ResolveOwnerForm()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return null;
-        }
-
         try
         {
-            const string script = """
-                Add-Type -AssemblyName System.Windows.Forms
-                $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-                $dlg.Description = 'Select Backup Folder'
-                $dlg.ShowNewFolderButton = $true
-                if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                    [Console]::Out.Write($dlg.SelectedPath)
-                }
-                """;
-
-            using var proc = Process.Start(new ProcessStartInfo
+            var activeWin = _windowManager.GetActiveWindow();
+            if (activeWin is { IsDestroyed: false } && activeWin.Hwnd != IntPtr.Zero)
             {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -STA -WindowStyle Hidden -Command \"{script.Replace("\"", "\\\"")}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                StandardOutputEncoding = Encoding.UTF8
-            });
+                if (System.Windows.Forms.Control.FromHandle(activeWin.Hwnd) is System.Windows.Forms.Form matched &&
+                    !matched.IsDisposed && matched.IsHandleCreated)
+                {
+                    return matched;
+                }
+            }
 
-            if (proc == null) return null;
-            var output = (await proc.StandardOutput.ReadToEndAsync()).Trim();
-            await proc.WaitForExitAsync();
-            return string.IsNullOrWhiteSpace(output) ? null : output;
+            if (System.Windows.Forms.Form.ActiveForm is { IsDisposed: false, IsHandleCreated: true } activeForm)
+            {
+                return activeForm;
+            }
+
+            return System.Windows.Forms.Application.OpenForms
+                .OfType<NativeWebView2Form>()
+                .FirstOrDefault(f => !f.IsDisposed && f.IsHandleCreated);
         }
         catch
         {
@@ -1193,50 +1157,111 @@ public sealed class KarobarDesktopBridge
         }
     }
 
-    public Task<string?> selectDirectory() => SelectDirectoryAsync();
+    private Task<T> RunWinFormsDialogAsync<T>(
+        Func<System.Windows.Forms.IWin32Window?, T> showDialog,
+        T fallbackValue)
+    {
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = ResolveOwnerForm();
 
-    public async Task<object> SelectSqliteFileAsync()
+        if (owner is { IsDisposed: false, IsHandleCreated: true })
+        {
+            try
+            {
+                owner.BeginInvoke((Action)(() =>
+                {
+                    try
+                    {
+                        var dialogOwner = !owner.IsDisposed && owner.IsHandleCreated ? owner : null;
+                        tcs.TrySetResult(showDialog(dialogOwner));
+                    }
+                    catch
+                    {
+                        tcs.TrySetResult(fallbackValue);
+                    }
+                }));
+                return tcs.Task;
+            }
+            catch
+            {
+                // Fall through to STA thread fallback
+            }
+        }
+
+        var staThread = new Thread(() =>
+        {
+            try
+            {
+                tcs.TrySetResult(showDialog(null));
+            }
+            catch
+            {
+                tcs.TrySetResult(fallbackValue);
+            }
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.IsBackground = true;
+        staThread.Start();
+        return tcs.Task;
+    }
+#endif
+
+    public Task<string?> SelectDirectoryAsync()
     {
         if (!OperatingSystem.IsWindows())
         {
-            return new { canceled = true, filePath = (string?)null };
+            return Task.FromResult<string?>(null);
         }
 
-        try
+#if WINDOWS_DESKTOP
+        return RunWinFormsDialogAsync<string?>(owner =>
         {
-            const string script = """
-                Add-Type -AssemblyName System.Windows.Forms
-                $dlg = New-Object System.Windows.Forms.OpenFileDialog
-                $dlg.Title = 'Select SQLite Database to Import'
-                $dlg.Filter = 'SQLite Databases & Backups (*.sqlite;*.sqlite3;*.db;*.db3;*.zip;*.gz;*.sql)|*.sqlite;*.sqlite3;*.db;*.db3;*.zip;*.gz;*.sql|All Files (*.*)|*.*'
-                if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                    [Console]::Out.Write($dlg.FileName)
-                }
-                """;
-
-            using var proc = Process.Start(new ProcessStartInfo
+            using var dlg = new System.Windows.Forms.FolderBrowserDialog
             {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -STA -WindowStyle Hidden -Command \"{script.Replace("\"", "\\\"")}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                StandardOutputEncoding = Encoding.UTF8
-            });
+                Description = "Select Backup Folder",
+                UseDescriptionForTitle = true,
+                ShowNewFolderButton = true
+            };
+            return dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK &&
+                   !string.IsNullOrWhiteSpace(dlg.SelectedPath)
+                ? dlg.SelectedPath
+                : null;
+        }, null);
+#else
+        return Task.FromResult<string?>(null);
+#endif
+    }
 
-            if (proc == null) return new { canceled = true, filePath = (string?)null };
-            var output = (await proc.StandardOutput.ReadToEndAsync()).Trim();
-            await proc.WaitForExitAsync();
-            if (string.IsNullOrWhiteSpace(output))
+    public Task<string?> selectDirectory() => SelectDirectoryAsync();
+
+    public Task<object> SelectSqliteFileAsync()
+    {
+        object canceledResult = new { canceled = true, filePath = (string?)null };
+        if (!OperatingSystem.IsWindows())
+        {
+            return Task.FromResult(canceledResult);
+        }
+
+#if WINDOWS_DESKTOP
+        return RunWinFormsDialogAsync<object>(owner =>
+        {
+            using var dlg = new System.Windows.Forms.OpenFileDialog
             {
-                return new { canceled = true, filePath = (string?)null };
+                Title = "Select Database or CSV File to Import",
+                Filter = "Database & Migration Files (*.sqlite;*.sqlite3;*.db;*.db3;*.zip;*.gz;*.sql;*.csv)|*.sqlite;*.sqlite3;*.db;*.db3;*.zip;*.gz;*.sql;*.csv|SQLite Databases (*.sqlite;*.sqlite3;*.db;*.db3)|*.sqlite;*.sqlite3;*.db;*.db3|SQL & CSV Files (*.sql;*.gz;*.zip;*.csv)|*.sql;*.gz;*.zip;*.csv|All Files (*.*)|*.*",
+                Multiselect = false,
+                CheckFileExists = true
+            };
+            if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK &&
+                !string.IsNullOrWhiteSpace(dlg.FileName))
+            {
+                return new { canceled = false, filePath = (string?)dlg.FileName };
             }
-            return new { canceled = false, filePath = output };
-        }
-        catch
-        {
             return new { canceled = true, filePath = (string?)null };
-        }
+        }, canceledResult);
+#else
+        return Task.FromResult(canceledResult);
+#endif
     }
 
     public Task<object> selectSqliteFile() => SelectSqliteFileAsync();
@@ -1738,6 +1763,15 @@ public sealed class KarobarDesktopBridge
 
         var isPatch = isPatchFlag && !forceFull && !string.IsNullOrWhiteSpace(candidatePatchUrl);
         var expectedSha256 = isPatch ? candidatePatchSha256 : candidateInstallerSha256;
+        if (string.IsNullOrWhiteSpace(expectedSha256) || !Regex.IsMatch(expectedSha256.Trim(), "^[0-9a-fA-F]{64}$"))
+        {
+            return new
+            {
+                ok = false,
+                message = "Update package is missing a valid SHA-256 checksum and cannot be installed safely."
+            };
+        }
+
         var versionLabel = Regex.Replace(rawVersion, @"[^a-zA-Z0-9._-]", "");
         if (string.IsNullOrWhiteSpace(versionLabel)) versionLabel = "latest";
 
@@ -1759,8 +1793,7 @@ public sealed class KarobarDesktopBridge
         try
         {
             var alreadyDownloaded = File.Exists(tempFilePath) && new FileInfo(tempFilePath).Length >= minValidSize;
-            if (alreadyDownloaded && !string.IsNullOrWhiteSpace(expectedSha256) &&
-                !VerifyFileSha256(tempFilePath, expectedSha256))
+            if (alreadyDownloaded && !VerifyFileSha256(tempFilePath, expectedSha256))
             {
                 try { File.Delete(tempFilePath); } catch { }
                 alreadyDownloaded = false;
@@ -1787,8 +1820,7 @@ public sealed class KarobarDesktopBridge
                         throw new InvalidOperationException($"Downloaded update file is unexpectedly small ({downloadedSize} bytes). Please retry.");
                     }
 
-                    if (!string.IsNullOrWhiteSpace(expectedSha256) &&
-                        !VerifyFileSha256(partPath, expectedSha256))
+                    if (!VerifyFileSha256(partPath, expectedSha256))
                     {
                         throw new InvalidOperationException("Downloaded update failed SHA-256 integrity verification. Please retry.");
                     }
@@ -1896,6 +1928,10 @@ public sealed class KarobarDesktopBridge
         "storage\\app\\.license-clock",
         "storage/app/.app-key",
         "storage\\app\\.app-key",
+        "storage/app/network-mode.json",
+        "storage\\app\\network-mode.json",
+        "storage/app/cube-learned-knowledge.json",
+        "storage\\app\\cube-learned-knowledge.json",
         "storage/app/public/",
         "storage\\app\\public\\",
         "storage/app/whatsapp-auth/",
@@ -1906,6 +1942,8 @@ public sealed class KarobarDesktopBridge
         "storage\\app\\backups\\",
         "storage/backups/",
         "storage\\backups\\",
+        "storage/logs/",
+        "storage\\logs\\",
         ".env"
     ];
 
@@ -1971,6 +2009,8 @@ public sealed class KarobarDesktopBridge
             $stageDir = Join-Path $env:TEMP "karobar-patch-stage-$targetPid"
             $rollbackDir = Join-Path $env:TEMP "karobar-patch-rollback-$targetPid"
             $backedUpRels = New-Object System.Collections.Generic.List[string]
+            $deletedRels = New-Object System.Collections.Generic.List[string]
+            $createdRels = New-Object System.Collections.Generic.List[string]
 
             function Write-Log([string]$msg) {
                 try {
@@ -2006,11 +2046,14 @@ public sealed class KarobarDesktopBridge
                     'storage\app\.machine-id',
                     'storage\app\.license-clock',
                     'storage\app\.app-key',
+                    'storage\app\network-mode.json',
+                    'storage\app\cube-learned-knowledge.json',
                     'storage\app\public\',
                     'storage\app\whatsapp-auth\',
                     'storage\app\whatsapp-agent\',
                     'storage\app\backups\',
                     'storage\backups\',
+                    'storage\logs\',
                     '.env'
                 )
 
@@ -2038,6 +2081,8 @@ public sealed class KarobarDesktopBridge
                         if (-not (Test-Path $rbDir)) { New-Item -ItemType Directory -Force -Path $rbDir | Out-Null }
                         Copy-Item -Path $dest -Destination $rbDest -Force
                         $backedUpRels.Add($rel)
+                    } else {
+                        $createdRels.Add($rel)
                     }
 
                     $ok = $false
@@ -2059,6 +2104,76 @@ public sealed class KarobarDesktopBridge
                 }
                 Write-Log "Successfully updated $copied files in $installDir"
 
+                # Prune obsolete hashed Vite assets under public\build\assets\ when patch includes assets or manifest
+                $stageAssetsDir = Join-Path $stageDir 'public\build\assets'
+                $stageManifestPath = Join-Path $stageDir 'public\build\manifest.json'
+                $targetAssetsDir = Join-Path $installDir 'public\build\assets'
+                $hasStageAssets = Test-Path $stageAssetsDir
+                $hasStageManifest = Test-Path $stageManifestPath
+                if ((Test-Path $targetAssetsDir) -and ($hasStageAssets -or $hasStageManifest)) {
+                    $keepAssetRels = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+                    $manifestValid = $true
+                    if ($hasStageAssets) {
+                        foreach ($sf in (Get-ChildItem -Path $stageAssetsDir -Recurse -File)) {
+                            $sRel = $sf.FullName.Substring($stageAssetsDir.Length).TrimStart('\', '/')
+                            [void]$keepAssetRels.Add($sRel)
+                        }
+                    }
+                    if ($hasStageManifest) {
+                        try {
+                            $rawManifest = Get-Content -Path $stageManifestPath -Raw -Encoding UTF8
+                            $trimmedManifest = if ($null -eq $rawManifest) { '' } else { $rawManifest.TrimStart().TrimStart([char]0xFEFF).TrimStart() }
+                            if ([string]::IsNullOrWhiteSpace($trimmedManifest) -or -not $trimmedManifest.StartsWith('{')) {
+                                $manifestValid = $false
+                            } else {
+                                $mJson = $trimmedManifest | ConvertFrom-Json
+                                if (-not ($mJson -is [pscustomobject] -or $mJson -is [System.Collections.IDictionary])) {
+                                    $manifestValid = $false
+                                } else {
+                                    foreach ($prop in $mJson.PSObject.Properties) {
+                                        $entry = $prop.Value
+                                        if ($null -eq $entry -or -not ($entry -is [pscustomobject] -or $entry -is [System.Collections.IDictionary])) { continue }
+                                        foreach ($candidate in @($entry.file, $entry.css, $entry.assets)) {
+                                            if ($null -eq $candidate) { continue }
+                                            foreach ($item in @($candidate)) {
+                                                if ($item -is [string] -and -not [string]::IsNullOrWhiteSpace($item)) {
+                                                    $normItem = $item.Replace('/', '\').TrimStart('\')
+                                                    if ($normItem.StartsWith('assets\', [System.StringComparison]::OrdinalIgnoreCase)) {
+                                                        [void]$keepAssetRels.Add($normItem.Substring(7))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch {
+                            $manifestValid = $false
+                        }
+                    }
+                    if ($hasStageAssets -or $manifestValid) {
+                        $prunedCount = 0
+                        foreach ($ef in (Get-ChildItem -Path $targetAssetsDir -Recurse -File)) {
+                            $assetRel = $ef.FullName.Substring($targetAssetsDir.Length).TrimStart('\', '/')
+                            if (-not $keepAssetRels.Contains($assetRel)) {
+                                $fullRel = 'public\build\assets\' + $assetRel
+                                $rbDel = Join-Path $rollbackDir $fullRel
+                                $rbDelDir = Split-Path -Parent $rbDel
+                                if (-not (Test-Path $rbDelDir)) { New-Item -ItemType Directory -Force -Path $rbDelDir | Out-Null }
+                                Copy-Item -Path $ef.FullName -Destination $rbDel -Force
+                                $deletedRels.Add($fullRel)
+                                Remove-Item -Path $ef.FullName -Force -ErrorAction SilentlyContinue
+                                $prunedCount++
+                            }
+                        }
+                        if ($prunedCount -gt 0) {
+                            Write-Log "Pruned $prunedCount stale build asset(s) from public\build\assets"
+                        }
+                    } else {
+                        Write-Log "Skipping stale asset prune because staged manifest.json is invalid or non-object and no staged assets directory is present."
+                    }
+                }
+
                 if (Test-Path $exePath) {
                     if ($isTerminalMode) {
                         Write-Log "Terminal Mode detected - skipping local --cli install --upgrade-only."
@@ -2066,6 +2181,9 @@ public sealed class KarobarDesktopBridge
                         Write-Log "Running post-patch --cli install --upgrade-only..."
                         $upgProc = Start-Process -FilePath $exePath -ArgumentList '--cli', 'install', '--upgrade-only' -WorkingDirectory $installDir -WindowStyle Hidden -Wait -PassThru
                         Write-Log "Post-patch schema upgrade exited with code $($upgProc.ExitCode)"
+                        if ($upgProc.ExitCode -ne 0) {
+                            throw "Post-patch schema/upgrade command exited with code $($upgProc.ExitCode)."
+                        }
                     }
                 }
 
@@ -2073,8 +2191,8 @@ public sealed class KarobarDesktopBridge
                 Write-Log "Patch applied successfully!"
             } catch {
                 Write-Log "ERROR: $($_.Exception.Message)"
-                if ($backedUpRels.Count -gt 0) {
-                    Write-Log "Rolling back $($backedUpRels.Count) overwritten file(s)..."
+                if ($backedUpRels.Count -gt 0 -or $deletedRels.Count -gt 0) {
+                    Write-Log "Rolling back $($backedUpRels.Count) overwritten and $($deletedRels.Count) pruned file(s)..."
                     foreach ($rel in $backedUpRels) {
                         try {
                             $rbSrc = Join-Path $rollbackDir $rel
@@ -2082,6 +2200,21 @@ public sealed class KarobarDesktopBridge
                             if (Test-Path $rbSrc) { Copy-Item -Path $rbSrc -Destination $dest -Force }
                         } catch {}
                     }
+                    foreach ($rel in $deletedRels) {
+                        try {
+                            $rbSrc = Join-Path $rollbackDir $rel
+                            $dest = Join-Path $installDir $rel
+                            $destDir = Split-Path -Parent $dest
+                            if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+                            if (Test-Path $rbSrc) { Copy-Item -Path $rbSrc -Destination $dest -Force }
+                        } catch {}
+                    }
+                }
+                foreach ($rel in $createdRels) {
+                    try {
+                        $dest = Join-Path $installDir $rel
+                        if (Test-Path $dest) { Remove-Item -Path $dest -Force -ErrorAction SilentlyContinue }
+                    } catch {}
                 }
                 try {
                     Add-Type -AssemblyName System.Windows.Forms
@@ -2099,6 +2232,9 @@ public sealed class KarobarDesktopBridge
                     } else {
                         Start-Process -FilePath $exePath -WorkingDirectory $installDir
                     }
+                }
+                if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+                    Remove-Item -Path $PSCommandPath -Force -ErrorAction SilentlyContinue
                 }
             }
             """;
@@ -2142,13 +2278,20 @@ public sealed class KarobarDesktopBridge
             }
             Start-Sleep -Milliseconds 400
 
-            $setupArgs = "/SILENT /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 `"/DIR=$installDir`""
+            $setupArgs = "/SILENT /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPGRADE=1 `"/OTAFLAG=$otaFlagPath`" `"/DIR=$installDir`""
             try {
-                Start-Process -FilePath $setupExe -ArgumentList $setupArgs -ErrorAction Stop
+                $setupProc = Start-Process -FilePath $setupExe -ArgumentList $setupArgs -Wait -PassThru -ErrorAction Stop
+                if ($setupProc -and $setupProc.ExitCode -ne 0) {
+                    if (Test-Path $exePath) { Start-Process -FilePath $exePath -WorkingDirectory $installDir }
+                }
             } catch {
-                # If the user cancels UAC elevation or setup fails to start, clean up the OTA flag and relaunch the app cleanly
-                if (Test-Path $otaFlagPath) { Remove-Item -Force $otaFlagPath -ErrorAction SilentlyContinue }
+                # If the user cancels UAC elevation or setup fails to start, relaunch the app cleanly
                 if (Test-Path $exePath) { Start-Process -FilePath $exePath -WorkingDirectory $installDir }
+            } finally {
+                if (Test-Path $otaFlagPath) { Remove-Item -Path $otaFlagPath -Force -ErrorAction SilentlyContinue }
+                if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+                    Remove-Item -Path $PSCommandPath -Force -ErrorAction SilentlyContinue
+                }
             }
             """;
 

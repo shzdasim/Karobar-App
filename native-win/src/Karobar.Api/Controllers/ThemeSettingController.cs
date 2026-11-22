@@ -16,6 +16,8 @@ public class ThemeSettingController : ApiControllerBase
     [HttpGet("")]
     public async Task<IActionResult> Index()
     {
+        if (!await CanAsync("settings.view", "settings.update")) return Forbidden();
+
         var rows = await Db.QueryListAsync("SELECT * FROM theme_settings ORDER BY created_at DESC, id DESC");
         return Ok(rows);
     }
@@ -51,6 +53,8 @@ public class ThemeSettingController : ApiControllerBase
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Show(long id)
     {
+        if (!await CanAsync("settings.view", "settings.update")) return Forbidden();
+
         var theme = await Db.QuerySingleOrDefaultAsync("SELECT * FROM theme_settings WHERE id = @id", new { id });
         if (theme == null) return NotFound();
         return Ok(theme);

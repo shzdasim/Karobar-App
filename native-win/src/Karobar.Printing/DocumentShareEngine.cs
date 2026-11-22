@@ -38,7 +38,7 @@ public sealed class WhatsAppConfiguration
     public string PhoneNumberId { get; set; } = "";
     public string BusinessAccountId { get; set; } = "";
     public string ApiVersion { get; set; } = "v21.0";
-    public string ApiUrl { get; set; } = "http://127.0.0.1:3001";
+    public string ApiUrl { get; set; } = "http://127.0.0.1:3002";
     public string DefaultCountryCode { get; set; } = "92";
     public string? TemplateName { get; set; }
     public string TemplateLanguage { get; set; } = "en_US";
@@ -570,10 +570,10 @@ public sealed class DocumentShareEngine
         var customUrl = (config.ApiUrl ?? "").Trim();
         var pdfBase64 = Convert.ToBase64String(pdfBytes);
 
-        // 1. Built-in Karobar Free WhatsApp Agent (Node.js + @whiskeysockets/baileys on port 3001)
+        // 1. Built-in Karobar Free WhatsApp Agent (Node.js + @whiskeysockets/baileys on port 3002)
         if (provider == "local_agent")
         {
-            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://127.0.0.1:3001").TrimEnd('/');
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://127.0.0.1:3002").TrimEnd('/');
             var endpoint = baseUrl.EndsWith("/send-document", StringComparison.OrdinalIgnoreCase)
                 ? baseUrl
                 : $"{baseUrl}/send-document";
@@ -897,7 +897,7 @@ public sealed class DocumentShareEngine
 
         if (provider == "local_agent")
         {
-            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://127.0.0.1:3001").TrimEnd('/');
+            var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://127.0.0.1:3002").TrimEnd('/');
             var endpoint = baseUrl.EndsWith("/send-text", StringComparison.OrdinalIgnoreCase)
                 ? baseUrl
                 : (baseUrl.EndsWith("/send-document", StringComparison.OrdinalIgnoreCase)
@@ -1128,7 +1128,7 @@ public sealed class DocumentShareEngine
 
         var sharedDir = Path.Combine(_appRoot, "storage", "app", "shared-pdfs");
         Directory.CreateDirectory(sharedDir);
-        var safeFilename = Path.GetFileName((filename ?? "document.pdf").Trim());
+        var safeFilename = Path.GetFileName((filename ?? "document.pdf").Trim().Replace('\\', '/'));
         if (string.IsNullOrWhiteSpace(safeFilename) || safeFilename is "." or "..")
         {
             safeFilename = "document.pdf";
@@ -1179,7 +1179,7 @@ public sealed class DocumentShareEngine
                     ["provider"] = waConfig.Provider,
                     ["api_error"] = ex.Message,
                     ["message"] = $"WhatsApp API could not deliver directly ({ex.Message}); PDF downloaded locally & opening WhatsApp chat",
-                    ["filename"] = filename,
+                    ["filename"] = safeFilename,
                     ["stored_path"] = storedRelPath,
                     ["signed_pdf_url"] = signedPdfUrl,
                     ["mime_type"] = "application/pdf",
@@ -1195,8 +1195,8 @@ public sealed class DocumentShareEngine
         {
             ["status"] = "pdf_built",
             ["mode"] = "client_file",
-            ["message"] = $"PDF document ({filename}) built and ready to send on WhatsApp",
-            ["filename"] = filename,
+            ["message"] = $"PDF document ({safeFilename}) built and ready to send on WhatsApp",
+            ["filename"] = safeFilename,
             ["stored_path"] = storedRelPath,
             ["signed_pdf_url"] = signedPdfUrl,
             ["mime_type"] = "application/pdf",

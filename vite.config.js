@@ -1,8 +1,15 @@
 import { defineConfig } from 'vite';
-import laravel from 'laravel-vite-plugin';
+import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+    base: '/build/',
+    publicDir: false,
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./resources/js', import.meta.url)),
+        },
+    },
     server: {
         host: '0.0.0.0',
         cors: {
@@ -17,20 +24,20 @@ export default defineConfig({
             ignored: [
                 '**/storage/**',
                 '**/database/**',
-                '**/bootstrap/cache/**',
-                '**/vendor/**',
+                '**/native-win/**',
             ],
         },
     },
     plugins: [
-        laravel({
-            input: ['resources/css/app.css', 'resources/js/app.jsx'],
-            refresh: true,
-        }),
         react(),
     ],
     build: {
+        outDir: 'public/build',
+        emptyOutDir: true,
+        manifest: 'manifest.json',
+        assetsInlineLimit: 0,
         rolldownOptions: {
+            input: ['resources/css/app.css', 'resources/js/app.jsx'],
             output: {
                 codeSplitting: {
                     groups: [

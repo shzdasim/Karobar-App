@@ -110,6 +110,11 @@ public class TerminalController : ApiControllerBase
     [Authorize]
     public async Task<IActionResult> Index()
     {
+        if (!await CanAsync("settings.view", "settings.update"))
+        {
+            return Forbidden("Only administrators can view network terminals.");
+        }
+
         var terminals = new List<Dictionary<string, object?>>();
 
         if (await Db.HasTableAsync("terminals"))

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Karobar.Api.Middleware;
 using Karobar.Background;
 using Karobar.Data;
@@ -5,9 +8,12 @@ using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +65,39 @@ public static class KarobarApiServiceExtensions
                 _ => { });
 
         services.AddAuthorization();
+
+        services.AddAntiforgery(options =>
+        {
+            options.FormFieldName = "__RequestVerificationToken";
+            options.HeaderName = "RequestVerificationToken";
+            options.Cookie.Name = "Karobar.Antiforgery";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        });
+
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+                }
+
+                context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+                await context.HttpContext.Response.WriteAsJsonAsync(
+                    new Dictionary<string, object?> { ["message"] = "Too Many Attempts." },
+                    cancellationToken);
+            };
+
+            AddFixedWindowRoutePolicy(options, "throttle_10_1", permitLimit: 10);
+            AddFixedWindowRoutePolicy(options, "throttle_30_1", permitLimit: 30);
+            AddFixedWindowRoutePolicy(options, "throttle_60_1", permitLimit: 60);
+        });
 
         services
             .AddControllers()
@@ -167,11 +206,54 @@ public static class KarobarApiServiceExtensions
         });
 
         app.UseAuthentication();
+        app.UseRateLimiter();
         app.UseMiddleware<CheckTokenExpiryMiddleware>();
         app.UseMiddleware<TrackTerminalMiddleware>();
         app.UseMiddleware<SignedUrlMiddleware>();
         app.UseMiddleware<EnsureLicensedMiddleware>();
         app.UseAuthorization();
         return app;
+    }
+
+    private static void AddFixedWindowRoutePolicy(RateLimiterOptions options, string policyName, int permitLimit)
+    {
+        options.AddPolicy(policyName, context =>
+        {
+            var endpoint = context.GetEndpoint();
+            var routeKey = (endpoint as RouteEndpoint)?.RoutePattern.RawText
+                           ?? context.Request.Path.Value
+                           ?? "/";
+            var isAnonymousEndpoint = endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null;
+
+            string identityKey;
+            if (!isAnonymousEndpoint &&
+                context.Items.TryGetValue("KarobarUserId", out var uidObj) &&
+                uidObj is long uid)
+            {
+                identityKey = $"u:{uid}";
+            }
+            else if (!isAnonymousEndpoint &&
+                     long.TryParse(context.User?.FindFirstValue(ClaimTypes.NameIdentifier), out var claimUid))
+            {
+                identityKey = $"u:{claimUid}";
+            }
+            else
+            {
+                var ip = context.Connection.RemoteIpAddress;
+                if (ip is { IsIPv4MappedToIPv6: true }) ip = ip.MapToIPv4();
+                identityKey = $"ip:{ip?.ToString() ?? "unknown"}";
+            }
+
+            return RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: $"{policyName}:{routeKey}:{identityKey}",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                });
+        });
     }
 }

@@ -2494,32 +2494,6 @@ export const SCREEN_GUIDES = {
   // ============================================================================
   // 7. REPORTS SUITE
   // ============================================================================
-  "/reports": {
-    key: "/reports",
-    category: "reports",
-    title: { en: "Business Reports Center", ur: "کاروباری رپورٹس کا مرکز" },
-    section: { en: "Reports", ur: "رپورٹس اور تجزیہ" },
-    summary: {
-      en: "Comprehensive suite of Financial, Tax, Sales, Purchase, Return, and Inventory reports with date filtering, PDF download, and direct printing.",
-      ur: "مالیاتی، ٹیکس، سیلز، خریداری اور اسٹاک کی تمام تفصیلی رپورٹس۔ ہر رپورٹ کو تاریخ کے لحاظ سے فلٹر کیا جا سکتا ہے اور PDF یا پرنٹ نکالا جا سکتا ہے۔",
-    },
-    features: {
-      en: ["Financial & Tax Reports (P&L, Tax Return, COGS, Aging).", "Sales & Purchase Detail/Summary Reports.", "Stock Valuation, Low Stock Reorder, Comprehensive Ledger & Near-Expiry Reports."],
-      ur: ["نفع و نقصان، ٹیکس گوشوارہ، لاگت (COGS) اور بقایاجات کی رپورٹس۔", "سیلز، پرچیز اور ریٹرنز کی تفصیلی رپورٹس۔", "موجودہ اسٹاک کی مالیت، کم اسٹاک اور ایکسپائری رپورٹس۔"],
-    },
-    steps: {
-      en: ["Pick any report from the Reports menu in the sidebar or search via Ctrl+K."],
-      ur: ["سائیڈ بار کے Reports مینو سے یا Ctrl+K دبا کر مطلوبہ رپورٹ منتخب کریں۔"],
-    },
-    impacts: { en: "Read-only analytical reporting suite.", ur: "کاروباری تجزیے اور پرنٹنگ کے لیے رپورٹس۔" },
-    shortcuts: [{ keys: ["Ctrl", "K"], en: "Quick Search Any Report", ur: "کوئی بھی رپورٹ فوری تلاش کریں" }],
-    faqs: [],
-    relatedRoutes: [
-      { path: "/reports/net-profit", en: "Net Profit (P&L)", ur: "نفع و نقصان (P&L)" },
-      { path: "/reports/current-stock", en: "Current Stock Report", ur: "موجودہ اسٹاک رپورٹ" },
-    ],
-  },
-
   "/reports/net-profit": {
     key: "/reports/net-profit",
     category: "reports",
@@ -2678,21 +2652,25 @@ export const SCREEN_GUIDES = {
     features: {
       en: [
         "Aging Buckets showing how long balances have been outstanding.",
+        "Collections Work Queue tab prioritizing overdue invoices by days past their payment Due Date and balance amount.",
         "Direct contact numbers and printable aging schedules for recovery staff.",
       ],
       ur: [
         "واضح ایجنگ کالم (30، 60، 90+ دن) جن سے معلوم ہوتا ہے کہ کون سا ادھار کتنا پرانا ہے۔",
+        "Collections Work Queue ٹیب: ان ادھار بلوں کی فہرست جن کی ادائیگی کی مقررہ تاریخ (Due Date) گزر چکی ہے اور بقایا رقم کی تفصیل۔",
         "ریکوری اسٹاف کے لیے پرنٹ اور پی ڈی ایف ایکسپورٹ۔",
       ],
     },
     steps: {
       en: [
         "Review the aging buckets and identify accounts in the 60+ or 90+ day columns.",
+        "Switch to the Collections Work Queue tab to contact customers with past-due invoices and record payments in Customer Ledger.",
         "Print or export the PDF for collection follow-up.",
       ],
       ur: [
         "پرانے بقایاجات والے گاہکوں کی فہرست چیک کریں۔",
-        "ریکوری کے لیے رپورٹ پرنٹ کریں یا کسٹمر کھاتے میں جا کر وصولی درج کریں۔",
+        "Collections Work Queue ٹیب کھول کر مقررہ تاریخ سے گزر جانے والے بلوں پر گاہکوں سے رابطہ کریں اور کسٹمر کھاتے میں وصولی درج کریں۔",
+        "ریکوری کے لیے رپورٹ پرنٹ کریں یا PDF ایکسپورٹ کریں۔",
       ],
     },
     impacts: { en: "Read-only credit recovery report.", ur: "ادھار کی ریکوری میں مدد دینے والی رپورٹ۔" },
@@ -2702,23 +2680,6 @@ export const SCREEN_GUIDES = {
       { path: "/customer-ledger", en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
       { path: "/supplier-ledger", en: "Supplier Ledger", ur: "سپلائر کھاتہ" },
     ],
-  },
-
-  "/reports/overdue-work-queue": {
-    key: "/reports/overdue-work-queue",
-    category: "reports",
-    title: { en: "Overdue Collections Work Queue", ur: "واجب الادا وصولیوں کی فہرست (Overdue Queue)" },
-    section: { en: "Reports — Financial & Tax", ur: "رپورٹس — مالیاتی اور ٹیکس" },
-    summary: {
-      en: "Actionable follow-up queue of invoices that have passed their payment Due Date.",
-      ur: "ان ادھار بلوں کی فہرست جن کی ادائیگی کی مقررہ تاریخ (Due Date) گزر چکی ہے تاکہ گاہکوں سے فوری رابطہ کیا جا سکے۔",
-    },
-    features: { en: ["Prioritizes overdue invoices by days past due and balance amount."], ur: ["مقررہ تاریخ سے اوپر ہونے والے دنوں اور بقایا رقم کی تفصیل۔"] },
-    steps: { en: ["Contact customers listed in the queue and record payments in Customer Ledger."], ur: ["فہرست میں موجود گاہکوں سے رابطہ کریں اور وصولی درج کریں۔"] },
-    impacts: { en: "Read-only collections queue.", ur: "ریکوری فالو اپ رپورٹ۔" },
-    shortcuts: [],
-    faqs: [],
-    relatedRoutes: [{ path: "/reports/outstanding-aging", en: "Outstanding Aging", ur: "ایجنگ رپورٹ" }],
   },
 
   "/reports/sale-detail": {

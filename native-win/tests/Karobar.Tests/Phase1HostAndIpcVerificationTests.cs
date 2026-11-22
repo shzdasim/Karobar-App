@@ -94,9 +94,14 @@ public class Phase1HostAndIpcVerificationTests
         cliMode.CliCommand.Should().Be("license:machine-id");
         cliMode.CliArguments.Should().Equal("license:machine-id", "--out=test.txt");
 
-        var artisanMode = CommandLineRouter.Parse(["artisan", "demands:notify"]);
-        artisanMode.Mode.Should().Be(HostLaunchMode.HeadlessCli);
-        artisanMode.CliCommand.Should().Be("demands:notify");
+        var cliEqualsMode = CommandLineRouter.Parse(["--cli=demands:notify", "--force"]);
+        cliEqualsMode.Mode.Should().Be(HostLaunchMode.HeadlessCli);
+        cliEqualsMode.CliCommand.Should().Be("demands:notify");
+        cliEqualsMode.CliArguments.Should().Equal("demands:notify", "--force");
+
+        var legacyArtisanMode = CommandLineRouter.Parse(["artisan", "demands:notify"]);
+        legacyArtisanMode.Mode.Should().Be(HostLaunchMode.DesktopGui);
+        legacyArtisanMode.CliCommand.Should().BeNull();
 
         var serverMode = CommandLineRouter.Parse(["--server-only", "18955"]);
         serverMode.Mode.Should().Be(HostLaunchMode.HeadlessServer);

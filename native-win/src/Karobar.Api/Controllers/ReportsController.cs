@@ -3232,6 +3232,7 @@ public class ReportsController : ApiControllerBase
     public async Task<IActionResult> NarcoticsReport()
     {
         var authErr = await AuthorizeReportActionAsync(
+            "report.narcotics.view",
             "report.sale-detail.view",
             "report.current-stock.view",
             "report.product-comprehensive.view",
@@ -3246,6 +3247,7 @@ public class ReportsController : ApiControllerBase
     public async Task<IActionResult> NarcoticsReportPdf()
     {
         var authErr = await AuthorizeReportActionAsync(
+            "report.narcotics.view",
             "report.sale-detail.view",
             "report.current-stock.view",
             "report.product-comprehensive.view",

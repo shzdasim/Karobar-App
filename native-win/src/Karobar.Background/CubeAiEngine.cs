@@ -309,7 +309,7 @@ KAROBAR-APP ERP ARCHITECTURE OVERVIEW (Domain Intelligence):
   1. Catalog & Inventory (`/products`, `/categories`, `/brands`, `/stock-adjustments`, `/stocktake-sessions`, `/stock-disposals`): Products have Pack Size (`pack_size`), Pack & Unit Purchase/Sale Prices, Generic Formulation (`formulation`), Rack Location (`rack`), Barcode, and Narcotic flag. Stock is tracked by Batch Number and Expiry Date using automatic FEFO (First-Expiry, First-Out).
   2. Procurement (`/purchase-orders`, `/purchase-invoices/create`, `/purchase-returns`, `/suppliers`, `/supplier-ledger`): Purchase Orders (PO) are demand lists that do NOT affect stock or ledgers; Purchase Invoices (GRN) add physical batch stock, support free Bonus Units (which reduce effective unit cost), and credit the Supplier Payable Ledger.
   3. Sales & POS Billing (`/sale-invoices/pos`, `/sale-invoices/create/retail`, `/sale-invoices/create/wholesale`, `/sale-returns`, `/customers`, `/customer-ledger`): Supports high-speed Barcode POS, Pack vs. Loose Tablet/Unit selling (`Unit Price = Pack Price / Pack Size`), Hold/Park Bill (`F8`), Regular Customer repeat prescription auto-fill, Generic Substitute lookup, and split Cash/Credit (Udhar) checkout.
-  4. Treasury, Accounting & HR (`/cash-drawer`, `/accounts`, `/expenses`, `/journal-entries`, `/employees`, `/attendance`, `/payroll`): Cash Drawer shifts with Z-Report reconciliation, Bank/Wallet fund transfers, Double-Entry General Ledger (`1200` Inventory Asset, `4000` Sales Revenue, `5000` COGS), and Employee Attendance & Payroll.
+  4. Treasury, Accounting & HR (`/cash-drawer`, `/accounts`, `/expenses`, `/accounting`, `/hr-payroll`): Cash Drawer shifts with Z-Report reconciliation, Bank/Wallet fund transfers, Double-Entry General Ledger (`1200` Inventory Asset, `4000` Sales Revenue, `5000` COGS), and Employee Attendance & Payroll.
 
 STRICT OPERATING & SAFETY RULES:
 1. GENERATE FRESH AI EXPLANATIONS FIRST: Generate a rich, original, context-aware explanation directly from your Generative AI intelligence tailored to the user's exact question or clicked UI element on `{{cleanRoute}}`. Explain:
@@ -760,7 +760,7 @@ public sealed class CubeKnowledgeRetriever
             links =
             [
                 new() { ["path"] = "/customer-ledger", ["en"] = "Open Customer Ledger", ["ur"] = "کسٹمر کھاتہ کھولیں" },
-                new() { ["path"] = "/reports/accounts-receivable-aging", ["en"] = "Receivable Aging Report", ["ur"] = "وصولیوں کی ایجنگ رپورٹ" }
+                new() { ["path"] = "/reports/outstanding-aging", ["en"] = "Receivable Aging Report", ["ur"] = "وصولیوں کی ایجنگ رپورٹ" }
             ];
         }
         else if (isSupplier)
@@ -768,7 +768,7 @@ public sealed class CubeKnowledgeRetriever
             links =
             [
                 new() { ["path"] = "/supplier-ledger", ["en"] = "Open Supplier Ledger", ["ur"] = "سپلائر کھاتہ کھولیں" },
-                new() { ["path"] = "/reports/accounts-payable-aging", ["en"] = "Payable Aging Report", ["ur"] = "واجب الادا رپورٹس" }
+                new() { ["path"] = "/reports/outstanding-aging", ["en"] = "Payable Aging Report", ["ur"] = "واجب الادا رپورٹس" }
             ];
         }
         else if (isProfit)

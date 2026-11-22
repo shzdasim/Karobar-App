@@ -55,12 +55,13 @@ public sealed class NativeTabWorkspace
         string? title = null,
         bool allowDuplicate = false,
         bool focus = true,
-        bool pinned = false)
+        bool pinned = false,
+        bool forceSingleton = false)
     {
         var normalized = NormalizeRoutePath(routePath);
         var isParallelRoute = IsParallelTransactionalRoute(normalized);
 
-        if (!allowDuplicate && !isParallelRoute)
+        if (!allowDuplicate && (forceSingleton || !isParallelRoute))
         {
             var existing = _tabs.FirstOrDefault(t =>
                 string.Equals(StripQuery(t.RoutePath), StripQuery(normalized), StringComparison.OrdinalIgnoreCase));
@@ -296,7 +297,9 @@ public sealed class NativeTabWorkspace
     {
         if (string.IsNullOrWhiteSpace(routePath)) return "/dashboard";
         var trimmed = routePath.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        if ((trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) &&
+            Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
         {
             trimmed = uri.PathAndQuery;
         }

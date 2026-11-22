@@ -74,6 +74,10 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
             {
                 await RunDueScheduledJobsAsync(DateTime.Now, stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "KarobarSchedulerHostedService tick warning.");
@@ -129,11 +133,25 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
         {
             try
             {
-                await _cliRunner.ExecuteProcessRecurringExpensesAsync(db, new Dictionary<string, string?>(), cancellationToken);
-                _lastRecurringExpensesDate = now.Date;
-                executed["expenses:process-recurring"] = true;
+                var recurringResult = await _cliRunner.ExecuteProcessRecurringExpensesAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                if (recurringResult.Ok)
+                {
+                    _lastRecurringExpensesDate = now.Date;
+                    executed["expenses:process-recurring"] = true;
+                }
+                else
+                {
+                    _logger?.LogWarning("Scheduled job 'expenses:process-recurring' returned exit code {ExitCode}: {Output}", recurringResult.ExitCode, recurringResult.Output);
+                }
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Scheduled job 'expenses:process-recurring' failed.");
+            }
         }
 
         // 3. Daily at 09:00 -> demands:notify
@@ -141,31 +159,76 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
         {
             try
             {
-                await _cliRunner.ExecuteSendUserDemandNotificationsAsync(db, new Dictionary<string, string?>(), cancellationToken);
-                _lastDemandsNotifyDate = now.Date;
-                executed["demands:notify"] = true;
+                var demandsResult = await _cliRunner.ExecuteSendUserDemandNotificationsAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                if (demandsResult.Ok)
+                {
+                    _lastDemandsNotifyDate = now.Date;
+                    executed["demands:notify"] = true;
+                    if (demandsResult.Data.TryGetValue("notified_count", out var ncObj) &&
+                        ncObj is int nc && nc > 0)
+                    {
+                        _logger?.LogInformation("Scheduled job 'demands:notify' notified {NotifiedCount} pending user demand(s).", nc);
+                    }
+                }
+                else
+                {
+                    _logger?.LogWarning("Scheduled job 'demands:notify' returned exit code {ExitCode}: {Output}", demandsResult.ExitCode, demandsResult.Output);
+                }
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Scheduled job 'demands:notify' failed.");
+            }
         }
 
         // 4. Hourly -> backup:run-scheduled (plus independent FBR queue retry)
         var currentSlot = (now.Date, now.Hour);
         if (_lastScheduledBackupSlot != currentSlot)
         {
+            var backupSucceeded = false;
             try
             {
-                await _cliRunner.ExecuteRunScheduledBackupAsync(db, new Dictionary<string, string?>(), cancellationToken);
-                executed["backup:run-scheduled"] = true;
+                var backupResult = await _cliRunner.ExecuteRunScheduledBackupAsync(db, new Dictionary<string, string?>(), cancellationToken);
+                if (backupResult.Ok)
+                {
+                    executed["backup:run-scheduled"] = true;
+                    backupSucceeded = true;
+                }
+                else
+                {
+                    _logger?.LogWarning("Scheduled job 'backup:run-scheduled' failed (ExitCode={ExitCode}): {Output}", backupResult.ExitCode, backupResult.Output);
+                }
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Scheduled job 'backup:run-scheduled' failed.");
+            }
 
             try
             {
                 await _fbrEngine.RetryPendingInvoicesAsync(db, 25, cancellationToken);
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Periodic FBR offline queue retry failed.");
+            }
 
-            _lastScheduledBackupSlot = currentSlot;
+            if (backupSucceeded)
+            {
+                _lastScheduledBackupSlot = currentSlot;
+            }
         }
 
         return executed;
@@ -192,9 +255,9 @@ public sealed class KarobarSchedulerHostedService : BackgroundService
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore filesystem errors during opportunistic cleanup
+                _logger?.LogWarning(ex, "Opportunistic shared PDF cleanup failed for {Directory}.", dir);
             }
         }
 

@@ -1127,11 +1127,10 @@ export const TRAINED_ERP_INTENTS = [
       en: "How to Check Overdue Bills & 30/60/90-Day Aging Reports",
       ur: "پرانے بقایاجات (Aging Report) اور واجب الادا بلوں کی ریکوری لسٹ",
     },
-    en: "To follow up on old unpaid balances:\n\n1. **Outstanding Aging Report (`/reports/outstanding-aging`):** Groups customer receivables and supplier payables into **0–30**, **31–60**, **61–90**, and **90+ Days Overdue** buckets.\n2. **Overdue Collections Work Queue (`/reports/overdue-work-queue`):** Lists every credit invoice that has passed its promised **Due Date** so recovery staff can call customers directly.",
-    ur: "پرانے ادھار کی ریکوری کے لیے یہ **2 رپورٹس** دیکھیں:\n\n1. **بقایاجات ایجنگ رپورٹ (`/reports/outstanding-aging`):** گاہکوں کے ادھار کو `30`، `60` اور `90+` دنوں کے حساب سے الگ الگ دکھاتی ہے۔\n2. **واجب الادا وصولیوں کی فہرست (`/reports/overdue-work-queue`):** ان بلوں کی فہرست جن کی ادائیگی کی تاریخ (Due Date) گزر چکی ہے۔",
+    en: "To follow up on old unpaid balances, open **Outstanding Aging Report (`/reports/outstanding-aging`)**:\n\n1. **Aging Buckets:** Groups customer receivables and supplier payables into **0–30**, **31–60**, **61–90**, and **90+ Days Overdue** buckets.\n2. **Collections Work Queue Tab:** Switch to the **Collections Work Queue** tab inside `/reports/outstanding-aging` to see every credit invoice that has passed its promised **Due Date** so recovery staff can call customers directly.",
+    ur: "پرانے ادھار کی ریکوری کے لیے **بقایاجات ایجنگ رپورٹ (`/reports/outstanding-aging`)** کھولیں:\n\n1. **ایجنگ کالم:** گاہکوں کے ادھار کو `30`، `60` اور `90+` دنوں کے حساب سے الگ الگ دکھاتی ہے۔\n2. **واجب الادا وصولیوں کی فہرست (Collections Work Queue ٹیب):** اسی اسکرین کے **Collections Work Queue** ٹیب میں ان بلوں کی فہرست ملتی ہے جن کی ادائیگی کی تاریخ (Due Date) گزر چکی ہے۔",
     links: [
-      { path: "/reports/outstanding-aging", en: "Outstanding Aging Report", ur: "ایجنگ رپورٹ کھولیں" },
-      { path: "/reports/overdue-work-queue", en: "Overdue Work Queue", ur: "واجب الادا وصولیاں" },
+      { path: "/reports/outstanding-aging", en: "Outstanding Aging & Collections Work Queue", ur: "ایجنگ رپورٹ اور واجب الادا وصولیاں" },
     ],
   },
 
@@ -2103,12 +2102,12 @@ export function buildLiveRecordBoundaryAnswer(cleaned = "", currentGuide = null)
   } else if (isCustomer) {
     links.push(
       { path: "/customer-ledger", en: "Open Customer Ledger", ur: "کسٹمر کھاتہ کھولیں" },
-      { path: "/reports/accounts-receivable-aging", en: "Receivable Aging Report", ur: "وصولیوں کی ایجنگ رپورٹ" }
+      { path: "/reports/outstanding-aging", en: "Receivable Aging Report", ur: "وصولیوں کی ایجنگ رپورٹ" }
     );
   } else if (isSupplier) {
     links.push(
       { path: "/supplier-ledger", en: "Open Supplier Ledger", ur: "سپلائر کھاتہ کھولیں" },
-      { path: "/reports/accounts-payable-aging", en: "Payable Aging Report", ur: "واجب الادا رپورٹس" }
+      { path: "/reports/outstanding-aging", en: "Payable Aging Report", ur: "واجب الادا رپورٹس" }
     );
   } else if (isProfitOrSales) {
     links.push(

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Automated Native Windows Single-Binary (.NET 9 + Kestrel + WebView2) Build,
     Authenticode Code Signing & Zero-Data-Loss Inno Setup Release Pipeline for Karobar-App Native.
@@ -7,12 +7,30 @@
     2. Builds the Vite React 19 SPA (`npm run build`)
     3. Publishes `Karobar.Host` as a single self-contained Windows x64 binary (`Karobar-Native.exe`)
     4. Stages the React frontend bundle, print templates, and optional WhatsApp sidecar runtime
-    5. Signs `Karobar-Native.exe` with `desktop/MalikAsimShahzad-CodeSign.pfx`
+    5. Signs `Karobar-Native.exe`, `Karobar-Precheck.exe`, and `Karobar-Native-Setup.exe` using `WINDOWS_CERT_PFX_BASE64` & `WINDOWS_CERT_PASSWORD`
     6. Compiles `native-win/installer/Karobar-Native-Setup.iss` via Inno Setup 6 into
        `dist/installer/Karobar-Native-Setup.exe` and generates `dist/installer/latest-native-release.json`
 #>
 
+param(
+    [switch]$AllowUnsigned
+)
+
 $ErrorActionPreference = "Stop"
+
+if ($env:CI -eq "true" -or $env:GITHUB_ACTIONS -eq "true") {
+    $AllowUnsigned = $false
+}
+
+$ShouldSign = -not $AllowUnsigned
+if ($ShouldSign) {
+    if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PFX_BASE64)) {
+        throw "Missing required environment variable: WINDOWS_CERT_PFX_BASE64. Refusing to build unsigned or fallback-signed binaries."
+    }
+    if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)) {
+        throw "Missing required environment variable: WINDOWS_CERT_PASSWORD. Refusing to use any hardcoded fallback signing password."
+    }
+}
 
 # Resolve Repository Root whether invoked from `native-win/` or `native-win/installer/`
 $ScriptDir = $PSScriptRoot
@@ -118,7 +136,7 @@ if ((Test-Path $PublishedHostExe) -and (-not (Test-Path $TargetAppExe))) {
     Remove-Item -Path $PublishedHostExe -Force
 }
 
-foreach ($dir in @("public", "resources\views", "resources\assistant", "scripts")) {
+foreach ($dir in @("public", "resources\assistant", "scripts")) {
     $src = Join-Path $RepoRoot $dir
     if (Test-Path $src) {
         $dest = Join-Path $StageDir $dir
@@ -135,13 +153,13 @@ if (Test-Path $CubeKnowledgeSrc) {
 
 $DesktopStage = Join-Path $StageDir "desktop"
 New-Item -ItemType Directory -Force -Path $DesktopStage | Out-Null
-foreach ($dFile in @("splash.html", "terminal-offline.html", "icon.ico", "icon.png", "MalikAsimShahzad-KarobarERP.cer")) {
-    $dSrc = Join-Path $RepoRoot "desktop\$dFile"
+foreach ($dFile in @("icon.ico", "icon.png", "MalikAsimShahzad-KarobarERP.cer")) {
+    $dSrc = Join-Path $RepoRoot "native-win\assets\$dFile"
     if (Test-Path $dSrc) {
         Copy-Item -Path $dSrc -Destination (Join-Path $DesktopStage $dFile) -Force
     }
 }
-# Prioritize Native Host HTML assets (port 18960, Pairing Token, 10s auto-reconnect) over legacy Electron root desktop/ files
+# Stage Native Host HTML assets (port 18960, Pairing Token, 10s auto-reconnect)
 $NativeDesktopDir = Join-Path $RepoRoot "native-win\src\Karobar.Host\desktop"
 foreach ($nFile in @("splash.html", "terminal-offline.html")) {
     $nSrc = Join-Path $NativeDesktopDir $nFile
@@ -150,9 +168,13 @@ foreach ($nFile in @("splash.html", "terminal-offline.html")) {
     }
 }
 
-$SumatraSrc = Join-Path $RepoRoot "desktop\node_modules\pdf-to-printer\dist\SumatraPDF-3.4.6-32.exe"
-if (Test-Path $SumatraSrc) {
-    Copy-Item -Path $SumatraSrc -Destination (Join-Path $DesktopStage "SumatraPDF.exe") -Force
+$AssetsStage = Join-Path $StageDir "assets"
+New-Item -ItemType Directory -Force -Path $AssetsStage | Out-Null
+foreach ($assetFile in @("TermsAndConditions.txt", "PrivacyPolicy.txt", "SumatraPDF.exe", "icon.ico", "icon.png", "MalikAsimShahzad-KarobarERP.cer")) {
+    $aSrc = Join-Path $RepoRoot "native-win\assets\$assetFile"
+    if (Test-Path $aSrc) {
+        Copy-Item -Path $aSrc -Destination (Join-Path $AssetsStage $assetFile) -Force
+    }
 }
 
 # Clean dev/test artifacts so upgrades NEVER overwrite end-user database.sqlite or .env
@@ -371,67 +393,6 @@ if ($IsWindows -or $env:OS -eq "Windows_NT") {
     }
 }
 
-Write-Host "==> [5/6] Code Signing Executable with Authenticode Certificate (MalikAsimShahzad-CodeSign.pfx)..." -ForegroundColor Cyan
-$RepoPfxPath = Join-Path $RepoRoot "desktop\MalikAsimShahzad-CodeSign.pfx"
-$RepoCerPath = Join-Path $RepoRoot "desktop\MalikAsimShahzad-KarobarERP.cer"
-$PfxPath     = Join-Path $CacheDir "MalikAsimShahzad-CodeSign.pfx"
-$CerPath     = Join-Path $DesktopStage "MalikAsimShahzad-KarobarERP.cer"
-$PfxPasswordPlain = if ($env:WINDOWS_CERT_PASSWORD) { $env:WINDOWS_CERT_PASSWORD } else { "KarobarSign2026!" }
-$PfxPasswordSec   = ConvertTo-SecureString -String $PfxPasswordPlain -Force -AsPlainText
-
-if ($env:WINDOWS_CERT_PFX_BASE64) {
-    [IO.File]::WriteAllBytes($PfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
-    $SigningCert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\CurrentUser\My" -Password $PfxPasswordSec
-    Export-Certificate -Cert $SigningCert -FilePath $CerPath -Force | Out-Null
-} elseif ((Test-Path $RepoPfxPath) -and (Test-Path $RepoCerPath)) {
-    Copy-Item -Path $RepoPfxPath -Destination $PfxPath -Force
-    Copy-Item -Path $RepoCerPath -Destination $CerPath -Force
-    $SigningCert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\CurrentUser\My" -Password $PfxPasswordSec
-} else {
-    $SigningCert = New-SelfSignedCertificate `
-        -Type CodeSigningCert `
-        -Subject "CN=Malik Asim Shahzad (shzdasim), O=Malik Asim Shahzad, OU=https://github.com/shzdasim/Karobar-App, C=PK" `
-        -FriendlyName "Malik Asim Shahzad - Karobar-App Developer Certificate" `
-        -KeyAlgorithm RSA `
-        -KeyLength 2048 `
-        -HashAlgorithm "SHA256" `
-        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.17={text}URL=https://github.com/shzdasim/Karobar-App") `
-        -CertStoreLocation "Cert:\CurrentUser\My" `
-        -NotAfter (Get-Date).AddYears(5)
-
-    Export-PfxCertificate -Cert $SigningCert -FilePath $PfxPath -Password $PfxPasswordSec -Force | Out-Null
-    Export-Certificate -Cert $SigningCert -FilePath $CerPath -Force | Out-Null
-}
-
-if (Test-Path $CerPath) {
-    Copy-Item -Path $CerPath -Destination (Join-Path $InstallerOutDir "MalikAsimShahzad-KarobarERP.cer") -Force
-}
-
-$SignToolExe = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
-
-function Invoke-KarobarAuthenticodeSign([string]$TargetExe) {
-    if (-not (Test-Path $TargetExe)) { return }
-    Write-Host "    Signing executable: $(Split-Path -Leaf $TargetExe)" -ForegroundColor Gray
-    if ($SignToolExe -and (Test-Path $SignToolExe)) {
-        & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" /tr "http://timestamp.digicert.com" /td SHA256 $TargetExe
-        if ($LASTEXITCODE -ne 0) {
-            & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" $TargetExe
-        }
-    } elseif ($SigningCert) {
-        $sigRes = Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
-        if ($sigRes.Status -ne "Valid") {
-            Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 | Out-Null
-        }
-    }
-}
-
-Invoke-KarobarAuthenticodeSign $TargetAppExe
-Invoke-KarobarAuthenticodeSign $PrecheckExe
-Invoke-KarobarAuthenticodeSign $PublishedHostExe
-
-Write-Host "==> [6/6] Compiling Inno Setup 6 Native Windows Installer (Karobar-Native-Setup.iss)..." -ForegroundColor Cyan
 $IsccCandidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     "C:\Program Files\Inno Setup 6\ISCC.exe",
@@ -444,20 +405,88 @@ if (-not $IsccExe) {
 if (-not $IsccExe) {
     throw "Inno Setup 6 (ISCC.exe) not found. Install via: winget install JRSoftware.InnoSetup"
 }
-
 $IssPath = Join-Path $RepoRoot "native-win\installer\Karobar-Native-Setup.iss"
-if ($SignToolExe -and (Test-Path $SignToolExe)) {
-    $SignCmd = "`$q$SignToolExe`$q sign /f `$q$PfxPath`$q /p `$q$PfxPasswordPlain`$q /fd SHA256 /d `$qKarobar-App Native - Malik Asim Shahzad`$q /du `$qhttps://github.com/shzdasim/Karobar-App`$q `$f"
-    & $IsccExe "/DMyAppVersion=$AppVersion" "/DSignToolEnabled=1" "/Skarobarsign=$SignCmd" $IssPath
-} else {
-    & $IsccExe "/DMyAppVersion=$AppVersion" $IssPath
-}
-if ($LASTEXITCODE -ne 0) {
-    throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
-}
-
 $FinalInstallerExe = Join-Path $InstallerOutDir "Karobar-Native-Setup.exe"
-Invoke-KarobarAuthenticodeSign $FinalInstallerExe
+
+if ($ShouldSign) {
+    Write-Host "==> [5/6] Code Signing Executables with Authenticode Certificate (WINDOWS_CERT_PFX_BASE64)..." -ForegroundColor Cyan
+    $PfxPath          = Join-Path $CacheDir "Karobar-CodeSign.pfx"
+    $CerPath          = Join-Path $DesktopStage "MalikAsimShahzad-KarobarERP.cer"
+    $PfxPasswordPlain = $env:WINDOWS_CERT_PASSWORD
+    $PfxPasswordSec   = ConvertTo-SecureString -String $PfxPasswordPlain -Force -AsPlainText
+    $SigningCert      = $null
+
+    $SignToolExe = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+
+    function Invoke-KarobarAuthenticodeSign([string]$TargetExe) {
+        if (-not (Test-Path $TargetExe)) { return }
+        Write-Host "    Signing executable: $(Split-Path -Leaf $TargetExe)" -ForegroundColor Gray
+        if ($SignToolExe -and (Test-Path $SignToolExe)) {
+            & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" /tr "http://timestamp.digicert.com" /td SHA256 $TargetExe
+            if ($LASTEXITCODE -ne 0) {
+                & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" $TargetExe
+                if ($LASTEXITCODE -ne 0) {
+                    throw "signtool.exe failed for $TargetExe with exit code $LASTEXITCODE"
+                }
+            }
+        } elseif ($SigningCert) {
+            $sigRes = Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+            if ($sigRes.Status -ne "Valid") {
+                Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 | Out-Null
+            }
+        }
+    }
+
+    try {
+        $PfxBytes = [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64.Trim())
+        if ($PfxBytes.Length -eq 0) {
+            throw "WINDOWS_CERT_PFX_BASE64 decoded to 0 bytes."
+        }
+        [IO.File]::WriteAllBytes($PfxPath, $PfxBytes)
+        $SigningCert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\CurrentUser\My" -Password $PfxPasswordSec
+        if (-not $SigningCert) {
+            throw "Failed to import code-signing certificate from WINDOWS_CERT_PFX_BASE64."
+        }
+        Export-Certificate -Cert $SigningCert -FilePath $CerPath -Force | Out-Null
+
+        if (Test-Path $CerPath) {
+            Copy-Item -Path $CerPath -Destination (Join-Path $AssetsStage "MalikAsimShahzad-KarobarERP.cer") -Force
+            Copy-Item -Path $CerPath -Destination (Join-Path $InstallerOutDir "MalikAsimShahzad-KarobarERP.cer") -Force
+        }
+
+        Invoke-KarobarAuthenticodeSign $TargetAppExe
+        Invoke-KarobarAuthenticodeSign $PrecheckExe
+
+        Write-Host "==> [6/6] Compiling Inno Setup 6 Native Windows Installer (Karobar-Native-Setup.iss)..." -ForegroundColor Cyan
+        if ($SignToolExe -and (Test-Path $SignToolExe)) {
+            $SignCmd = "`$q$SignToolExe`$q sign /f `$q$PfxPath`$q /p `$q$PfxPasswordPlain`$q /fd SHA256 /d `$qKarobar-App Native - Malik Asim Shahzad`$q /du `$qhttps://github.com/shzdasim/Karobar-App`$q `$f"
+            & $IsccExe "/DMyAppVersion=$AppVersion" "/DSignToolEnabled=1" "/Skarobarsign=$SignCmd" $IssPath
+        } else {
+            & $IsccExe "/DMyAppVersion=$AppVersion" $IssPath
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+        }
+
+        Invoke-KarobarAuthenticodeSign $FinalInstallerExe
+    } finally {
+        if ($PfxPath -and (Test-Path $PfxPath)) {
+            Remove-Item -Path $PfxPath -Force -ErrorAction SilentlyContinue
+        }
+        if ($SigningCert -and $SigningCert.Thumbprint) {
+            Remove-Item -Path ("Cert:\CurrentUser\My\" + $SigningCert.Thumbprint) -Force -ErrorAction SilentlyContinue
+        }
+    }
+} else {
+    Write-Host "==> [5/6] Skipping Authenticode code signing (-AllowUnsigned local build)..." -ForegroundColor Yellow
+    Write-Host "==> [6/6] Compiling Unsigned Inno Setup 6 Native Windows Installer (Karobar-Native-Setup.iss)..." -ForegroundColor Cyan
+    & $IsccExe "/DMyAppVersion=$AppVersion" $IssPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+    }
+}
 
 # Generate 1-Click Certificate Trust & Native Installer Launcher (Install-Karobar-Native.bat)
 $HelperBatPath = Join-Path $InstallerOutDir "Install-Karobar-Native.bat"
@@ -493,13 +522,22 @@ Get-ChildItem -Path $StageDir -File | Where-Object {
     Copy-Item -Path $_.FullName -Destination (Join-Path $PatchStageDir $_.Name) -Force
 }
 
-# 2. Copy React SPA, print templates, Cube AI knowledge, scripts, and desktop assets (never database or user storage!)
-foreach ($relDir in @("public", "resources\views", "resources\assistant", "scripts", "desktop")) {
+# 2. Copy React SPA, Cube AI knowledge, scripts, and desktop assets (never database or user storage!)
+foreach ($relDir in @("public", "resources\assistant", "scripts", "desktop")) {
     $srcSub = Join-Path $StageDir $relDir
     if (Test-Path $srcSub) {
         $dstSub = Join-Path $PatchStageDir $relDir
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dstSub) | Out-Null
         Copy-Item -Path $srcSub -Destination $dstSub -Recurse -Force
+    }
+}
+# Copy lightweight assets into OTA patch assets\ (omit 12.6 MB SumatraPDF.exe so OTA patch stays small)
+$PatchAssetsDir = Join-Path $PatchStageDir "assets"
+New-Item -ItemType Directory -Force -Path $PatchAssetsDir | Out-Null
+foreach ($legalFile in @("TermsAndConditions.txt", "PrivacyPolicy.txt", "icon.ico", "icon.png", "MalikAsimShahzad-KarobarERP.cer")) {
+    $stagedLegal = Join-Path $StageDir "assets\$legalFile"
+    if (Test-Path $stagedLegal) {
+        Copy-Item -Path $stagedLegal -Destination (Join-Path $PatchAssetsDir $legalFile) -Force
     }
 }
 # Also include the tiny (~20KB) runtime\whatsapp-agent\whatsapp-agent.mjs script in OTA patches (excluding node.exe & node_modules)
@@ -534,7 +572,7 @@ $LatestReleaseManifest = [ordered]@{
     notes             = "Native Windows C#/.NET 9 + Kestrel + Waseela Multi-Tab WebView2 Release (Fast Differential Patch: ${PatchSizeMB} MB)."
     runtime_layout             = "split-v2"
     deps_fingerprint           = $DepsHash8
-    compatible_deps_fingerprints = @($DepsHash8, "5397589b")
+    compatible_deps_fingerprints = @($DepsHash8)
     download_url      = "https://github.com/$RepoSlug/releases/download/native-latest/Karobar-Native-Setup.exe"
     installer_size    = $InstallerSize
     installer_sha256  = $InstallerSha256

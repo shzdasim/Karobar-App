@@ -15,7 +15,7 @@ export default function ServerDashboard() {
           </div>
           <div>
             <h1 className="text-lg sm:text-xl font-extrabold text-gray-900 dark:text-white">
-              Linux Server &amp; Attached Terminals Dashboard
+              Server &amp; Attached Terminals Dashboard
             </h1>
             <p className="text-xs text-gray-500 dark:text-slate-400">
               Monitor connected POS counter PCs, cash drawer shifts, LAN IP endpoints, and 1-Click Database Import / Export.

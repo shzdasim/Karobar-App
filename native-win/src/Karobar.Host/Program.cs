@@ -12,7 +12,7 @@ public static class Program
     {
         var parsed = CommandLineRouter.Parse(args);
 
-        // 1. Headless CLI execution (`--cli <command>` or `artisan <command>`)
+        // 1. Headless CLI execution (`--cli <command>`)
         if (parsed.Mode == HostLaunchMode.HeadlessCli)
         {
             return CommandLineRouter.ExecuteHeadlessCliAsync(parsed.CliArguments).GetAwaiter().GetResult();
@@ -126,49 +126,32 @@ public static class Program
 
 #if WINDOWS_DESKTOP
             splashForm.Close();
-            var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge);
+            var appContext = new KarobarApplicationContext(
+                windowManager,
+                hostServer.DesktopBridge,
+                shutdownCts,
+                windowManager.ResolveIconPath());
+            var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge, ownsTrayIcon: false);
+            appContext.RegisterForm(mainForm);
 
-            // Wire real Windows hardware silent printing (CoreWebView2.PrintAsync) for thermal & A4 printers
-            hostServer.DesktopBridge.NativeSilentPrintExecutor = mainForm.ExecuteNativeSilentPrintAsync;
+            // Wire real Windows hardware silent printing (active tab on surviving form OR persistent OffscreenPrintWorker)
+            hostServer.DesktopBridge.NativeSilentPrintExecutor = appContext.ExecuteSilentPrintAsync;
 
-            // Route all child-window / openWindow / openSubWindow requests into Waseela-style tabs
-            // inside the SINGLE main window without creating ghost AppWindowInstance entries.
-            windowManager.OnOpenTabRequested = (routePath, title) =>
-            {
-                if (mainForm.IsDisposed) return;
-                mainForm.OpenTabFromExternal(routePath, title);
-            };
+            // Route all child-window / openWindow / openSubWindow requests into tabs on the active surviving window
+            windowManager.OnOpenTabRequested = (routePath, title) => appContext.OpenTabOnActiveForm(routePath, title);
             windowManager.OnWindowCreated = childWin =>
             {
                 if (childWin.Id == mainWin.Id || childWin.IsOffscreenPrintWorker) return;
-                if (mainForm.IsDisposed) return;
-
-                mainForm.OpenTabFromExternal(childWin.RoutePath, childWin.Title);
+                appContext.OpenTabOnActiveForm(childWin.RoutePath, childWin.Title);
             };
-
             windowManager.OnQuitRequested = () =>
             {
                 shutdownCts.Cancel();
-                try
-                {
-                    if (!mainForm.IsDisposed && mainForm.IsHandleCreated && mainForm.InvokeRequired)
-                    {
-                        mainForm.BeginInvoke((Action)(() =>
-                        {
-                            try { mainForm.Close(); } catch { }
-                            try { System.Windows.Forms.Application.Exit(); } catch { }
-                        }));
-                    }
-                    else
-                    {
-                        try { mainForm.Close(); } catch { }
-                        try { System.Windows.Forms.Application.Exit(); } catch { }
-                    }
-                }
-                catch { }
+                appContext.QuitAll();
             };
 
-            System.Windows.Forms.Application.Run(mainForm);
+            mainForm.Show();
+            System.Windows.Forms.Application.Run(appContext);
 #else
             windowManager.OnQuitRequested = () => shutdownCts.Cancel();
             try
@@ -314,4 +297,224 @@ public static class Program
 
         return false;
     }
+
+#if WINDOWS_DESKTOP
+    private sealed class KarobarApplicationContext : System.Windows.Forms.ApplicationContext
+    {
+        private readonly WebView2WindowManager _windowManager;
+        private readonly KarobarDesktopBridge _desktopBridge;
+        private readonly CancellationTokenSource _shutdownCts;
+        private readonly List<NativeWebView2Form> _openForms = new();
+        private NativeWebView2Form? _lastActiveForm;
+        private System.Windows.Forms.NotifyIcon? _trayIcon;
+        private System.Windows.Forms.ContextMenuStrip? _trayMenu;
+        private bool _isQuitting;
+
+        public KarobarApplicationContext(
+            WebView2WindowManager windowManager,
+            KarobarDesktopBridge desktopBridge,
+            CancellationTokenSource shutdownCts,
+            string? iconPath)
+        {
+            _windowManager = windowManager;
+            _desktopBridge = desktopBridge;
+            _shutdownCts = shutdownCts;
+            BuildSharedSystemTray(iconPath);
+        }
+
+        public void RegisterForm(NativeWebView2Form form)
+        {
+            if (form.IsDisposed || _openForms.Contains(form)) return;
+            _openForms.Add(form);
+            _lastActiveForm = form;
+
+            form.DetachedFormCreated += RegisterForm;
+            form.Activated += (_, _) => _lastActiveForm = form;
+            form.FormClosed += (_, _) =>
+            {
+                _openForms.Remove(form);
+                if (_lastActiveForm == form)
+                {
+                    _lastActiveForm = _openForms.LastOrDefault(f => !f.IsDisposed);
+                }
+
+                if (_openForms.Count == 0)
+                {
+                    DisposeTrayResources();
+                    ExitThread();
+                }
+            };
+        }
+
+        public NativeWebView2Form? GetPreferredActiveForm()
+        {
+            if (_lastActiveForm is { IsDisposed: false })
+            {
+                return _lastActiveForm;
+            }
+
+            var activeWin = _windowManager.GetActiveWindow();
+            if (activeWin is { IsDestroyed: false } && activeWin.Hwnd != IntPtr.Zero)
+            {
+                var match = _openForms.FirstOrDefault(f => !f.IsDisposed && f.IsHandleCreated && f.Handle == activeWin.Hwnd);
+                if (match != null) return match;
+            }
+
+            return _openForms.FirstOrDefault(f => !f.IsDisposed);
+        }
+
+        public void OpenTabOnActiveForm(string routePath, string? title = null, bool allowDuplicate = false, bool forceSingleton = false)
+        {
+            var form = GetPreferredActiveForm();
+            if (form == null) return;
+            form.OpenTabFromExternal(routePath, title, allowDuplicate, forceSingleton);
+        }
+
+        public Task<(bool Ok, string? Engine, string? Error)> ExecuteSilentPrintAsync(
+            string? targetUrl,
+            string? targetHtml,
+            string printerName,
+            bool isThermal)
+        {
+            if (!string.IsNullOrWhiteSpace(targetUrl) || !string.IsNullOrWhiteSpace(targetHtml))
+            {
+                return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal);
+            }
+
+            var activeForm = GetPreferredActiveForm();
+            if (activeForm == null || activeForm.IsDisposed)
+            {
+                return Task.FromResult<(bool, string?, string?)>((false, "webview2-silent-print", "No active window available to print."));
+            }
+
+            return activeForm.ExecuteNativeSilentPrintAsync(null, null, printerName, isThermal);
+        }
+
+        public void QuitAll()
+        {
+            if (_isQuitting) return;
+            _isQuitting = true;
+
+            void CloseAllOnUi()
+            {
+                foreach (var form in _openForms.ToList())
+                {
+                    try
+                    {
+                        if (!form.IsDisposed)
+                        {
+                            form.Close();
+                        }
+                    }
+                    catch { }
+                }
+                DisposeTrayResources();
+                try { ExitThread(); } catch { }
+                try { System.Windows.Forms.Application.Exit(); } catch { }
+            }
+
+            try
+            {
+                var uiForm = _openForms.FirstOrDefault(f => !f.IsDisposed && f.IsHandleCreated);
+                if (uiForm != null && uiForm.InvokeRequired)
+                {
+                    uiForm.BeginInvoke((Action)CloseAllOnUi);
+                }
+                else
+                {
+                    CloseAllOnUi();
+                }
+            }
+            catch
+            {
+                DisposeTrayResources();
+            }
+        }
+
+        private void ActivateSurvivingWindow(Action<NativeWebView2Form>? afterShow = null)
+        {
+            var form = GetPreferredActiveForm();
+            if (form == null || form.IsDisposed) return;
+
+            form.Show();
+            if (form.WindowState == System.Windows.Forms.FormWindowState.Minimized)
+            {
+                form.WindowState = System.Windows.Forms.FormWindowState.Normal;
+            }
+            form.Activate();
+            afterShow?.Invoke(form);
+        }
+
+        private void BuildSharedSystemTray(string? iconPath)
+        {
+            try
+            {
+                _trayMenu = new System.Windows.Forms.ContextMenuStrip
+                {
+                    BackColor = System.Drawing.Color.FromArgb(30, 41, 59),
+                    ForeColor = System.Drawing.Color.FromArgb(248, 250, 252),
+                    Renderer = new DarkMenuStripRenderer()
+                };
+                _trayMenu.Items.Add($"Show {ApplicationDisplayName}", null, (_, _) => ActivateSurvivingWindow());
+                _trayMenu.Items.Add("New POS Tab (Ctrl+Shift+P)", null, (_, _) =>
+                    ActivateSurvivingWindow(f => f.OpenTabFromExternal("/sale-invoices/pos", "Barcode POS", allowDuplicate: false, forceSingleton: true)));
+                _trayMenu.Items.Add("Cube AI GuideBot (Ctrl+G)", null, (_, _) =>
+                    ActivateSurvivingWindow(f => f.ToggleGuideBot()));
+                _trayMenu.Items.Add("Check for Updates…", null, (_, _) =>
+                    ActivateSurvivingWindow(_ => _windowManager.SendTriggerUpdateCheck(manual: true)));
+                _trayMenu.Items.Add("Run Backup Now", null, (_, _) =>
+                    _ = _desktopBridge.RunBackupNowAsync());
+                _trayMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                _trayMenu.Items.Add($"Quit {ApplicationDisplayName}", null, (_, _) =>
+                {
+                    _shutdownCts.Cancel();
+                    QuitAll();
+                });
+
+                System.Drawing.Icon? trayIconImg = null;
+                if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath) &&
+                    iconPath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { trayIconImg = new System.Drawing.Icon(iconPath); } catch { }
+                }
+
+                _trayIcon = new System.Windows.Forms.NotifyIcon
+                {
+                    Text = ApplicationDisplayName,
+                    Icon = trayIconImg ?? System.Drawing.SystemIcons.Application,
+                    ContextMenuStrip = _trayMenu,
+                    Visible = true
+                };
+                _trayIcon.DoubleClick += (_, _) => ActivateSurvivingWindow();
+            }
+            catch
+            {
+                // Non-fatal if shell tray is unavailable in headless Windows sessions
+            }
+        }
+
+        private void DisposeTrayResources()
+        {
+            if (_trayIcon != null)
+            {
+                try { _trayIcon.Visible = false; _trayIcon.Dispose(); } catch { }
+                _trayIcon = null;
+            }
+            if (_trayMenu != null)
+            {
+                try { _trayMenu.Dispose(); } catch { }
+                _trayMenu = null;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                DisposeTrayResources();
+            }
+            base.Dispose(disposing);
+        }
+    }
+#endif
 }

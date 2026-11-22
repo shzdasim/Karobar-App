@@ -140,8 +140,7 @@ public class KarobarDb
         var dir = new DirectoryInfo(current);
         while (dir != null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "artisan")) ||
-                Directory.Exists(Path.Combine(dir.FullName, "database")))
+            if (Directory.Exists(Path.Combine(dir.FullName, "database")))
             {
                 return dir.FullName;
             }
@@ -151,8 +150,7 @@ public class KarobarDb
         var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
         while (baseDir != null)
         {
-            if (File.Exists(Path.Combine(baseDir.FullName, "artisan")) ||
-                Directory.Exists(Path.Combine(baseDir.FullName, "database")))
+            if (Directory.Exists(Path.Combine(baseDir.FullName, "database")))
             {
                 return baseDir.FullName;
             }
@@ -678,6 +676,17 @@ public class KarobarDb
         return await QueryListAsync(sql, new { userId });
     }
 
+    public static readonly string[] AdminRoleNames = ["Admin", "admin", "super-admin", "Super Admin"];
+
+    public static bool IsAdminRoleName(string? roleName)
+    {
+        if (string.IsNullOrWhiteSpace(roleName)) return false;
+        var trimmed = roleName.Trim();
+        return trimmed.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("super-admin", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<List<string>> GetUserAllPermissionNamesAsync(long userId)
     {
         if (!await HasTableAsync("permissions"))
@@ -686,8 +695,7 @@ public class KarobarDb
         }
 
         var roleNames = await GetUserRoleNamesAsync(userId);
-        if (roleNames.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                               r.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+        if (roleNames.Any(IsAdminRoleName))
         {
             var allPerms = await QueryListAsync("SELECT name FROM permissions WHERE guard_name = 'sanctum' ORDER BY name ASC");
             if (allPerms.Count == 0)
@@ -726,7 +734,7 @@ public class KarobarDb
     public async Task<bool> UserCanAsync(long userId, params string[] permissions)
     {
         if (permissions == null || permissions.Length == 0) return true;
-        if (await UserHasRoleAsync(userId, "Admin", "admin", "super-admin"))
+        if (await UserHasRoleAsync(userId, AdminRoleNames))
         {
             return true;
         }

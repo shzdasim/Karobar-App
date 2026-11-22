@@ -708,7 +708,7 @@ export default function SqliteImportSetting({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".sqlite,.sqlite3,.db,.db3,.zip,.gz,.sql"
+            accept=".sqlite,.sqlite3,.db,.db3,.zip,.gz,.sql,.csv"
             className="hidden"
             onChange={(e) => {
               if (e.target.files?.[0]) {
@@ -741,7 +741,7 @@ export default function SqliteImportSetting({
           <p className="mt-1.5 text-xs sm:text-sm text-gray-500 dark:text-slate-400 max-w-2xl mx-auto">
             Supports raw SQLite databases (<code>.sqlite</code>, <code>.sqlite3</code>,{" "}
             <code>.db</code>, <code>.db3</code>), compressed backup archives (<code>.zip</code>,{" "}
-            <code>.sql.gz</code>), and SQL dumps (<code>.sql</code>).
+            <code>.sql.gz</code>), SQL dumps (<code>.sql</code>), and Abuzar Waseela exports (<code>.csv</code>).
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -1781,7 +1781,15 @@ export default function SqliteImportSetting({
                             {(st.updated || 0).toLocaleString()}
                           </td>
                           <td data-label="Skipped" className="py-2 px-3">
-                            {(st.skipped || 0).toLocaleString()}
+                            <span>{(st.skipped || 0).toLocaleString()}</span>
+                            {Array.isArray(st.warnings) && st.warnings.length > 0 && (
+                              <span
+                                className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                title={st.warnings.join("\n")}
+                              >
+                                {st.warnings.length} warning{st.warnings.length === 1 ? "" : "s"}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )
@@ -1789,6 +1797,32 @@ export default function SqliteImportSetting({
                   </tbody>
                 </table>
               </div>
+
+              {Object.entries(importResult.stats.tables).some(
+                ([, st]) => Array.isArray(st?.warnings) && st.warnings.length > 0
+              ) && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2 text-xs">
+                  <div className="font-bold text-amber-800 dark:text-amber-200">
+                    Row Warnings During Import
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(importResult.stats.tables)
+                      .filter(([, st]) => Array.isArray(st?.warnings) && st.warnings.length > 0)
+                      .map(([srcTbl, st]) => (
+                        <div key={srcTbl} className="space-y-0.5">
+                          <div className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                            {srcTbl} &rarr; {st.target_table}
+                          </div>
+                          <ul className="list-disc list-inside space-y-0.5 text-amber-800 dark:text-amber-200">
+                            {st.warnings.map((w, idx) => (
+                              <li key={idx}>{w}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -100,7 +100,6 @@ const DYNAMIC_ROUTE_PERMISSIONS = [
   { pattern: /^\/sale-invoices\/(?!pos$|barcode-pos$)[^/]+\/edit$/, perms: ["sale-invoice.update"] },
   { pattern: /^\/purchase-returns\/[^/]+\/edit$/, perms: ["purchase-return.update"] },
   { pattern: /^\/sale-returns\/[^/]+\/edit$/, perms: ["sale-return.update"] },
-  { pattern: /^\/stock-adjustments\/[^/]+\/edit$/, perms: ["stock-adjustment.update"] },
   { pattern: /^\/stocktake-sessions\/[^/]+\/edit$/, perms: ["stocktake.view", "stocktake.update"] },
   { pattern: /^\/users\/[^/]+\/edit$/, perms: ["user.update", "user.manage"] },
   { pattern: /^\/roles\/[^/]+\/edit$/, perms: ["role.update"] },

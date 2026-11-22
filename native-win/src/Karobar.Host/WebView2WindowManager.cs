@@ -79,6 +79,7 @@ public sealed class AppWindowInstance : IDisposable
     public IntPtr Hwnd { get; set; }
     public Process? NativeHostProcess { get; set; }
     public Action<string>? WebMessageSender { get; set; }
+    public Action<string>? BroadcastMessageSender { get; set; }
     public Action<string>? UrlNavigator { get; set; }
 
     public AppWindowInstance(
@@ -173,6 +174,18 @@ public sealed class AppWindowInstance : IDisposable
         WebMessageSender?.Invoke(json);
     }
 
+    public void BroadcastEvent(string channel, object? payload)
+    {
+        if (IsDestroyed) return;
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "ipc-event",
+            channel,
+            payload
+        });
+        (BroadcastMessageSender ?? WebMessageSender)?.Invoke(json);
+    }
+
     public void Destroy()
     {
         if (IsDestroyed) return;
@@ -236,6 +249,11 @@ public sealed class WebView2WindowManager : IDisposable
     private SystemTrayController? _systemTray;
     private bool _isQuitting;
     private string _lastMenuSignature = "";
+#if WINDOWS_DESKTOP
+    private readonly SemaphoreSlim _sharedEnvLock = new(1, 1);
+    private Microsoft.Web.WebView2.Core.CoreWebView2Environment? _sharedEnv;
+    private OffscreenPrintWorker? _offscreenPrintWorker;
+#endif
 
     public WebView2WindowManager(NetworkConfigManager networkConfig)
     {
@@ -282,6 +300,12 @@ public sealed class WebView2WindowManager : IDisposable
     {
         var candidates = new[]
         {
+            Path.Combine(_networkConfig.AppRoot, "assets", "icon.ico"),
+            Path.Combine(_networkConfig.AppRoot, "assets", "icon.png"),
+            Path.Combine(_networkConfig.AppRoot, "native-win", "assets", "icon.ico"),
+            Path.Combine(_networkConfig.AppRoot, "native-win", "assets", "icon.png"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "icon.ico"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "icon.png"),
             Path.Combine(_networkConfig.AppRoot, "desktop", "icon.ico"),
             Path.Combine(_networkConfig.AppRoot, "desktop", "icon.png"),
             Path.Combine(AppContext.BaseDirectory, "desktop", "icon.ico"),
@@ -494,6 +518,59 @@ public sealed class WebView2WindowManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates and tracks a genuinely separate detached OS window (multi-monitor / side-by-side)
+    /// without redirecting through OnOpenTabRequested back into the source window.
+    /// </summary>
+    public AppWindowInstance CreateDetachedWindow(
+        string routePath = "/",
+        string? title = null,
+        int width = 1360,
+        int height = 860)
+    {
+        var cleanRoute = string.IsNullOrWhiteSpace(routePath) ? "/" : routePath.Trim();
+        var baseUrl = _networkConfig.GetAppBaseUrl();
+        var fullUrl = cleanRoute.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      cleanRoute.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                      cleanRoute.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
+            ? cleanRoute
+            : $"{baseUrl}{(cleanRoute.StartsWith('/') ? "" : "/")}{cleanRoute}";
+
+        var resolvedTitle = string.IsNullOrWhiteSpace(title)
+            ? NativeTabWorkspace.ResolveTitleForRoute(cleanRoute)
+            : title.Trim();
+
+        lock (_windowLock)
+        {
+            var id = Interlocked.Increment(ref _nextWindowId);
+            foreach (var existing in _activeWindows.Values)
+            {
+                existing.IsFocused = false;
+            }
+
+            var win = new AppWindowInstance(
+                id,
+                resolvedTitle,
+                cleanRoute,
+                fullUrl,
+                width > 0 ? width : 1360,
+                height > 0 ? height : 860,
+                isOffscreenPrintWorker: false)
+            {
+                IsFocused = true
+            };
+
+            _activeWindows[id] = win;
+            if (_mainWindow == null || _mainWindow.IsDestroyed)
+            {
+                _mainWindow = win;
+            }
+
+            UpdateApplicationMenus();
+            return win;
+        }
+    }
+
     public void LoadTerminalOfflineFallback(AppWindowInstance? targetWindow = null)
     {
         var win = targetWindow ?? GetActiveWindow() ?? CreateMainWindow();
@@ -582,6 +659,10 @@ public sealed class WebView2WindowManager : IDisposable
                 _isQuitting = true;
                 _printWorkerWindow?.Destroy();
                 _printWorkerWindow = null;
+#if WINDOWS_DESKTOP
+                try { _offscreenPrintWorker?.Dispose(); } catch { }
+                _offscreenPrintWorker = null;
+#endif
             }
             else
             {
@@ -746,8 +827,47 @@ public sealed class WebView2WindowManager : IDisposable
         {
             _printWorkerWindow = CreateHiddenPrintWindow();
         }
+#if WINDOWS_DESKTOP
+        if (SynchronizationContext.Current != null || System.Windows.Forms.Application.OpenForms.Count > 0)
+        {
+            CaptureUiSynchronizationContext();
+            _ = PrewarmOffscreenPrintWorkerAsync();
+        }
+#endif
         return _printWorkerWindow;
     }
+
+#if WINDOWS_DESKTOP
+    public OffscreenPrintWorker OffscreenPrintWorker => _offscreenPrintWorker ??= new OffscreenPrintWorker(this);
+
+    public void CaptureUiSynchronizationContext(SynchronizationContext? syncContext = null)
+    {
+        OffscreenPrintWorker.CaptureUiSynchronizationContext(syncContext);
+    }
+
+    public Task PrewarmOffscreenPrintWorkerAsync(CancellationToken cancellationToken = default)
+        => OffscreenPrintWorker.PrewarmAsync(cancellationToken);
+
+    public async Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> GetOrCreateSharedWebView2EnvironmentAsync()
+    {
+        if (_sharedEnv != null) return _sharedEnv;
+
+        await _sharedEnvLock.WaitAsync();
+        try
+        {
+            if (_sharedEnv != null) return _sharedEnv;
+            _sharedEnv = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                browserExecutableFolder: null,
+                userDataFolder: SharedWebView2UserDataFolder,
+                options: new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection"));
+            return _sharedEnv;
+        }
+        finally
+        {
+            _sharedEnvLock.Release();
+        }
+    }
+#endif
 
     public AppWindowInstance AcquirePrintWindow()
     {
@@ -821,7 +941,7 @@ public sealed class WebView2WindowManager : IDisposable
     public void SendOpenSubWindow(string routePath, string? title = null)
     {
         var win = CreateAppWindow(routePath, new AppWindowOptions { Title = title });
-        DispatchEvent("karobar:open-subwindow", new { path = routePath, title = win.Title, windowId = win.Id });
+        DispatchEvent("karobar:open-subwindow", new { path = routePath, title = win.Title, windowId = win.Id }, win);
     }
 
     public void SendWindowCommand(string command, Dictionary<string, object?>? extraPayload = null)
@@ -846,6 +966,11 @@ public sealed class WebView2WindowManager : IDisposable
     public void SendUpdateProgress(object payload)
     {
         DispatchEvent("karobar:update-progress", payload, targetOnly: null);
+    }
+
+    public void SendProductsUpdated(string source = "cube_ai")
+    {
+        DispatchEvent("karobar:products-updated", new { source, at = DateTime.UtcNow.ToString("O") }, targetOnly: null);
     }
 
     public void SendTriggerUpdateCheck(bool manual = true)
@@ -885,7 +1010,7 @@ public sealed class WebView2WindowManager : IDisposable
             {
                 if (!win.IsDestroyed)
                 {
-                    win.SendEvent(channel, payload);
+                    win.BroadcastEvent(channel, payload);
                 }
             }
         }
@@ -908,7 +1033,7 @@ public sealed class WebView2WindowManager : IDisposable
                 new() { Label = "Quick Window: Retail Sale Invoice", Path = "/sale-invoices/create/retail", Accelerator = "CmdOrCtrl+Shift+S" },
                 new() { Label = "Quick Window: Wholesale Invoice", Path = "/sale-invoices/create/wholesale", Accelerator = "CmdOrCtrl+Shift+W" },
                 new() { Label = "Quick Window: Purchase Invoice", Path = "/purchase-invoices/create", Accelerator = "CmdOrCtrl+Shift+U" },
-                new() { Label = "Quick Window: Customer Ledger", Path = "/customer-ledger" }
+                new() { Label = "Quick Window: Customer Ledger", Path = "/customer-ledger", Accelerator = "CmdOrCtrl+Shift+L" }
             ],
             ["Items & Masters"] =
             [
@@ -1030,6 +1155,10 @@ public sealed class WebView2WindowManager : IDisposable
         _systemTray = null;
         _printWorkerWindow?.Destroy();
         _printWorkerWindow = null;
+#if WINDOWS_DESKTOP
+        try { _offscreenPrintWorker?.Dispose(); } catch { }
+        _offscreenPrintWorker = null;
+#endif
 
         foreach (var win in _activeWindows.Values)
         {
@@ -1203,4 +1332,95 @@ internal static class Win32Native
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool IsWindowVisible(IntPtr hWnd);
+}
+
+public sealed record ParsedAccelerator(bool Ctrl, bool Shift, bool Alt, string Key);
+
+public static class ShortcutAcceleratorHelper
+{
+    private static readonly Regex SaleInvoiceEditRouteRegex = new(
+        @"^/(?:sale-invoices|wholesale-invoices)/\d+/edit$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex PurchaseInvoiceEditRouteRegex = new(
+        @"^/purchase-invoices/\d+/edit$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static ParsedAccelerator? ParseAccelerator(string? accelerator)
+    {
+        if (string.IsNullOrWhiteSpace(accelerator))
+        {
+            return null;
+        }
+
+        var parts = accelerator.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return null;
+        }
+
+        var ctrl = false;
+        var shift = false;
+        var alt = false;
+        string? key = null;
+
+        foreach (var raw in parts)
+        {
+            if (raw.Equals("CmdOrCtrl", StringComparison.OrdinalIgnoreCase) ||
+                raw.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
+                raw.Equals("Control", StringComparison.OrdinalIgnoreCase))
+            {
+                ctrl = true;
+            }
+            else if (raw.Equals("Shift", StringComparison.OrdinalIgnoreCase))
+            {
+                shift = true;
+            }
+            else if (raw.Equals("Alt", StringComparison.OrdinalIgnoreCase))
+            {
+                alt = true;
+            }
+            else
+            {
+                key = raw.Trim();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        return new ParsedAccelerator(ctrl, shift, alt, key.ToUpperInvariant());
+    }
+
+    public static bool IsSaleInvoiceFormRoute(string? routePath)
+    {
+        if (string.IsNullOrWhiteSpace(routePath))
+        {
+            return false;
+        }
+
+        var clean = NativeTabWorkspace.StripQuery(NativeTabWorkspace.NormalizeRoutePath(routePath));
+        return clean.StartsWith("/sale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("/wholesale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+               SaleInvoiceEditRouteRegex.IsMatch(clean);
+    }
+
+    public static bool IsInvoiceFormRoute(string? routePath)
+    {
+        if (string.IsNullOrWhiteSpace(routePath))
+        {
+            return false;
+        }
+
+        if (IsSaleInvoiceFormRoute(routePath))
+        {
+            return true;
+        }
+
+        var clean = NativeTabWorkspace.StripQuery(NativeTabWorkspace.NormalizeRoutePath(routePath));
+        return clean.StartsWith("/purchase-invoices/create", StringComparison.OrdinalIgnoreCase) ||
+               PurchaseInvoiceEditRouteRegex.IsMatch(clean);
+    }
 }

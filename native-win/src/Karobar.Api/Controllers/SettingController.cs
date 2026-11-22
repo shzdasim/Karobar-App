@@ -583,10 +583,51 @@ public class SettingController : ApiControllerBase
             PhoneNumberId = GetString(body, "whatsapp_phone_number_id") ?? existing.GetValueOrDefault("whatsapp_phone_number_id")?.ToString() ?? "",
             BusinessAccountId = GetString(body, "whatsapp_business_account_id") ?? existing.GetValueOrDefault("whatsapp_business_account_id")?.ToString() ?? "",
             ApiVersion = GetString(body, "whatsapp_api_version") ?? existing.GetValueOrDefault("whatsapp_api_version")?.ToString() ?? "v21.0",
-            ApiUrl = GetString(body, "whatsapp_api_url") ?? existing.GetValueOrDefault("whatsapp_api_url")?.ToString() ?? "http://127.0.0.1:3001",
+            ApiUrl = GetString(body, "whatsapp_api_url") ?? existing.GetValueOrDefault("whatsapp_api_url")?.ToString() ?? "http://127.0.0.1:3002",
             DefaultCountryCode = GetString(body, "whatsapp_default_country_code") ?? existing.GetValueOrDefault("whatsapp_default_country_code")?.ToString() ?? "92",
             AutoFallback = false
         };
+
+        if (provider.Equals("local_agent", StringComparison.OrdinalIgnoreCase))
+        {
+            var efSetting = await LoadEfSettingAsync();
+            var bodyUrl = GetString(body, "whatsapp_api_url");
+            var bodyToken = GetString(body, "whatsapp_access_token");
+            var hasBodyOverride = !string.IsNullOrWhiteSpace(bodyUrl) || !string.IsNullOrWhiteSpace(bodyToken);
+
+            var targetSetting = hasBodyOverride
+                ? new Karobar.Core.Entities.Setting
+                {
+                    WhatsappProvider = provider,
+                    WhatsappApiUrl = !string.IsNullOrWhiteSpace(bodyUrl)
+                        ? bodyUrl
+                        : (efSetting?.WhatsappApiUrl ?? existing.GetValueOrDefault("whatsapp_api_url")?.ToString()),
+                    WhatsappAccessToken = !string.IsNullOrWhiteSpace(bodyToken)
+                        ? bodyToken
+                        : (!string.IsNullOrWhiteSpace(token) ? token : efSetting?.WhatsappAccessToken)
+                }
+                : (efSetting ?? new Karobar.Core.Entities.Setting
+                {
+                    WhatsappProvider = provider,
+                    WhatsappApiUrl = existing.GetValueOrDefault("whatsapp_api_url")?.ToString(),
+                    WhatsappAccessToken = token
+                });
+
+            waConfig.ApiUrl = _waSidecar.ResolveAgentUrl(targetSetting);
+
+            var dbForSidecar = hasBodyOverride ? null : _dbContext;
+            var agentStatus = await _waSidecar.StatusAsync(dbForSidecar, targetSetting, HttpContext.RequestAborted);
+            var isRunning = agentStatus.TryGetValue("agent_running", out var runObj) && runObj is true;
+            if (!isRunning && _waSidecar.HasSavedLinkedSession())
+            {
+                agentStatus = await _waSidecar.StartAsync(dbForSidecar, targetSetting, enableInSettings: false, cancellationToken: HttpContext.RequestAborted);
+            }
+
+            var liveUrl = agentStatus.GetValueOrDefault("agent_url")?.ToString();
+            var liveKey = agentStatus.GetValueOrDefault("api_key")?.ToString();
+            if (!string.IsNullOrWhiteSpace(liveUrl)) waConfig.ApiUrl = liveUrl;
+            if (!string.IsNullOrWhiteSpace(liveKey)) waConfig.AccessToken = liveKey;
+        }
 
         var normalized = _shareEngine.NormalizePhone(testPhone, waConfig.DefaultCountryCode);
         if (string.IsNullOrWhiteSpace(normalized))

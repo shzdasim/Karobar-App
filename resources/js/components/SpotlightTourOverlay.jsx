@@ -791,7 +791,7 @@ function buildRetailSaleInvoiceFormSteps(container, currentPath) {
 
 /**
  * 2. Dedicated 4-Step Walkthrough for Wholesale (B2B) Sale Invoice Form (`SaleInvoiceWholesaleForm.jsx`)
- * Routes: `/sale-invoices/create/wholesale`, `/wholesale-invoices/:id/edit`
+ * Routes: `/sale-invoices/create/wholesale`, `/sale-invoices/:id/edit`
  */
 function buildWholesaleSaleInvoiceFormSteps(container, currentPath) {
   const isEdit = currentPath.includes("/edit");
@@ -1747,13 +1747,12 @@ function buildInvoiceShowSteps(container, currentPath) {
 
 /**
  * 9. Dedicated 3-Step Walkthrough for Stock Adjustment Form (`StockAdjustmentForm.jsx`)
- * Routes: `/stock-adjustments/create`, `/stock-adjustments/:id/edit`
+ * Route: `/stock-adjustments/create`
  */
 function buildStockAdjustmentFormSteps(container, currentPath) {
-  const isEdit = currentPath.includes("/edit");
   const screenLabel = {
-    en: isEdit ? "Edit Stock Adjustment" : "Create Stock Adjustment Form",
-    ur: isEdit ? "اسٹاک ایڈجسٹمنٹ میں ترمیم" : "اسٹاک ایڈجسٹمنٹ فارم",
+    en: "Create Stock Adjustment Form",
+    ur: "اسٹاک ایڈجسٹمنٹ فارم",
   };
 
   return [
@@ -2104,10 +2103,7 @@ export function buildInteractiveSpotlightSteps({
     }
   }
 
-  if (
-    currentPath === "/stock-adjustments/create" ||
-    /^\/stock-adjustments\/[^/]+\/edit$/.test(currentPath)
-  ) {
+  if (currentPath === "/stock-adjustments/create") {
     const adjSteps = buildStockAdjustmentFormSteps(container, currentPath);
     if (adjSteps.length > 0) {
       return {

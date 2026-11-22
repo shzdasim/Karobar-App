@@ -1267,7 +1267,7 @@ public class DocumentShareController : ApiControllerBase
             PhoneNumberId = GetVal(setting, "whatsapp_phone_number_id", ""),
             BusinessAccountId = GetVal(setting, "whatsapp_business_account_id", ""),
             ApiVersion = GetVal(setting, "whatsapp_api_version", "v21.0"),
-            ApiUrl = GetVal(setting, "whatsapp_api_url", "http://127.0.0.1:3001"),
+            ApiUrl = GetVal(setting, "whatsapp_api_url", "http://127.0.0.1:3002"),
             DefaultCountryCode = GetVal(setting, "whatsapp_default_country_code", "92"),
             TemplateName = GetVal(setting, "whatsapp_template_name", ""),
             TemplateLanguage = GetVal(setting, "whatsapp_template_language", "en_US"),

@@ -38,7 +38,7 @@ public sealed class PrinterStrategyResult
 /// <summary>
 /// Native Windows Print Spooler (`winspool.drv`) &amp; Raw ESC/POS Direct Driver.
 /// Supports sub-50ms raw byte/ESC-POS printing, RJ11 cash drawer kick (\x1B\x70\x00\x19\xFA),
-/// WMI / Win32 printer enumeration, virtual printer filtering, and SumatraPDF / GDI silent PDF spooling.
+/// Win32 Print Spooler (EnumPrintersW / GetDefaultPrinterW) printer enumeration, virtual printer filtering, and SumatraPDF / GDI silent PDF spooling.
 /// </summary>
 public sealed class Win32RawPrinterService
 {
@@ -92,7 +92,7 @@ public sealed class Win32RawPrinterService
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 8 && !string.IsNullOrEmpty(dir); i++)
         {
-            if (File.Exists(Path.Combine(dir, "artisan")) || Directory.Exists(Path.Combine(dir, "database")))
+            if (Directory.Exists(Path.Combine(dir, "database")) || File.Exists(Path.Combine(dir, "public", "build", "manifest.json")))
             {
                 return dir;
             }
@@ -103,6 +103,41 @@ public sealed class Win32RawPrinterService
     }
 
     #region Win32 winspool.drv P/Invoke Declarations
+
+    private const uint PRINTER_ENUM_LOCAL = 0x00000002;
+    private const uint PRINTER_ENUM_CONNECTIONS = 0x00000004;
+    private const int ERROR_INSUFFICIENT_BUFFER = 122;
+    private const uint PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x00000400;
+    private const uint PRINTER_STATUS_ERROR = 0x00000002;
+    private const uint PRINTER_STATUS_PENDING_DELETION = 0x00000004;
+    private const uint PRINTER_STATUS_OFFLINE = 0x00000080;
+    private const uint PRINTER_STATUS_NOT_AVAILABLE = 0x00001000;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct PRINTER_INFO_2W
+    {
+        public IntPtr pServerName;
+        public IntPtr pPrinterName;
+        public IntPtr pShareName;
+        public IntPtr pPortName;
+        public IntPtr pDriverName;
+        public IntPtr pComment;
+        public IntPtr pLocation;
+        public IntPtr pDevMode;
+        public IntPtr pSepFile;
+        public IntPtr pPrintProcessor;
+        public IntPtr pDatatype;
+        public IntPtr pParameters;
+        public IntPtr pSecurityDescriptor;
+        public uint Attributes;
+        public uint Priority;
+        public uint DefaultPriority;
+        public uint StartTime;
+        public uint UntilTime;
+        public uint Status;
+        public uint cJobs;
+        public uint AveragePPM;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct DOCINFOW
@@ -137,6 +172,19 @@ public sealed class Win32RawPrinterService
 
     [DllImport("winspool.drv", EntryPoint = "WritePrinter", SetLastError = true, ExactSpelling = true)]
     private static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+    [DllImport("winspool.drv", EntryPoint = "EnumPrintersW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern bool EnumPrinters(
+        uint flags,
+        string? name,
+        uint level,
+        IntPtr pPrinterEnum,
+        uint cbBuf,
+        out uint pcbNeeded,
+        out uint pcReturned);
+
+    [DllImport("winspool.drv", EntryPoint = "GetDefaultPrinterW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern bool GetDefaultPrinter(StringBuilder? pszBuffer, ref uint pcchBuffer);
 
     #endregion
 
@@ -391,74 +439,81 @@ public sealed class Win32RawPrinterService
 
         var preferredName = ReadPreferredPrinterConfig();
         var result = new List<NativePrinterInfo>();
+        var enumeratedOk = !OperatingSystem.IsWindows();
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (OperatingSystem.IsWindows())
         {
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "powershell.exe",
-                    Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance -ClassName Win32_Printer -Property Name,Default,WorkOffline,PrinterStatus,PortName,DriverName | Select-Object Name,Default,WorkOffline,PrinterStatus,PortName,DriverName | ConvertTo-Json -Compress\"",
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = Encoding.UTF8
-                };
+                var defaultPrinterName = GetWindowsDefaultPrinterName();
+                const uint flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
+                uint cbNeeded = 0;
+                uint pcReturned = 0;
+                EnumPrinters(flags, null, 2, IntPtr.Zero, 0, out cbNeeded, out pcReturned);
 
-                Process? proc = null;
-                try
+                if (cbNeeded > 0)
                 {
-                    proc = Process.Start(psi);
-                    if (proc != null)
+                    for (var attempt = 0; attempt < 2; attempt++)
                     {
-                        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(4500));
-                        var stdoutTask = proc.StandardOutput.ReadToEndAsync(cts.Token);
-                        await proc.WaitForExitAsync(cts.Token);
-                        var stdout = await stdoutTask;
-
-                        if (!string.IsNullOrWhiteSpace(stdout))
+                        var pBuffer = Marshal.AllocHGlobal((int)cbNeeded);
+                        try
                         {
-                            using var doc = JsonDocument.Parse(stdout.Trim());
-                            var elements = doc.RootElement.ValueKind == JsonValueKind.Array
-                                ? doc.RootElement.EnumerateArray().ToList()
-                                : [doc.RootElement];
-
-                            foreach (var el in elements)
+                            if (EnumPrinters(flags, null, 2, pBuffer, cbNeeded, out cbNeeded, out pcReturned))
                             {
-                                if (el.ValueKind != JsonValueKind.Object) continue;
-                                var name = el.TryGetProperty("Name", out var n) ? (n.GetString() ?? "").Trim() : "";
-                                if (string.IsNullOrEmpty(name)) continue;
+                                var structSize = Marshal.SizeOf<PRINTER_INFO_2W>();
+                                for (var i = 0; i < (int)pcReturned; i++)
+                                {
+                                    var info = Marshal.PtrToStructure<PRINTER_INFO_2W>(IntPtr.Add(pBuffer, i * structSize));
+                                    var name = (Marshal.PtrToStringUni(info.pPrinterName) ?? "").Trim();
+                                    if (string.IsNullOrEmpty(name)) continue;
 
-                                var isDefault = el.TryGetProperty("Default", out var d) && d.ValueKind == JsonValueKind.True;
-                                var workOffline = el.TryGetProperty("WorkOffline", out var wo) && wo.ValueKind == JsonValueKind.True;
-                                var printerStatus = el.TryGetProperty("PrinterStatus", out var ps) && ps.TryGetInt32(out var psiVal) ? psiVal : 0;
-                                var portName = el.TryGetProperty("PortName", out var pn) ? (pn.GetString() ?? "").Trim() : "";
-                                var driverName = el.TryGetProperty("DriverName", out var dn) ? (dn.GetString() ?? "").Trim() : "";
+                                    var driverName = (Marshal.PtrToStringUni(info.pDriverName) ?? "").Trim();
+                                    var portName = (Marshal.PtrToStringUni(info.pPortName) ?? "").Trim();
+                                    var isDefault = !string.IsNullOrEmpty(defaultPrinterName) &&
+                                                    string.Equals(name, defaultPrinterName, StringComparison.OrdinalIgnoreCase);
+                                    var workOffline = (info.Attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0 ||
+                                                      (info.Status & (PRINTER_STATUS_OFFLINE | PRINTER_STATUS_NOT_AVAILABLE)) != 0;
+                                    var hasHardwareError = (info.Status & (PRINTER_STATUS_ERROR | PRINTER_STATUS_PENDING_DELETION)) != 0;
 
-                                result.Add(ClassifyPrinter(name, name, driverName, portName, isDefault, workOffline, printerStatus, preferredName));
+                                    result.Add(ClassifyPrinter(
+                                        name,
+                                        name,
+                                        driverName,
+                                        portName,
+                                        isDefault,
+                                        workOffline,
+                                        (int)info.Status,
+                                        preferredName,
+                                        hasHardwareError));
+                                }
+                                enumeratedOk = true;
+                                break;
+                            }
+
+                            var err = Marshal.GetLastWin32Error();
+                            if (err != ERROR_INSUFFICIENT_BUFFER || cbNeeded == 0)
+                            {
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            if (pBuffer != IntPtr.Zero)
+                            {
+                                Marshal.FreeHGlobal(pBuffer);
                             }
                         }
                     }
                 }
-                catch
+                else
                 {
-                    try
-                    {
-                        if (proc != null && !proc.HasExited) proc.Kill(entireProcessTree: true);
-                    }
-                    catch { }
-                    throw;
-                }
-                finally
-                {
-                    try { proc?.Dispose(); } catch { }
+                    // No printers installed in Windows spooler
+                    enumeratedOk = Marshal.GetLastWin32Error() is 0 or 122 or 18;
                 }
             }
             catch
             {
-                // Fallback if WMI query fails
+                enumeratedOk = false;
             }
         }
         else
@@ -515,11 +570,40 @@ public sealed class Win32RawPrinterService
 
         lock (_lock)
         {
-            _cachedPrinters = result;
-            _cachedPrintersAt = DateTime.UtcNow;
+            if (enumeratedOk)
+            {
+                _cachedPrinters = result;
+                _cachedPrintersAt = DateTime.UtcNow;
+                return result;
+            }
+
+            if (_cachedPrinters != null)
+            {
+                return _cachedPrinters;
+            }
         }
 
         return result;
+    }
+
+    private static string GetWindowsDefaultPrinterName()
+    {
+        try
+        {
+            uint pcchBuffer = 0;
+            GetDefaultPrinter(null, ref pcchBuffer);
+            if (pcchBuffer == 0)
+            {
+                return "";
+            }
+
+            var sb = new StringBuilder((int)pcchBuffer);
+            return GetDefaultPrinter(sb, ref pcchBuffer) ? sb.ToString().Trim() : "";
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     public static NativePrinterInfo ClassifyPrinter(
@@ -530,7 +614,8 @@ public sealed class Win32RawPrinterService
         bool isDefault,
         bool workOfflineFlag,
         int printerStatus,
-        string preferredName)
+        string preferredName,
+        bool hasHardwareError = false)
     {
         var isVirtual = VirtualPrinterNameOrDriverRegex.IsMatch(name) ||
                         VirtualPrinterNameOrDriverRegex.IsMatch(displayName) ||
@@ -538,7 +623,7 @@ public sealed class Win32RawPrinterService
                         VirtualPrinterPortRegex.IsMatch(portName);
 
         var workOffline = workOfflineFlag || printerStatus == 7;
-        var isOnline = !isVirtual && !workOffline;
+        var isOnline = !isVirtual && !workOffline && !hasHardwareError;
         var isThermalPos = !isVirtual && (
             ThermalPosPrinterRegex.IsMatch(name) ||
             ThermalPosPrinterRegex.IsMatch(displayName) ||
@@ -649,6 +734,13 @@ public sealed class Win32RawPrinterService
         };
     }
 
+    /// <summary>
+    /// Optional desktop-host PDF print callback (e.g., WebView2 offscreen PDFium printer)
+    /// invoked when SumatraPDF.exe is unavailable or fails.
+    /// Signature: (pdfFilePath, targetPrinter, isThermal, cancellationToken) => (Ok, Engine, Error).
+    /// </summary>
+    public Func<string, string, bool, CancellationToken, Task<(bool Ok, string? Engine, string? Error)>>? NativePdfPrintFallback { get; set; }
+
     public string? ResolveSumatraPdfBinary()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -658,14 +750,78 @@ public sealed class Win32RawPrinterService
 
         var candidates = new[]
         {
+            Path.Combine(_appRoot, "assets", "SumatraPDF.exe"),
+            Path.Combine(_appRoot, "assets", "SumatraPDF-3.4.6-32.exe"),
+            Path.Combine(_appRoot, "native-win", "assets", "SumatraPDF.exe"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "SumatraPDF.exe"),
+            Path.Combine(AppContext.BaseDirectory, "assets", "SumatraPDF-3.4.6-32.exe"),
             Path.Combine(_appRoot, "desktop", "SumatraPDF.exe"),
             Path.Combine(_appRoot, "desktop", "SumatraPDF-3.4.6-32.exe"),
             Path.Combine(AppContext.BaseDirectory, "SumatraPDF.exe"),
-            Path.Combine(AppContext.BaseDirectory, "SumatraPDF-3.4.6-32.exe"),
-            Path.Combine(_appRoot, "desktop", "node_modules", "pdf-to-printer", "dist", "SumatraPDF-3.4.6-32.exe")
+            Path.Combine(AppContext.BaseDirectory, "SumatraPDF-3.4.6-32.exe")
         };
 
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    public async Task<(bool Ok, string? Engine, string? Error)> SpoolPdfViaShellPrintToAsync(
+        string pdfFilePath,
+        string targetPrinter,
+        CancellationToken cancellationToken = default)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return (false, "shell-printto", "Windows Shell printto fallback is only supported on Windows.");
+        }
+
+        if (string.IsNullOrWhiteSpace(pdfFilePath) || !File.Exists(pdfFilePath))
+        {
+            return (false, "shell-printto", $"PDF file not found: {pdfFilePath}");
+        }
+
+        if (string.IsNullOrWhiteSpace(targetPrinter))
+        {
+            return (false, "shell-printto", "Target printer name is required for Shell printto.");
+        }
+
+        Process? proc = null;
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = pdfFilePath,
+                Verb = "printto",
+                Arguments = $"\"{targetPrinter}\"",
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            proc = Process.Start(psi);
+            if (proc == null)
+            {
+                return (false, "shell-printto", "ShellExecute printto did not launch a print handler.");
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+            await proc.WaitForExitAsync(cts.Token);
+
+            if (proc.ExitCode != 0)
+            {
+                return (false, "shell-printto", $"Shell printto handler exited with code {proc.ExitCode}.");
+            }
+
+            return (true, "shell-printto", null);
+        }
+        catch (Exception ex)
+        {
+            return (false, "shell-printto", ex.Message);
+        }
+        finally
+        {
+            try { proc?.Dispose(); } catch { }
+        }
     }
 
     /// <summary>
@@ -727,6 +883,7 @@ public sealed class Win32RawPrinterService
         var targetPrinter = strategy.DeviceName;
         var sumatraExe = ResolveSumatraPdfBinary();
 
+        string? sumatraError = null;
         if (!string.IsNullOrEmpty(sumatraExe))
         {
             var effectiveScale = scaleMode is "noscale" or "fit" or "shrink"
@@ -762,7 +919,7 @@ public sealed class Win32RawPrinterService
                     {
                         return (true, targetPrinter, "sumatra", null);
                     }
-                    return (false, targetPrinter, "sumatra", string.IsNullOrWhiteSpace(stderr) ? "SumatraPDF spooler exited with non-zero code." : stderr.Trim());
+                    sumatraError = string.IsNullOrWhiteSpace(stderr) ? "SumatraPDF spooler exited with non-zero code." : stderr.Trim();
                 }
             }
             catch (Exception ex)
@@ -775,7 +932,7 @@ public sealed class Win32RawPrinterService
                     }
                 }
                 catch { }
-                return (false, targetPrinter, "sumatra", ex.Message);
+                sumatraError = ex.Message;
             }
             finally
             {
@@ -783,8 +940,39 @@ public sealed class Win32RawPrinterService
             }
         }
 
-        // Do NOT spool raw %PDF bytes via RAW WinSpool (prints gibberish on GDI/thermal printers);
-        // return a clean fallback signal so the desktop host can print via WebView2 instead.
-        return (false, targetPrinter, "sumatra-missing", "SumatraPDF spooler is not bundled; fall back to WebView2 printing.");
+        // Genuine native PDF print fallback chain (never spool raw %PDF bytes to WinSpool):
+        // 1. Desktop host WebView2 offscreen PDFium printer if registered
+        if (NativePdfPrintFallback != null)
+        {
+            try
+            {
+                var fb = await NativePdfPrintFallback(pdfFilePath, targetPrinter, isThermal, CancellationToken.None);
+                if (fb.Ok)
+                {
+                    return (true, targetPrinter, fb.Engine ?? "webview2-pdf-fallback", null);
+                }
+            }
+            catch
+            {
+                // Continue to OS printto fallback
+            }
+        }
+
+        // 2. Windows ShellExecute Verb="printto" fallback
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var shellRes = await SpoolPdfViaShellPrintToAsync(pdfFilePath, targetPrinter);
+            if (shellRes.Ok)
+            {
+                return (true, targetPrinter, shellRes.Engine ?? "shell-printto", null);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(sumatraExe) && !string.IsNullOrWhiteSpace(sumatraError))
+        {
+            return (false, targetPrinter, "sumatra", sumatraError);
+        }
+
+        return (false, targetPrinter, "sumatra-missing", "SumatraPDF spooler is not bundled and native PDF print fallback was unavailable.");
     }
 }

@@ -3,7 +3,7 @@
  * Karobar App ERP — Built-in 100% Free Local WhatsApp Multi-Device Agent
  * Powered by @whiskeysockets/baileys (Open-Source MIT, Zero Monthly Fees, No Chrome Required)
  *
- * Endpoints (127.0.0.1:3001 by default):
+ * Endpoints (127.0.0.1:3002 by default):
  *   GET  /status         -> Live connection state, QR code Data URL, pairing code, connected phone
  *   POST /pair-code      -> Request 8-digit phone number pairing code { phone: "923001234567" }
  *   POST /send-document  -> Send actual PDF Buffer + caption { phone, filename, document_base64, caption }
@@ -29,7 +29,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
 
-const PORT = Number(process.env.WHATSAPP_AGENT_PORT || 3001);
+const PORT = Number(process.env.WHATSAPP_AGENT_PORT || 3002);
 const HOST = process.env.WHATSAPP_AGENT_HOST || "127.0.0.1";
 const API_KEY = (process.env.WHATSAPP_AGENT_API_KEY || "").trim();
 

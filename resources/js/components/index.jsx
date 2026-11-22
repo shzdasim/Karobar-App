@@ -38,7 +38,6 @@ export { default as ProductSearchInput } from "./ProductSearchInput.jsx";
 export { default as SupplierSearchInput } from "./SupplierSearchInput.jsx";
 export { default as BatchSearchInput } from "./BatchSearchInput.jsx";
 export { default as Sidebar } from "./Sidebar.jsx";
-export { default as TopNavigation } from "./TopNavigation.jsx";
 export { default as ThemeToggle } from "./ThemeToggle.jsx";
 export { default as ProtectedRoute } from "./ProtectedRoute.jsx";
 export { default as AuthGuard } from "./AuthGuard.jsx";

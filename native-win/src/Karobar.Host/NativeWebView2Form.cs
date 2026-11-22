@@ -1,5 +1,7 @@
 #if WINDOWS_DESKTOP
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Text.Json;
 using System.Windows.Forms;
 using Karobar.Host.GuideBot;
@@ -24,8 +26,6 @@ public sealed class NativeWebView2Form : Form
     private readonly NativeTabStripControl _tabStrip;
     private readonly Panel _tabContentPanel;
     private readonly Dictionary<string, WebView2> _tabWebViews = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _envInitLock = new(1, 1);
-    private CoreWebView2Environment? _sharedEnv;
     private string _baseOrigin;
     private NotifyIcon? _trayIcon;
     private ContextMenuStrip? _trayMenu;
@@ -33,14 +33,22 @@ public sealed class NativeWebView2Form : Form
     private NativeGuideBotDrawer? _guideDrawer;
     private NativeMascotOverlayForm? _mascotOverlay;
     private GuideBotOutsideClickFilter? _outsideClickFilter;
+    private Karobar.Background.CubeBackgroundTaskManager? _subscribedBgTaskManager;
+    private Action<Karobar.Background.CubeBackgroundTaskSnapshot>? _bgStateChangedHandler;
+    private Action? _productsMutatedHandler;
+    private Action? _bridgeToggleGuideBotHandler;
+    private Action<string?>? _bridgeOpenGuideBotHandler;
     private long _lastGuideToggleMs;
     private long _lastTabShortcutMs;
     private string _lastTabShortcutAction = "";
 
+    public event Action<NativeWebView2Form>? DetachedFormCreated;
+
     public NativeWebView2Form(
         AppWindowInstance winInstance,
         WebView2WindowManager windowManager,
-        KarobarDesktopBridge desktopBridge)
+        KarobarDesktopBridge desktopBridge,
+        bool ownsTrayIcon = false)
     {
         _winInstance = winInstance;
         _windowManager = windowManager;
@@ -91,13 +99,15 @@ public sealed class NativeWebView2Form : Form
         Controls.Add(_tabStrip);
 
         BuildNativeMenuBar();
-        if (isPrimaryWindow)
+        if (ownsTrayIcon && isPrimaryWindow)
         {
             BuildSystemTrayIcon(iconPath);
         }
 
-        // Route windowManager messages & navigation to the active tab's WebView2
+        // Route windowManager messages & navigation to the active tab's WebView2,
+        // and global broadcasts (update-progress, products-updated) to ALL tabs.
         _winInstance.WebMessageSender = BroadcastMessageToActiveTab;
+        _winInstance.BroadcastMessageSender = BroadcastMessageToAllTabs;
         _winInstance.UrlNavigator = targetUrl =>
         {
             void NavigateOnUi()
@@ -158,6 +168,20 @@ public sealed class NativeWebView2Form : Form
         Deactivate += (_, _) => _winInstance.IsFocused = false;
         FormClosed += (_, _) =>
         {
+            if (_subscribedBgTaskManager != null)
+            {
+                if (_bgStateChangedHandler != null)
+                {
+                    _subscribedBgTaskManager.StateChanged -= _bgStateChangedHandler;
+                    _bgStateChangedHandler = null;
+                }
+                if (_productsMutatedHandler != null)
+                {
+                    _subscribedBgTaskManager.ProductsMutated -= _productsMutatedHandler;
+                    _productsMutatedHandler = null;
+                }
+                _subscribedBgTaskManager = null;
+            }
             if (_outsideClickFilter != null)
             {
                 try { Application.RemoveMessageFilter(_outsideClickFilter); } catch { }
@@ -188,8 +212,17 @@ public sealed class NativeWebView2Form : Form
                 try { wv.Dispose(); } catch { }
             }
             _tabWebViews.Clear();
-            // Do not dispose _envInitLock here because an in-flight CoreWebView2Environment.CreateAsync
-            // may still release it in its finally block on form close.
+            if (_bridgeToggleGuideBotHandler != null && ReferenceEquals(_desktopBridge.OnToggleGuideBot, _bridgeToggleGuideBotHandler))
+            {
+                _desktopBridge.OnToggleGuideBot = null;
+            }
+            _bridgeToggleGuideBotHandler = null;
+            if (_bridgeOpenGuideBotHandler != null && ReferenceEquals(_desktopBridge.OnOpenGuideBot, _bridgeOpenGuideBotHandler))
+            {
+                _desktopBridge.OnOpenGuideBot = null;
+            }
+            _bridgeOpenGuideBotHandler = null;
+            _winInstance.Hwnd = IntPtr.Zero;
             _windowManager.CloseWindow(_winInstance.Id);
         };
     }
@@ -269,7 +302,8 @@ public sealed class NativeWebView2Form : Form
         _tabStrip.TabSelected += tabId => ActivateTab(tabId);
         _tabStrip.TabCloseRequested += tabId => CloseTabById(tabId);
         _tabStrip.NewTabRequested += () => _ = OpenTabAsync("/dashboard", "Dashboard", allowDuplicate: true);
-        _tabStrip.QuickOpenRequested += (route, title, allowDup) => _ = OpenTabAsync(route, title, allowDuplicate: allowDup);
+        _tabStrip.QuickOpenRequested += (route, title, allowDup) =>
+            _ = OpenTabAsync(route, title, allowDuplicate: allowDup, forceSingleton: string.Equals(route, "/sale-invoices/pos", StringComparison.OrdinalIgnoreCase));
         _tabStrip.TabReloadRequested += tabId => ReloadTab(tabId);
         _tabStrip.TabDuplicateRequested += tabId =>
         {
@@ -320,7 +354,7 @@ public sealed class NativeWebView2Form : Form
         _guideSession.ProductsMutated += BroadcastProductsUpdatedToAllTabs;
 
         _guideDrawer = new NativeGuideBotDrawer(_guideSession, _desktopBridge.MascotPreferencesStore);
-        _guideDrawer.NavigateRequested += (route, title) => _ = OpenTabAsync(route, title, allowDuplicate: false);
+        _guideDrawer.NavigateRequested += (route, title) => _ = OpenTabAsync(route, title, allowDuplicate: false, forceSingleton: true);
         _guideDrawer.StartSpotlightTourRequested += (workflowId, targetRoute) =>
         {
             _ = LaunchSpotlightTourAsync(workflowId, targetRoute);
@@ -355,21 +389,26 @@ public sealed class NativeWebView2Form : Form
         var bgMgr = _guideSession.BackgroundTaskManager;
         if (bgMgr != null)
         {
-            bgMgr.StateChanged += snap =>
+            _subscribedBgTaskManager = bgMgr;
+            _bgStateChangedHandler = snap =>
             {
                 var pill = snap.Status == "running" ? $"Auto-filling {snap.ScannedCount}/{Math.Max(1, snap.TotalEstimate)}" : null;
                 _mascotOverlay?.SetBackgroundTaskProgress(pill);
             };
-            bgMgr.ProductsMutated += BroadcastProductsUpdatedToAllTabs;
+            _productsMutatedHandler = BroadcastProductsUpdatedToAllTabs;
+            bgMgr.StateChanged += _bgStateChangedHandler;
+            bgMgr.ProductsMutated += _productsMutatedHandler;
         }
 
-        _desktopBridge.OnToggleGuideBot = ToggleGuideBot;
-        _desktopBridge.OnOpenGuideBot = tab =>
+        _bridgeToggleGuideBotHandler = ToggleGuideBot;
+        _bridgeOpenGuideBotHandler = tab =>
         {
             if (IsDisposed) return;
             if (InvokeRequired) BeginInvoke((Action)(() => _guideDrawer?.ShowDrawer(tab)));
             else _guideDrawer?.ShowDrawer(tab);
         };
+        _desktopBridge.OnToggleGuideBot = _bridgeToggleGuideBotHandler;
+        _desktopBridge.OnOpenGuideBot = _bridgeOpenGuideBotHandler;
     }
 
     private async Task LaunchSpotlightTourAsync(string workflowId, string? targetRoute)
@@ -377,7 +416,7 @@ public sealed class NativeWebView2Form : Form
         if (IsDisposed || _guideSession == null) return;
         if (!string.IsNullOrWhiteSpace(targetRoute))
         {
-            await OpenTabAsync(targetRoute, null, allowDuplicate: false);
+            await OpenTabAsync(targetRoute, null, allowDuplicate: false, forceSingleton: true);
             await Task.Delay(550);
         }
         var payload = JsonSerializer.Serialize(new
@@ -389,7 +428,7 @@ public sealed class NativeWebView2Form : Form
         BroadcastMessageToActiveTab(payload);
     }
 
-    private void ToggleGuideBot()
+    internal void ToggleGuideBot()
     {
         if (IsDisposed) return;
         var now = Environment.TickCount64;
@@ -469,13 +508,7 @@ public sealed class NativeWebView2Form : Form
 
     private void BroadcastProductsUpdatedToAllTabs()
     {
-        var json = JsonSerializer.Serialize(new
-        {
-            type = "ipc-event",
-            channel = "karobar:products-updated",
-            payload = new { source = "cube_ai", at = DateTime.UtcNow.ToString("O") }
-        });
-        BroadcastMessageToAllTabs(json);
+        _windowManager.SendProductsUpdated("cube_ai");
     }
 
     private void BroadcastMessageToAllTabs(string json)
@@ -538,10 +571,22 @@ public sealed class NativeWebView2Form : Form
                     ForeColor = Color.FromArgb(248, 250, 252),
                     BackColor = Color.FromArgb(30, 41, 59)
                 };
+                if (TryParseWinFormsShortcutKeys(item.Accelerator, out var shortcutKeys))
+                {
+                    try
+                    {
+                        subItem.ShortcutKeys = shortcutKeys;
+                        subItem.ShowShortcutKeys = true;
+                    }
+                    catch
+                    {
+                        // Ignore unsupported shortcut key combinations
+                    }
+                }
                 subItem.Click += (_, _) =>
                 {
                     // Every menu selection opens cleanly as a Waseela-style tab inside THIS window
-                    _ = OpenTabAsync(route, cleanLabel, allowDuplicate: false);
+                    _ = OpenTabAsync(route, cleanLabel, allowDuplicate: false, forceSingleton: true);
                 };
                 topItem.DropDownItems.Add(subItem);
             }
@@ -572,7 +617,62 @@ public sealed class NativeWebView2Form : Form
 
         AddTabMenuItem("Next Tab (Ctrl+Tab / Ctrl+PageDown)", () => ExecuteTabShortcutAction("cycle-next"));
         AddTabMenuItem("Previous Tab (Ctrl+Shift+Tab / Ctrl+PageUp)", () => ExecuteTabShortcutAction("cycle-prev"));
-        AddTabMenuItem("Jump to Tab 1–9 (Alt+1..9 / Ctrl+Shift+1..9)", () => ExecuteTabShortcutAction("cycle-next"));
+
+        var jumpMenu = new ToolStripMenuItem("Jump to Tab 1–9")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(30, 41, 59)
+        };
+        jumpMenu.DropDown.BackColor = Color.FromArgb(30, 41, 59);
+        jumpMenu.DropDown.ForeColor = Color.FromArgb(248, 250, 252);
+        jumpMenu.DropDown.Renderer = darkRenderer;
+
+        var jumpItems = new List<ToolStripMenuItem>(9);
+        for (var i = 0; i < 8; i++)
+        {
+            var tabIdx = i;
+            var ji = new ToolStripMenuItem($"Tab {i + 1} (Alt+{i + 1} / Ctrl+Shift+{i + 1})")
+            {
+                ForeColor = Color.FromArgb(248, 250, 252),
+                BackColor = Color.FromArgb(30, 41, 59)
+            };
+            ji.Click += (_, _) => ExecuteTabShortcutAction("focus-index", tabIdx);
+            jumpMenu.DropDownItems.Add(ji);
+            jumpItems.Add(ji);
+        }
+        var lastTabItem = new ToolStripMenuItem("Last Tab (Alt+9 / Ctrl+Shift+9)")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(30, 41, 59)
+        };
+        lastTabItem.Click += (_, _) => ExecuteTabShortcutAction("focus-last");
+        jumpMenu.DropDownItems.Add(lastTabItem);
+        jumpItems.Add(lastTabItem);
+
+        jumpMenu.DropDownOpening += (_, _) =>
+        {
+            var tabs = _workspace.Tabs;
+            for (var i = 0; i < 8; i++)
+            {
+                var item = jumpItems[i];
+                if (i < tabs.Count)
+                {
+                    item.Text = $"Tab {i + 1}: {tabs[i].Title} (Alt+{i + 1})";
+                    item.Enabled = true;
+                }
+                else
+                {
+                    item.Text = $"Tab {i + 1} (Alt+{i + 1} / Ctrl+Shift+{i + 1})";
+                    item.Enabled = false;
+                }
+            }
+            lastTabItem.Text = tabs.Count > 0
+                ? $"Last Tab: {tabs[^1].Title} (Alt+9)"
+                : "Last Tab (Alt+9 / Ctrl+Shift+9)";
+            lastTabItem.Enabled = tabs.Count > 0;
+        };
+
+        tabsMenu.DropDownItems.Add(jumpMenu);
         tabsMenu.DropDownItems.Add(new ToolStripSeparator());
         AddTabMenuItem("New Tab (Ctrl+T / Ctrl+Shift+N)", () => ExecuteTabShortcutAction("new-tab"));
         AddTabMenuItem("New Purchase Invoice Tab (Ctrl+Shift+G)", () => ExecuteTabShortcutAction("new-purchase"));
@@ -623,6 +723,8 @@ public sealed class NativeWebView2Form : Form
     private async Task InitializeInitialTabAsync()
     {
         _winInstance.Hwnd = Handle;
+        _windowManager.CaptureUiSynchronizationContext();
+        _ = _windowManager.PrewarmOffscreenPrintWorkerAsync();
         var initialRoute = NativeTabWorkspace.NormalizeRoutePath(_winInstance.RoutePath);
         var (tab, _) = _workspace.OpenTab(initialRoute, NativeTabWorkspace.ResolveTitleForRoute(initialRoute), allowDuplicate: true, focus: true, pinned: initialRoute == "/dashboard");
         await EnsureTabWebViewInitializedAsync(tab, explicitUrl: _winInstance.Url);
@@ -634,14 +736,14 @@ public sealed class NativeWebView2Form : Form
     /// Thread-safe entrypoint used by Program.cs and IPC handlers so "openWindow" / "openSubWindow"
     /// opens a Waseela tab inside THIS single window instead of spawning a second OS window.
     /// </summary>
-    public void OpenTabFromExternal(string routePath, string? title = null, bool allowDuplicate = false)
+    public void OpenTabFromExternal(string routePath, string? title = null, bool allowDuplicate = false, bool forceSingleton = false)
     {
         if (IsDisposed) return;
 
         void DoOpen()
         {
             if (IsDisposed) return;
-            _ = OpenTabAsync(routePath, title, allowDuplicate);
+            _ = OpenTabAsync(routePath, title, allowDuplicate, forceSingleton);
             if (WindowState == FormWindowState.Minimized)
             {
                 WindowState = FormWindowState.Normal;
@@ -659,11 +761,11 @@ public sealed class NativeWebView2Form : Form
         }
     }
 
-    public async Task OpenTabAsync(string routePath, string? title = null, bool allowDuplicate = false)
+    public async Task OpenTabAsync(string routePath, string? title = null, bool allowDuplicate = false, bool forceSingleton = false)
     {
         if (IsDisposed) return;
 
-        var (tab, createdNew) = _workspace.OpenTab(routePath, title, allowDuplicate: allowDuplicate, focus: true);
+        var (tab, createdNew) = _workspace.OpenTab(routePath, title, allowDuplicate: allowDuplicate, focus: true, forceSingleton: forceSingleton);
         if (createdNew || !_tabWebViews.ContainsKey(tab.TabId))
         {
             await EnsureTabWebViewInitializedAsync(tab);
@@ -743,15 +845,9 @@ public sealed class NativeWebView2Form : Form
         var tab = _workspace.Tabs.FirstOrDefault(t => t.TabId == tabId);
         if (tab == null) return;
 
-        var detachedWin = new AppWindowInstance(
-            id: Random.Shared.Next(10000, 99999),
-            title: tab.Title,
-            routePath: tab.RoutePath,
-            url: BuildAbsoluteUrl(tab.RoutePath),
-            width: 1360,
-            height: 860);
-
-        var detachedForm = new NativeWebView2Form(detachedWin, _windowManager, _desktopBridge);
+        var detachedWin = _windowManager.CreateDetachedWindow(tab.RoutePath, tab.Title, width: 1360, height: 860);
+        var detachedForm = new NativeWebView2Form(detachedWin, _windowManager, _desktopBridge, ownsTrayIcon: false);
+        DetachedFormCreated?.Invoke(detachedForm);
         detachedForm.Show();
 
         if (_workspace.Tabs.Count > 1 && !tab.IsPinned)
@@ -810,25 +906,8 @@ public sealed class NativeWebView2Form : Form
         _tabStrip.RefreshTabs();
     }
 
-    private async Task<CoreWebView2Environment> GetOrCreateSharedEnvironmentAsync()
-    {
-        if (_sharedEnv != null) return _sharedEnv;
-
-        await _envInitLock.WaitAsync();
-        try
-        {
-            if (_sharedEnv != null) return _sharedEnv;
-            _sharedEnv = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: _windowManager.SharedWebView2UserDataFolder,
-                options: new CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection"));
-            return _sharedEnv;
-        }
-        finally
-        {
-            _envInitLock.Release();
-        }
-    }
+    private Task<CoreWebView2Environment> GetOrCreateSharedEnvironmentAsync()
+        => _windowManager.GetOrCreateSharedWebView2EnvironmentAsync();
 
     private async Task EnsureTabWebViewInitializedAsync(WorkspaceTabRecord tab, string? explicitUrl = null)
     {
@@ -1112,6 +1191,14 @@ public sealed class NativeWebView2Form : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        var activeRoute = _workspace.ActiveTab?.RoutePath ?? "";
+        if (keyData == (Keys.Control | Keys.Shift | Keys.P) &&
+            ShortcutAcceleratorHelper.IsSaleInvoiceFormRoute(activeRoute))
+        {
+            // Yield Ctrl+Shift+P to React SaleInvoiceRetailForm / SaleInvoiceWholesaleForm (Save & Print)
+            // BEFORE base.ProcessCmdKey can dispatch ToolStripMenuItem.ShortcutKeys!
+            return false;
+        }
         if (HandleTabKeyData(keyData))
         {
             return true;
@@ -1129,6 +1216,7 @@ public sealed class NativeWebView2Form : Form
         }
         if (keyData == (Keys.Control | Keys.Tab) ||
             keyData == (Keys.Control | Keys.PageDown) ||
+            keyData == (Keys.Control | Keys.Shift | Keys.PageDown) ||
             keyData == (Keys.Control | Keys.OemCloseBrackets) ||
             keyData == (Keys.Control | Keys.F6))
         {
@@ -1136,6 +1224,7 @@ public sealed class NativeWebView2Form : Form
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.Tab) ||
             keyData == (Keys.Control | Keys.PageUp) ||
+            keyData == (Keys.Control | Keys.Shift | Keys.PageUp) ||
             keyData == (Keys.Control | Keys.OemOpenBrackets) ||
             keyData == (Keys.Control | Keys.Shift | Keys.F6))
         {
@@ -1150,13 +1239,7 @@ public sealed class NativeWebView2Form : Form
             return ExecuteTabShortcutAction("toggle-guide-bot");
         }
         var activeRoute = _workspace.ActiveTab?.RoutePath ?? "";
-        var isInvoiceFormRoute =
-            activeRoute.StartsWith("/sale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
-            (activeRoute.StartsWith("/sale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase)) ||
-            activeRoute.StartsWith("/wholesale-invoices/create", StringComparison.OrdinalIgnoreCase) ||
-            (activeRoute.StartsWith("/wholesale-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase)) ||
-            activeRoute.StartsWith("/purchase-invoices/create", StringComparison.OrdinalIgnoreCase) ||
-            (activeRoute.StartsWith("/purchase-invoices/", StringComparison.OrdinalIgnoreCase) && activeRoute.EndsWith("/edit", StringComparison.OrdinalIgnoreCase));
+        var isInvoiceFormRoute = ShortcutAcceleratorHelper.IsInvoiceFormRoute(activeRoute);
 
         if (keyData == (Keys.Control | Keys.T) || keyData == (Keys.Control | Keys.Shift | Keys.N))
         {
@@ -1183,6 +1266,10 @@ public sealed class NativeWebView2Form : Form
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.P))
         {
+            if (ShortcutAcceleratorHelper.IsSaleInvoiceFormRoute(activeRoute))
+            {
+                return false;
+            }
             return ExecuteTabShortcutAction("open-pos");
         }
         if (keyData == (Keys.Control | Keys.Shift | Keys.G))
@@ -1273,13 +1360,13 @@ public sealed class NativeWebView2Form : Form
                 DuplicateActiveTab();
                 return true;
             case "open-pos":
-                _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false);
+                _ = OpenTabAsync("/sale-invoices/pos", "Barcode POS", allowDuplicate: false, forceSingleton: true);
                 return true;
             case "new-purchase":
                 _ = OpenTabAsync("/purchase-invoices/create", "Purchase Invoice", allowDuplicate: true);
                 return true;
             case "open-ledger":
-                _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false);
+                _ = OpenTabAsync("/customer-ledger", "Customer Ledger", allowDuplicate: false, forceSingleton: true);
                 return true;
             case "toggle-guide-bot":
                 ToggleGuideBot();
@@ -1292,7 +1379,8 @@ public sealed class NativeWebView2Form : Form
     /// <summary>
     /// Executes real Windows hardware silent printing through Microsoft Edge WebView2
     /// (CoreWebView2.PrintAsync) for both thermal POS receipts and A4 documents, with zero OS dialog.
-    /// When targetUrl &amp; targetHtml are null, prints the currently active tab.
+    /// When targetUrl &amp; targetHtml are null, prints the currently active tab; otherwise
+    /// delegates to the persistent prewarmed OffscreenPrintWorker owned by WebView2WindowManager.
     /// </summary>
     public Task<(bool Ok, string? Engine, string? Error)> ExecuteNativeSilentPrintAsync(
         string? targetUrl,
@@ -1300,6 +1388,11 @@ public sealed class NativeWebView2Form : Form
         string printerName,
         bool isThermal)
     {
+        if (!string.IsNullOrWhiteSpace(targetUrl) || !string.IsNullOrWhiteSpace(targetHtml))
+        {
+            return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal);
+        }
+
         if (IsDisposed || !IsHandleCreated)
         {
             return Task.FromResult<(bool, string?, string?)>((false, "webview2-silent-print", "Main window is not active."));
@@ -1307,211 +1400,66 @@ public sealed class NativeWebView2Form : Form
 
         var tcs = new TaskCompletionSource<(bool Ok, string? Engine, string? Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async Task RunOnUiThreadAsync()
+        async Task PrintActiveTabOnUiAsync()
         {
-            Form? offscreenForm = null;
             try
             {
-                CoreWebView2? coreToPrint = null;
-
-                if (string.IsNullOrWhiteSpace(targetUrl) && string.IsNullOrWhiteSpace(targetHtml))
+                if (_workspace.ActiveTabId != null &&
+                    _tabWebViews.TryGetValue(_workspace.ActiveTabId, out var activeWv) &&
+                    activeWv.CoreWebView2 != null)
                 {
-                    if (_workspace.ActiveTabId != null &&
-                        _tabWebViews.TryGetValue(_workspace.ActiveTabId, out var activeWv) &&
-                        activeWv.CoreWebView2 != null)
-                    {
-                        coreToPrint = activeWv.CoreWebView2;
-                    }
-                    else
-                    {
-                        tcs.TrySetResult((false, "webview2-silent-print", "No active tab available to print."));
-                        return;
-                    }
+                    var result = await OffscreenPrintWorker.PrintCoreWebViewAsync(activeWv.CoreWebView2, printerName, isThermal);
+                    tcs.TrySetResult(result);
                 }
                 else
                 {
-                    offscreenForm = new OffscreenPrintForm(isThermal ? 380 : 820, 900);
-
-                    var printWv = new WebView2
-                    {
-                        Dock = DockStyle.Fill,
-                        DefaultBackgroundColor = Color.White
-                    };
-                    offscreenForm.Controls.Add(printWv);
-                    offscreenForm.Show();
-
-                    var env = await GetOrCreateSharedEnvironmentAsync();
-                    await printWv.EnsureCoreWebView2Async(env);
-                    coreToPrint = printWv.CoreWebView2;
-
-                    await coreToPrint.AddScriptToExecuteOnDocumentCreatedAsync(
-                        "window.__karobarSilentPrintWorker = true; window.print = function(){}; window.close = function(){};");
-
-                    var navTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs args)
-                    {
-                        navTcs.TrySetResult(args.IsSuccess);
-                    }
-
-                    coreToPrint.NavigationCompleted += OnNavCompleted;
-                    try
-                    {
-                        if (!string.IsNullOrWhiteSpace(targetUrl))
-                        {
-                            coreToPrint.Navigate(targetUrl);
-                        }
-                        else
-                        {
-                            coreToPrint.NavigateToString(targetHtml!);
-                        }
-
-                        var completed = await Task.WhenAny(navTcs.Task, Task.Delay(15000));
-                        if (completed != navTcs.Task)
-                        {
-                            tcs.TrySetResult((false, "webview2-silent-print", "Timed out waiting for receipt page to load before printing."));
-                            return;
-                        }
-                        if (!await navTcs.Task)
-                        {
-                            tcs.TrySetResult((false, "webview2-silent-print", "Failed to load print document (navigation error or HTTP 403/404/500)."));
-                            return;
-                        }
-                    }
-                    finally
-                    {
-                        coreToPrint.NavigationCompleted -= OnNavCompleted;
-                    }
-
-                    try
-                    {
-                        await coreToPrint.ExecuteScriptAsync("document.fonts ? document.fonts.ready : Promise.resolve()");
-                    }
-                    catch { }
-                    await Task.Delay(250);
+                    tcs.TrySetResult((false, "webview2-silent-print", "No active tab available to print."));
                 }
-
-                var result = await PrintCoreWebViewAsync(coreToPrint, printerName, isThermal);
-                tcs.TrySetResult(result);
             }
             catch (Exception ex)
             {
                 tcs.TrySetResult((false, "webview2-silent-print", ex.Message));
             }
-            finally
-            {
-                if (offscreenForm != null)
-                {
-                    var formToDispose = offscreenForm;
-                    _ = Task.Delay(3000).ContinueWith(_ =>
-                    {
-                        try
-                        {
-                            if (!IsDisposed && IsHandleCreated)
-                            {
-                                BeginInvoke((Action)(() =>
-                                {
-                                    try
-                                    {
-                                        if (!formToDispose.IsDisposed)
-                                        {
-                                            formToDispose.Close();
-                                            formToDispose.Dispose();
-                                        }
-                                    }
-                                    catch { }
-                                }));
-                            }
-                        }
-                        catch { }
-                    });
-                }
-            }
         }
 
         if (InvokeRequired)
         {
-            BeginInvoke((Action)(() => { _ = RunOnUiThreadAsync(); }));
+            BeginInvoke((Action)(() => { _ = PrintActiveTabOnUiAsync(); }));
         }
         else
         {
-            _ = RunOnUiThreadAsync();
+            _ = PrintActiveTabOnUiAsync();
         }
 
         return tcs.Task;
     }
 
-    private static async Task<(bool Ok, string? Engine, string? Error)> PrintCoreWebViewAsync(
-        CoreWebView2 core,
-        string printerName,
-        bool isThermal)
+    private static bool TryParseWinFormsShortcutKeys(string? accelerator, out Keys shortcutKeys)
     {
-        var settings = core.Environment.CreatePrintSettings();
-        settings.PrinterName = printerName;
-        settings.Copies = 1;
-        settings.Orientation = CoreWebView2PrintOrientation.Portrait;
-        settings.ShouldPrintBackgrounds = true;
-        settings.ShouldPrintHeaderAndFooter = false;
-        settings.ShouldPrintSelectionOnly = false;
-        var requestedCopies = 1;
-        if (isThermal)
+        shortcutKeys = Keys.None;
+        var parsed = ShortcutAcceleratorHelper.ParseAccelerator(accelerator);
+        if (parsed == null) return false;
+
+        var modifiers = Keys.None;
+        if (parsed.Ctrl) modifiers |= Keys.Control;
+        if (parsed.Shift) modifiers |= Keys.Shift;
+        if (parsed.Alt) modifiers |= Keys.Alt;
+
+        if (modifiers == Keys.None) return false;
+
+        if (parsed.Key.Length == 1 && parsed.Key[0] is >= 'A' and <= 'Z')
         {
-            settings.MarginTop = 0;
-            settings.MarginBottom = 0;
-            settings.MarginLeft = 0;
-            settings.MarginRight = 0;
-            settings.ScaleFactor = 1.0;
+            shortcutKeys = modifiers | (Keys)Enum.Parse(typeof(Keys), parsed.Key);
+            return true;
         }
 
-        // Read <meta name="karobar-print-config"> for ALL silent prints (copies + optional paperWidthMm)
-        try
+        if (Enum.TryParse<Keys>(parsed.Key, ignoreCase: true, out var keyPart) && keyPart != Keys.None)
         {
-            var metaRaw = await core.ExecuteScriptAsync(
-                "(function(){var m=document.querySelector('meta[name=\"karobar-print-config\"]');return m?m.getAttribute('content'):'';})()");
-            if (!string.IsNullOrWhiteSpace(metaRaw) && metaRaw != "null" && metaRaw != "\"\"")
-            {
-                var unescaped = JsonSerializer.Deserialize<string>(metaRaw);
-                if (!string.IsNullOrWhiteSpace(unescaped))
-                {
-                    using var cfgDoc = JsonDocument.Parse(unescaped);
-                    if (isThermal && cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) && pwEl.TryGetDouble(out var pwMm) && pwMm is >= 25 and <= 216)
-                    {
-                        settings.PageWidth = pwMm / 25.4;
-                    }
-                    if (cfgDoc.RootElement.TryGetProperty("copies", out var cpEl) && cpEl.TryGetInt32(out var copies) && copies is >= 1 and <= 20)
-                    {
-                        requestedCopies = copies;
-                        settings.Copies = copies;
-                    }
-                }
-            }
-        }
-        catch { }
-
-        CoreWebView2PrintStatus status;
-        try
-        {
-            status = await core.PrintAsync(settings);
-        }
-        catch (ArgumentException)
-        {
-            // Fallback for thermal drivers that reject explicit 0 margins or custom scale factor
-            var fallback = core.Environment.CreatePrintSettings();
-            fallback.PrinterName = printerName;
-            fallback.Copies = requestedCopies;
-            fallback.ShouldPrintBackgrounds = true;
-            fallback.ShouldPrintHeaderAndFooter = false;
-            status = await core.PrintAsync(fallback);
+            shortcutKeys = modifiers | keyPart;
+            return true;
         }
 
-        if (status == CoreWebView2PrintStatus.Succeeded)
-        {
-            return (true, "webview2-silent-print", null);
-        }
-
-        var reason = status == CoreWebView2PrintStatus.PrinterUnavailable
-            ? $"Printer '{printerName}' is offline, disconnected, or unavailable in Windows."
-            : $"Windows printer '{printerName}' failed to print (status: {status}).";
-        return (false, "webview2-silent-print", reason);
+        return false;
     }
 
     private string BuildAbsoluteUrl(string routePath)
@@ -1616,50 +1564,278 @@ internal sealed class OffscreenPrintForm : Form
 }
 
 /// <summary>
-/// Frameless native Windows Splash Form shown for &lt;1 second while Kestrel &amp; WebView2 initialize.
+/// Frameless native Windows Splash Form shown for &lt;1 second while Kestrel &amp; WebView2 initialize,
+/// matching <c>desktop/splash.html</c> branding via zero-latency double-buffered GDI+ rendering.
 /// </summary>
 public sealed class NativeSplashForm : Form
 {
+    private readonly System.Windows.Forms.Timer _animationTimer;
+    private Image? _logoImage;
+    private float _progressPhase;
+
     public NativeSplashForm(string? iconPath)
     {
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
-        Width = 480;
-        Height = 280;
+        Size = new Size(480, 310);
         TopMost = true;
         ShowInTaskbar = false;
         BackColor = Color.FromArgb(15, 23, 42);
+        DoubleBuffered = true;
+        SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.UserPaint |
+            ControlStyles.OptimizedDoubleBuffer,
+            true);
 
         if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath) && iconPath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
         {
             try { Icon = new Icon(iconPath); } catch { }
         }
 
-        var titleLabel = new Label
-        {
-            Text = "Karobar-App Native",
-            ForeColor = Color.FromArgb(248, 250, 252),
-            Font = new Font("Segoe UI", 22F, FontStyle.Bold),
-            AutoSize = false,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Dock = DockStyle.Top,
-            Height = 130,
-            Padding = new Padding(0, 45, 0, 0)
-        };
+        _logoImage = ResolveSplashLogoImage(iconPath, Icon);
 
-        var subLabel = new Label
+        _animationTimer = new System.Windows.Forms.Timer { Interval = 20 };
+        _animationTimer.Tick += (_, _) =>
         {
-            Text = "Starting Native Windows C# / .NET 9 Engine…",
-            ForeColor = Color.FromArgb(56, 189, 248),
-            Font = new Font("Segoe UI", 10.5F, FontStyle.Regular),
-            AutoSize = false,
-            TextAlign = ContentAlignment.TopCenter,
-            Dock = DockStyle.Fill,
-            Padding = new Padding(0, 12, 0, 0)
+            _progressPhase += 0.024f;
+            if (_progressPhase >= 1f) _progressPhase = 0f;
+            Invalidate(new Rectangle(120, 204, 240, 16));
         };
+        _animationTimer.Start();
+    }
 
-        Controls.Add(subLabel);
-        Controls.Add(titleLabel);
+    private static Image? ResolveSplashLogoImage(string? iconPath, Icon? formIcon)
+    {
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(iconPath))
+        {
+            if (iconPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            {
+                candidates.Add(iconPath);
+            }
+            var siblingPng = Path.ChangeExtension(iconPath, ".png");
+            if (!string.IsNullOrWhiteSpace(siblingPng))
+            {
+                candidates.Add(siblingPng);
+            }
+        }
+
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "desktop", "icon.png"));
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "icon.png"));
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "icon.png"));
+
+        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(candidate) || !File.Exists(candidate)) continue;
+            try
+            {
+                using var fs = File.OpenRead(candidate);
+                using var loaded = Image.FromStream(fs);
+                return new Bitmap(loaded);
+            }
+            catch
+            {
+                // Try next icon.png candidate
+            }
+        }
+
+        if (formIcon != null)
+        {
+            try { return formIcon.ToBitmap(); } catch { }
+        }
+
+        return null;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+        var bounds = new Rectangle(0, 0, Width, Height);
+
+        // Dark slate gradient background (#1e293b -> #0f172a -> #020617)
+        using (var bgBrush = new LinearGradientBrush(
+            new Point(0, 0),
+            new Point(Width, Height),
+            Color.FromArgb(30, 41, 59),
+            Color.FromArgb(2, 6, 23)))
+        {
+            bgBrush.InterpolationColors = new ColorBlend
+            {
+                Colors =
+                [
+                    Color.FromArgb(30, 41, 59),
+                    Color.FromArgb(15, 23, 42),
+                    Color.FromArgb(2, 6, 23)
+                ],
+                Positions = [0f, 0.65f, 1f]
+            };
+            g.FillRectangle(bgBrush, bounds);
+        }
+
+        // Subtle 1px slate card border
+        using (var borderPen = new Pen(Color.FromArgb(51, 148, 163, 184), 1f))
+        {
+            g.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
+        }
+
+        // 68x68 rounded logo badge with subtle blue glow
+        const int badgeSize = 68;
+        var badgeX = (Width - badgeSize) / 2;
+        const int badgeY = 44;
+        var badgeRect = new Rectangle(badgeX, badgeY, badgeSize, badgeSize);
+
+        for (var i = 3; i >= 1; i--)
+        {
+            var glowRect = new Rectangle(badgeX - i * 4, badgeY - i * 3, badgeSize + i * 8, badgeSize + i * 8);
+            using var glowPath = CreateRoundedRectPath(glowRect, 20 + i * 2);
+            using var glowBrush = new SolidBrush(Color.FromArgb(18, 37, 99, 235));
+            g.FillPath(glowBrush, glowPath);
+        }
+
+        using (var badgePath = CreateRoundedRectPath(badgeRect, 18))
+        {
+            if (_logoImage != null)
+            {
+                using var prevClip = g.Clip;
+                g.SetClip(badgePath, CombineMode.Intersect);
+                g.DrawImage(_logoImage, badgeRect);
+                g.Clip = prevClip;
+            }
+            else
+            {
+                using var fallbackBrush = new LinearGradientBrush(
+                    badgeRect,
+                    Color.FromArgb(37, 99, 235),
+                    Color.FromArgb(29, 78, 216),
+                    45f);
+                g.FillPath(fallbackBrush, badgePath);
+                using var monoFont = new Font("Segoe UI", 26f, FontStyle.Bold, GraphicsUnit.Pixel);
+                using var monoBrush = new SolidBrush(Color.White);
+                using var centerFmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString("K", monoFont, monoBrush, badgeRect, centerFmt);
+            }
+        }
+
+        // Title: "Karobar" + "-" (#38bdf8) + "App"
+        using (var titleFont = new Font("Segoe UI", 22f, FontStyle.Bold, GraphicsUnit.Pixel))
+        using (var fmt = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.MeasureTrailingSpaces })
+        using (var whiteBrush = new SolidBrush(Color.FromArgb(248, 250, 252)))
+        using (var accentBrush = new SolidBrush(Color.FromArgb(56, 189, 248)))
+        {
+            const string part1 = "Karobar";
+            const string part2 = "-";
+            const string part3 = "App";
+            var w1 = g.MeasureString(part1, titleFont, 400, fmt).Width;
+            var w2 = g.MeasureString(part2, titleFont, 400, fmt).Width;
+            var w3 = g.MeasureString(part3, titleFont, 400, fmt).Width;
+            var totalW = w1 + w2 + w3;
+            var startX = (Width - totalW) / 2f;
+            const float titleY = 128f;
+            g.DrawString(part1, titleFont, whiteBrush, startX, titleY, fmt);
+            g.DrawString(part2, titleFont, accentBrush, startX + w1, titleY, fmt);
+            g.DrawString(part3, titleFont, whiteBrush, startX + w1 + w2, titleY, fmt);
+        }
+
+        // Subtitle
+        using (var subFont = new Font("Segoe UI", 12.5f, FontStyle.Regular, GraphicsUnit.Pixel))
+        using (var subBrush = new SolidBrush(Color.FromArgb(148, 163, 184)))
+        using (var centerFmt = new StringFormat { Alignment = StringAlignment.Center })
+        {
+            g.DrawString(
+                "Initializing local database & secure runtime…",
+                subFont,
+                subBrush,
+                new RectangleF(24, 163, Width - 48, 24),
+                centerFmt);
+        }
+
+        // Animated marquee gradient progress bar (#3b82f6 -> #10b981)
+        const int trackW = 220;
+        const int trackH = 4;
+        var trackX = (Width - trackW) / 2;
+        const int trackY = 210;
+        var trackRect = new Rectangle(trackX, trackY, trackW, trackH);
+        using (var trackPath = CreateRoundedRectPath(trackRect, 2))
+        {
+            using (var trackBrush = new SolidBrush(Color.FromArgb(41, 148, 163, 184)))
+            {
+                g.FillPath(trackBrush, trackPath);
+            }
+
+            const int fillW = 99; // 45% of 220
+            var eased = (float)(0.5 - 0.5 * Math.Cos(_progressPhase * Math.PI));
+            var fillX = trackX - fillW + eased * (trackW + fillW);
+            var fillRect = new RectangleF(fillX, trackY, fillW, trackH);
+
+            using var prevClip = g.Clip;
+            g.SetClip(trackPath, CombineMode.Intersect);
+            using (var fillPath = CreateRoundedRectPath(Rectangle.Round(fillRect), 2))
+            using (var fillBrush = new LinearGradientBrush(
+                new PointF(fillRect.Left, trackY),
+                new PointF(fillRect.Right, trackY),
+                Color.FromArgb(59, 130, 246),
+                Color.FromArgb(16, 185, 129)))
+            {
+                g.FillPath(fillBrush, fillPath);
+            }
+            g.Clip = prevClip;
+        }
+
+        // Footer
+        using (var footerFont = new Font("Segoe UI", 11f, FontStyle.Regular, GraphicsUnit.Pixel))
+        using (var footerBrush = new SolidBrush(Color.FromArgb(100, 116, 139)))
+        using (var centerFmt = new StringFormat { Alignment = StringAlignment.Center })
+        {
+            g.DrawString(
+                "Karobar-App Desktop Edition • Inventory • POS • Accounting",
+                footerFont,
+                footerBrush,
+                new RectangleF(16, Height - 30, Width - 32, 20),
+                centerFmt);
+        }
+    }
+
+    private static GraphicsPath CreateRoundedRectPath(Rectangle rect, int radius)
+    {
+        var path = new GraphicsPath();
+        var d = Math.Min(radius * 2, Math.Min(rect.Width, rect.Height));
+        if (d <= 0)
+        {
+            path.AddRectangle(rect);
+            return path;
+        }
+        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        try { _animationTimer.Stop(); } catch { }
+        base.OnFormClosed(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            try { _animationTimer.Stop(); } catch { }
+            try { _animationTimer.Dispose(); } catch { }
+            if (_logoImage != null)
+            {
+                try { _logoImage.Dispose(); } catch { }
+                _logoImage = null;
+            }
+        }
+        base.Dispose(disposing);
     }
 }
 #endif

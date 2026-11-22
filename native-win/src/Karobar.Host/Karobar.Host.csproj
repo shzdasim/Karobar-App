@@ -3,7 +3,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>Karobar.Host</RootNamespace>
     <AssemblyName>Karobar-Native</AssemblyName>
-    <ApplicationIcon>..\..\..\desktop\icon.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' or $([MSBuild]::IsOSPlatform('Windows'))">

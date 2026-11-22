@@ -6,6 +6,7 @@ using Karobar.Data;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Karobar.Api.Controllers;
 
@@ -39,6 +40,7 @@ public class CubeAssistantController : ApiControllerBase
     }
 
     [HttpPost("ask")]
+    [EnableRateLimiting("throttle_30_1")]
     public async Task<IActionResult> Ask()
     {
         var body = await ReadJsonBodyAsync();
@@ -146,6 +148,7 @@ public class CubeAssistantController : ApiControllerBase
     }
 
     [HttpPost("execute-task")]
+    [EnableRateLimiting("throttle_60_1")]
     public async Task<IActionResult> ExecuteTask()
     {
         if (CurrentUserId == null)

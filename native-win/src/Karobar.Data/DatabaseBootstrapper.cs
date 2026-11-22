@@ -189,7 +189,8 @@ public sealed class DatabaseBootstrapper
         var dir = new DirectoryInfo(current);
         while (dir != null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "artisan")) ||
+            if ((Directory.Exists(Path.Combine(dir.FullName, "database")) &&
+                 Directory.Exists(Path.Combine(dir.FullName, "public"))) ||
                 File.Exists(Path.Combine(dir.FullName, "database", "database.sqlite")))
             {
                 return dir.FullName;
@@ -200,7 +201,8 @@ public sealed class DatabaseBootstrapper
         var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
         while (baseDir != null)
         {
-            if (File.Exists(Path.Combine(baseDir.FullName, "artisan")) ||
+            if ((Directory.Exists(Path.Combine(baseDir.FullName, "database")) &&
+                 Directory.Exists(Path.Combine(baseDir.FullName, "public"))) ||
                 File.Exists(Path.Combine(baseDir.FullName, "database", "database.sqlite")))
             {
                 return baseDir.FullName;
@@ -287,6 +289,7 @@ public sealed class DatabaseBootstrapper
         if (tableCount == 0)
         {
             await context.Database.EnsureCreatedAsync(cancellationToken);
+            await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
             return;
         }
 
@@ -404,6 +407,91 @@ public sealed class DatabaseBootstrapper
                     // Ignore if column cannot be added or already exists
                 }
             }
+        }
+
+        await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
+    }
+
+    public const string MigrateNativeWhatsAppPort3002MigrationName = "2026_11_22_000001_migrate_native_whatsapp_agent_port_3002";
+
+    private static async Task ApplyNativeWhatsAppPortMigrationAsync(DbConnection conn, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var hasMigrations = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='migrations'") > 0;
+            if (hasMigrations)
+            {
+                var alreadyApplied = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM \"migrations\" WHERE \"migration\" = @migration",
+                    new { migration = MigrateNativeWhatsAppPort3002MigrationName }) > 0;
+                if (alreadyApplied)
+                {
+                    return;
+                }
+            }
+
+            var hasSettings = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='settings'") > 0;
+            if (hasSettings)
+            {
+                var settingsCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in await conn.QueryAsync("PRAGMA table_info(\"settings\")"))
+                {
+                    if (row is IDictionary<string, object> dict &&
+                        dict.TryGetValue("name", out var nameObj) &&
+                        nameObj != null)
+                    {
+                        settingsCols.Add(nameObj.ToString()!);
+                    }
+                }
+
+                if (settingsCols.Contains("whatsapp_api_url"))
+                {
+                    if (settingsCols.Contains("whatsapp_provider"))
+                    {
+                        await conn.ExecuteAsync(@"
+                            UPDATE ""settings""
+                            SET ""whatsapp_api_url"" = 'http://127.0.0.1:3002'
+                            WHERE (""whatsapp_provider"" IS NULL OR TRIM(""whatsapp_provider"") = '' OR LOWER(TRIM(""whatsapp_provider"")) = 'local_agent')
+                              AND LOWER(TRIM(COALESCE(""whatsapp_api_url"", ''))) IN (
+                                  'http://127.0.0.1:3001',
+                                  'http://localhost:3001',
+                                  'http://127.0.0.1:3001/',
+                                  'http://localhost:3001/'
+                              );");
+                    }
+                    else
+                    {
+                        await conn.ExecuteAsync(@"
+                            UPDATE ""settings""
+                            SET ""whatsapp_api_url"" = 'http://127.0.0.1:3002'
+                            WHERE LOWER(TRIM(COALESCE(""whatsapp_api_url"", ''))) IN (
+                                  'http://127.0.0.1:3001',
+                                  'http://localhost:3001',
+                                  'http://127.0.0.1:3001/',
+                                  'http://localhost:3001/'
+                              );");
+                    }
+                }
+            }
+
+            if (hasMigrations)
+            {
+                var nextBatch = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COALESCE(MAX(\"batch\"), 0) + 1 FROM \"migrations\"");
+                await conn.ExecuteAsync(
+                    "INSERT INTO \"migrations\" (\"migration\", \"batch\") VALUES (@migration, @batch);",
+                    new { migration = MigrateNativeWhatsAppPort3002MigrationName, batch = nextBatch });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Minimal / custom test DBs without expected migration metadata should not fail schema bootstrap.
         }
     }
 

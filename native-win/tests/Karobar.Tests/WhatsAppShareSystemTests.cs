@@ -146,7 +146,7 @@ public class WhatsAppShareSystemTests
         {
             Enabled = true,
             Provider = "local_agent",
-            ApiUrl = "http://127.0.0.1:3001",
+            ApiUrl = "http://127.0.0.1:3002",
             AccessToken = "karobar_wa_testkey",
             DefaultCountryCode = "92"
         };

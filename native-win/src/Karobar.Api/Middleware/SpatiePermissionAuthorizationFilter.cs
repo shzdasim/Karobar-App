@@ -36,7 +36,7 @@ public class SpatiePermissionAuthorizationFilter : Attribute, IAsyncActionFilter
         }
 
         var db = context.HttpContext.RequestServices.GetRequiredService<KarobarDb>();
-        if (await db.UserHasRoleAsync(userId, "Admin", "admin", "super-admin"))
+        if (await db.UserHasRoleAsync(userId, KarobarDb.AdminRoleNames))
         {
             await next();
             return;

@@ -202,7 +202,7 @@ public class Wave3And4LiveHttpIntegrationTests
 
             // 1. Dosage labels route must NOT be swallowed by SPA shell middleware
             KestrelHostServer.IsSpaShellRequest("GET", "/sale-invoices/1/dosage-labels?auto_print=1&width_mm=50&height_mm=25")
-                .Should().BeFalse("dosage-labels print URL must reach SaleInvoiceController instead of returning index.blade.php");
+                .Should().BeFalse("dosage-labels print URL must reach SaleInvoiceController instead of returning SPA index.html shell");
 
             // 2. Core Wave 3 index/lookup endpoints
             (await client.GetAsync("/api/sale-invoices?page=1&per_page=10&posted=&customer=")).StatusCode.Should().Be(HttpStatusCode.OK);

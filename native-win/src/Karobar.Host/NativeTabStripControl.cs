@@ -16,12 +16,25 @@ public sealed class NativeTabStripControl : Control
     private readonly List<TabHitRect> _tabRects = new();
     private readonly List<QuickButtonRect> _quickRects = new();
     private Rectangle _newTabButtonRect = Rectangle.Empty;
+    private Rectangle _scrollLeftRect = Rectangle.Empty;
+    private Rectangle _scrollRightRect = Rectangle.Empty;
+    private Rectangle _overflowButtonRect = Rectangle.Empty;
+
+    private int _scrollOffset;
+    private int _maxScrollOffset;
+    private bool _hasOverflow;
+    private string? _lastTrackedActiveTabId;
+    private int _lastTrackedTabCount;
 
     private string? _hoveredTabId;
     private string? _hoveredCloseTabId;
     private bool _hoveredNewTab;
+    private bool _hoveredScrollLeft;
+    private bool _hoveredScrollRight;
+    private bool _hoveredOverflow;
     private string? _hoveredQuickRoute;
     private readonly ContextMenuStrip _tabContextMenu;
+    private readonly ContextMenuStrip _overflowMenu;
     private string? _contextMenuTabId;
 
     private static readonly Color StripBg = Color.FromArgb(15, 23, 42);         // #0f172a
@@ -57,6 +70,14 @@ public sealed class NativeTabStripControl : Control
         Cursor = Cursors.Hand;
 
         _tabContextMenu = BuildContextMenu();
+        _overflowMenu = new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(30, 41, 59),
+            ForeColor = Color.FromArgb(248, 250, 252),
+            Renderer = new DarkMenuStripRenderer(),
+            ShowCheckMargin = true,
+            ShowImageMargin = false
+        };
     }
 
     private ContextMenuStrip BuildContextMenu()
@@ -104,6 +125,7 @@ public sealed class NativeTabStripControl : Control
         if (disposing)
         {
             try { _tabContextMenu.Dispose(); } catch { }
+            try { _overflowMenu.Dispose(); } catch { }
             try { Font?.Dispose(); } catch { }
         }
         base.Dispose(disposing);
@@ -121,7 +143,7 @@ public sealed class NativeTabStripControl : Control
         _tabRects.Clear();
         _quickRects.Clear();
 
-        // 1. Reserve right side for Waseela Quick-Launch Pills (+POS, +Sale, +Purchase, +Products)
+        // 1. Reserve right side for Waseela Quick-Launch Pills (+POS, +Sale, +Purchase, +Products, Cube AI)
         var quickButtons = new (string Label, string Route, Color Accent)[]
         {
             ("+ POS", "/sale-invoices/pos", Color.FromArgb(16, 185, 129)),
@@ -164,29 +186,118 @@ public sealed class NativeTabStripControl : Control
             }
         }
 
-        // 2. Layout tabs on the left up to `rightX - 36`
+        // 2. Detect tab overflow & compute viewport + non-overlapping control rects
         var tabs = _workspace.Tabs;
-        var availableW = Math.Max(140, rightX - 42);
+        const int tabViewportLeft = 6;
+        const int noOverflowControlsW = 60; // '+' (24) + gap (4) + '▾' (24) + padding (8)
+        var noOverflowViewportW = Math.Max(140, rightX - tabViewportLeft - noOverflowControlsW);
         var tabCount = Math.Max(1, tabs.Count);
-        var computedTabW = Math.Clamp(availableW / tabCount, 96, 195);
-        var x = 6;
+        var probeTabW = Math.Clamp(noOverflowViewportW / tabCount, 96, 195);
+
+        var totalNaturalW = 0;
+        foreach (var tab in tabs)
+        {
+            totalNaturalW += tab.IsPinned ? Math.Min(probeTabW, 132) : probeTabW;
+        }
+
+        _hasOverflow = totalNaturalW > noOverflowViewportW;
+
+        int tabViewportRight;
+        int totalLogicalW = 0;
+        var activeStart = 0;
+        var activeEnd = 0;
+
+        if (_hasOverflow)
+        {
+            _overflowButtonRect = new Rectangle(rightX - 26, 7, 24, 22);
+            _scrollRightRect = new Rectangle(_overflowButtonRect.Left - 23, 7, 21, 22);
+            _scrollLeftRect = new Rectangle(_scrollRightRect.Left - 23, 7, 21, 22);
+            _newTabButtonRect = new Rectangle(_scrollLeftRect.Left - 28, 7, 24, 22);
+
+            tabViewportRight = Math.Max(tabViewportLeft + 40, _newTabButtonRect.Left - 6);
+            var viewportW = tabViewportRight - tabViewportLeft;
+
+            const int overflowTabW = 112;
+            foreach (var tab in tabs)
+            {
+                var tabW = tab.IsPinned ? Math.Min(overflowTabW, 100) : overflowTabW;
+                if (tab.TabId == _workspace.ActiveTabId)
+                {
+                    activeStart = totalLogicalW;
+                    activeEnd = totalLogicalW + tabW;
+                }
+                totalLogicalW += tabW;
+            }
+
+            _maxScrollOffset = Math.Max(0, totalLogicalW - viewportW);
+            if (_workspace.ActiveTabId != _lastTrackedActiveTabId || tabs.Count != _lastTrackedTabCount)
+            {
+                if (activeEnd > activeStart)
+                {
+                    if (activeStart < _scrollOffset)
+                    {
+                        _scrollOffset = activeStart;
+                    }
+                    else if (activeEnd > _scrollOffset + viewportW)
+                    {
+                        _scrollOffset = activeEnd - viewportW;
+                    }
+                }
+                _lastTrackedActiveTabId = _workspace.ActiveTabId;
+                _lastTrackedTabCount = tabs.Count;
+            }
+
+            _scrollOffset = Math.Clamp(_scrollOffset, 0, _maxScrollOffset);
+        }
+        else
+        {
+            _scrollOffset = 0;
+            _maxScrollOffset = 0;
+            _scrollLeftRect = Rectangle.Empty;
+            _scrollRightRect = Rectangle.Empty;
+            tabViewportRight = Math.Max(tabViewportLeft + 40, rightX - noOverflowControlsW);
+            totalLogicalW = totalNaturalW;
+            _lastTrackedActiveTabId = _workspace.ActiveTabId;
+            _lastTrackedTabCount = tabs.Count;
+        }
+
+        // 3. Draw clipped tabs inside viewportRect
+        var viewportRect = new Rectangle(tabViewportLeft, 0, Math.Max(1, tabViewportRight - tabViewportLeft), Height);
+        var gState = g.Save();
+        g.SetClip(viewportRect);
 
         using var activeFont = new Font("Segoe UI Semibold", 8.75F, FontStyle.Bold);
         using var closeFont = new Font("Segoe UI", 8.5F, FontStyle.Bold);
 
+        var logicalX = 0;
         foreach (var tab in tabs)
         {
             var isPinned = tab.IsPinned;
-            var tabW = isPinned ? Math.Min(computedTabW, 132) : computedTabW;
-            if (x + tabW > rightX - 34) break;
+            var baseTabW = _hasOverflow ? 112 : probeTabW;
+            var tabW = isPinned ? Math.Min(baseTabW, _hasOverflow ? 100 : 132) : baseTabW;
+            var screenX = tabViewportLeft + logicalX - _scrollOffset;
+            logicalX += tabW;
 
-            var rect = new Rectangle(x, 4, tabW - 3, Height - 4);
+            if (screenX + tabW <= tabViewportLeft || screenX >= tabViewportRight)
+            {
+                continue;
+            }
+
+            var rect = new Rectangle(screenX, 4, tabW - 3, Height - 4);
             var canClose = !isPinned && tabs.Count > 1;
             var closeRect = canClose
                 ? new Rectangle(rect.Right - 22, rect.Top + (rect.Height - 16) / 2, 16, 16)
                 : Rectangle.Empty;
 
-            _tabRects.Add(new TabHitRect(tab.TabId, rect, closeRect));
+            var hitBounds = Rectangle.Intersect(rect, viewportRect);
+            var hitCloseRect = !closeRect.IsEmpty && viewportRect.Contains(closeRect)
+                ? closeRect
+                : Rectangle.Empty;
+
+            if (!hitBounds.IsEmpty)
+            {
+                _tabRects.Add(new TabHitRect(tab.TabId, hitBounds, hitCloseRect));
+            }
 
             var isActive = tab.TabId == _workspace.ActiveTabId;
             var isHovered = tab.TabId == _hoveredTabId;
@@ -247,12 +358,18 @@ public sealed class NativeTabStripControl : Control
                     closeHover ? Color.White : (isActive ? TextActive : TextMuted),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
-
-            x += tabW;
         }
 
-        // 3. '+' New Tab button
-        _newTabButtonRect = new Rectangle(x + 2, 7, 24, 22);
+        g.Restore(gState);
+
+        if (!_hasOverflow)
+        {
+            var afterTabsX = Math.Min(tabViewportRight, tabViewportLeft + totalLogicalW);
+            _newTabButtonRect = new Rectangle(afterTabsX + 2, 7, 24, 22);
+            _overflowButtonRect = new Rectangle(_newTabButtonRect.Right + 4, 7, 24, 22);
+        }
+
+        // 4. '+' New Tab button
         using (var plusBg = new SolidBrush(_hoveredNewTab ? Color.FromArgb(51, 65, 85) : Color.Transparent))
         {
             FillRoundedRect(g, plusBg, _newTabButtonRect, 5);
@@ -265,6 +382,71 @@ public sealed class NativeTabStripControl : Control
             _newTabButtonRect,
             _hoveredNewTab ? Color.White : TextMuted,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+        // 5. '<' and '>' scroll buttons when overflowed
+        if (_hasOverflow)
+        {
+            using var scrollFont = new Font("Segoe UI", 9F, FontStyle.Bold);
+            var canLeft = _scrollOffset > 0;
+            var canRight = _scrollOffset < _maxScrollOffset;
+
+            using (var leftBg = new SolidBrush(_hoveredScrollLeft && canLeft ? Color.FromArgb(51, 65, 85) : Color.FromArgb(24, 34, 52)))
+            using (var leftPen = new Pen(TabBorder, 1f))
+            {
+                FillRoundedRect(g, leftBg, _scrollLeftRect, 4);
+                DrawRoundedRect(g, leftPen, _scrollLeftRect, 4);
+            }
+            TextRenderer.DrawText(
+                g,
+                "‹",
+                scrollFont,
+                _scrollLeftRect,
+                canLeft ? (_hoveredScrollLeft ? Color.White : TextActive) : Color.FromArgb(71, 85, 105),
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+            using (var rightBg = new SolidBrush(_hoveredScrollRight && canRight ? Color.FromArgb(51, 65, 85) : Color.FromArgb(24, 34, 52)))
+            using (var rightPen = new Pen(TabBorder, 1f))
+            {
+                FillRoundedRect(g, rightBg, _scrollRightRect, 4);
+                DrawRoundedRect(g, rightPen, _scrollRightRect, 4);
+            }
+            TextRenderer.DrawText(
+                g,
+                "›",
+                scrollFont,
+                _scrollRightRect,
+                canRight ? (_hoveredScrollRight ? Color.White : TextActive) : Color.FromArgb(71, 85, 105),
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+
+        // 6. '▾' All Open Tabs overflow dropdown button
+        using (var ovBg = new SolidBrush(_hoveredOverflow ? Color.FromArgb(51, 65, 85) : (_hasOverflow ? TabActiveBg : Color.Transparent)))
+        {
+            FillRoundedRect(g, ovBg, _overflowButtonRect, 5);
+        }
+        if (_hasOverflow)
+        {
+            using var ovPen = new Pen(TabBorder, 1f);
+            DrawRoundedRect(g, ovPen, _overflowButtonRect, 5);
+        }
+        using var ovFont = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+        TextRenderer.DrawText(
+            g,
+            "▾",
+            ovFont,
+            _overflowButtonRect,
+            _hoveredOverflow ? Color.White : (_hasOverflow ? ActiveAccent : TextMuted),
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        if (_hasOverflow && e.Delta != 0)
+        {
+            _scrollOffset = Math.Clamp(_scrollOffset - Math.Sign(e.Delta) * 112, 0, _maxScrollOffset);
+            Invalidate();
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -274,6 +456,9 @@ public sealed class NativeTabStripControl : Control
         string? newHoverClose = null;
         string? newHoverQuick = null;
         var newHoverPlus = _newTabButtonRect.Contains(e.Location);
+        var newHoverLeft = _hasOverflow && _scrollOffset > 0 && _scrollLeftRect.Contains(e.Location);
+        var newHoverRight = _hasOverflow && _scrollOffset < _maxScrollOffset && _scrollRightRect.Contains(e.Location);
+        var newHoverOverflow = _overflowButtonRect.Contains(e.Location);
 
         foreach (var t in _tabRects)
         {
@@ -300,11 +485,17 @@ public sealed class NativeTabStripControl : Control
         if (newHoverTab != _hoveredTabId ||
             newHoverClose != _hoveredCloseTabId ||
             newHoverPlus != _hoveredNewTab ||
+            newHoverLeft != _hoveredScrollLeft ||
+            newHoverRight != _hoveredScrollRight ||
+            newHoverOverflow != _hoveredOverflow ||
             newHoverQuick != _hoveredQuickRoute)
         {
             _hoveredTabId = newHoverTab;
             _hoveredCloseTabId = newHoverClose;
             _hoveredNewTab = newHoverPlus;
+            _hoveredScrollLeft = newHoverLeft;
+            _hoveredScrollRight = newHoverRight;
+            _hoveredOverflow = newHoverOverflow;
             _hoveredQuickRoute = newHoverQuick;
             Invalidate();
         }
@@ -316,6 +507,9 @@ public sealed class NativeTabStripControl : Control
         _hoveredTabId = null;
         _hoveredCloseTabId = null;
         _hoveredNewTab = false;
+        _hoveredScrollLeft = false;
+        _hoveredScrollRight = false;
+        _hoveredOverflow = false;
         _hoveredQuickRoute = null;
         Invalidate();
     }
@@ -323,6 +517,26 @@ public sealed class NativeTabStripControl : Control
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+
+        if (e.Button == MouseButtons.Left && _hasOverflow && _scrollLeftRect.Contains(e.Location))
+        {
+            _scrollOffset = Math.Clamp(_scrollOffset - 168, 0, _maxScrollOffset);
+            Invalidate();
+            return;
+        }
+
+        if (e.Button == MouseButtons.Left && _hasOverflow && _scrollRightRect.Contains(e.Location))
+        {
+            _scrollOffset = Math.Clamp(_scrollOffset + 168, 0, _maxScrollOffset);
+            Invalidate();
+            return;
+        }
+
+        if (e.Button == MouseButtons.Left && _overflowButtonRect.Contains(e.Location))
+        {
+            ShowOverflowTabsMenu();
+            return;
+        }
 
         if (e.Button == MouseButtons.Left && _newTabButtonRect.Contains(e.Location))
         {
@@ -379,6 +593,41 @@ public sealed class NativeTabStripControl : Control
                 return;
             }
         }
+    }
+
+    private void ShowOverflowTabsMenu()
+    {
+        foreach (var oldItem in _overflowMenu.Items.Cast<ToolStripItem>().ToArray())
+        {
+            oldItem.Dispose();
+        }
+        _overflowMenu.Items.Clear();
+
+        var header = new ToolStripMenuItem($"All Open Tabs ({_workspace.Tabs.Count})")
+        {
+            Enabled = false,
+            ForeColor = TextMuted
+        };
+        _overflowMenu.Items.Add(header);
+        _overflowMenu.Items.Add(new ToolStripSeparator());
+
+        var tabs = _workspace.Tabs;
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var tab = tabs[i];
+            var targetId = tab.TabId;
+            var label = $"{i + 1}. {(tab.IsPinned ? "• " : "")}{tab.Title}";
+            var item = new ToolStripMenuItem(label)
+            {
+                Checked = tab.TabId == _workspace.ActiveTabId,
+                ForeColor = tab.TabId == _workspace.ActiveTabId ? ActiveAccent : TextActive,
+                BackColor = TabActiveBg
+            };
+            item.Click += (_, _) => TabSelected?.Invoke(targetId);
+            _overflowMenu.Items.Add(item);
+        }
+
+        _overflowMenu.Show(this, new Point(_overflowButtonRect.Left, _overflowButtonRect.Bottom + 2));
     }
 
     private static Color ParseHexColor(string hex, Color fallback)

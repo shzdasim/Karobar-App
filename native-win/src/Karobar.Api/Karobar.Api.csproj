@@ -15,4 +15,15 @@
     <ProjectReference Include="..\Karobar.Printing\Karobar.Printing.csproj" />
     <ProjectReference Include="..\Karobar.Background\Karobar.Background.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\assets\TermsAndConditions.txt">
+      <Link>assets\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\assets\PrivacyPolicy.txt">
+      <Link>assets\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

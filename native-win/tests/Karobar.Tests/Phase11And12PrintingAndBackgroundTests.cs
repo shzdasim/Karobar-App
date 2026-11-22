@@ -386,6 +386,6 @@ public class Phase11And12PrintingAndBackgroundTests
         fbrConn["ok"].Should().Be(true);
 
         using var waManager = new LocalWhatsAppSidecarManager();
-        waManager.ResolveAgentUrl().Should().Be("http://127.0.0.1:3001");
+        waManager.ResolveAgentUrl().Should().Be("http://127.0.0.1:3002");
     }
 }

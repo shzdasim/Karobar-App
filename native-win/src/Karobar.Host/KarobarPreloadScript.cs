@@ -347,6 +347,10 @@ public static class KarobarPreloadScript
                   sendTabShortcut(e, "cycle-prev");
                   return;
                 }
+                if (ctrl && e.shiftKey && code === "PageDown") {
+                  sendTabShortcut(e, "cycle-next");
+                  return;
+                }
                 if (ctrl && !e.shiftKey && (code === "PageUp" || code === "BracketLeft")) {
                   sendTabShortcut(e, "cycle-prev");
                   return;
@@ -368,7 +372,8 @@ public static class KarobarPreloadScript
                   return;
                 }
                 var curPath = (window.location && window.location.pathname) || "";
-                var isInvoiceFormRoute = /^\/(sale-invoices|wholesale-invoices|purchase-invoices)\/(create|\d+\/edit)/.test(curPath);
+                var isInvoiceFormRoute = /^\/(?:sale-invoices|wholesale-invoices|purchase-invoices)\/(?:create(?:-[a-z]+|\/[a-z]+)?|\d+\/edit)\/?$/i.test(curPath);
+                var isSaleInvoiceFormRoute = /^\/(?:sale-invoices|wholesale-invoices)\/(?:create(?:-[a-z]+|\/[a-z]+)?|\d+\/edit)\/?$/i.test(curPath);
                 if ((ctrl && !e.shiftKey && key === "t") || (ctrl && e.shiftKey && key === "n")) {
                   // Preserve Ctrl+T on Sale / Wholesale / Purchase Invoice screens
                   if (key === "t" && !e.shiftKey && isInvoiceFormRoute) {
@@ -392,6 +397,7 @@ public static class KarobarPreloadScript
                   return;
                 }
                 if (ctrl && e.shiftKey && key === "p") {
+                  if (isSaleInvoiceFormRoute) return;
                   sendTabShortcut(e, "open-pos");
                   return;
                 }

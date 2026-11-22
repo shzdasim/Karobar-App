@@ -2,8 +2,10 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
+using System.Text.RegularExpressions;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -171,6 +173,19 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         return $"{tokenId}|{plainText}";
     }
 
+    private static readonly Regex QueryTokenAllowedPathRegex = new(
+        @"^(/print/.*|/sale-invoices/\d+/dosage-labels|/customer-ledger/print|/supplier-ledger/print|/api/reports/[^/]+/pdf|/api/share/pdf|/api/backups/\d+/download|/api/expenses/\d+/receipt|/api/server/(export-database|terminal-config)|/api/(products|brands|categories|customers|suppliers)/(export|import/template))/?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private bool IsQueryTokenAllowedForRequest()
+    {
+        var path = Request.Path.Value ?? "";
+        if (!QueryTokenAllowedPathRegex.IsMatch(path)) return false;
+        if (HttpMethods.IsGet(Request.Method) || HttpMethods.IsHead(Request.Method)) return true;
+        return HttpMethods.IsPost(Request.Method) &&
+               path.TrimEnd('/').Equals("/api/server/export-database", StringComparison.OrdinalIgnoreCase);
+    }
+
     private string? ExtractBearerToken()
     {
         var authHeader = Request.Headers.Authorization.FirstOrDefault();
@@ -180,7 +195,9 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
             return authHeader.Substring("Bearer ".Length).Trim();
         }
 
-        if (Request.Query.TryGetValue("api_token", out var qToken) && !string.IsNullOrWhiteSpace(qToken))
+        if (IsQueryTokenAllowedForRequest() &&
+            Request.Query.TryGetValue("api_token", out var qToken) &&
+            !string.IsNullOrWhiteSpace(qToken))
         {
             return qToken.ToString().Trim();
         }

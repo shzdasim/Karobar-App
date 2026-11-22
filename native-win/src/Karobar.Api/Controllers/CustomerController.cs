@@ -63,7 +63,7 @@ public class CustomerController : ApiControllerBase
             PhoneNumberId = Str("whatsapp_phone_number_id", ""),
             BusinessAccountId = Str("whatsapp_business_account_id", ""),
             ApiVersion = Str("whatsapp_api_version", "v21.0"),
-            ApiUrl = Str("whatsapp_api_url", "http://127.0.0.1:3001"),
+            ApiUrl = Str("whatsapp_api_url", "http://127.0.0.1:3002"),
             DefaultCountryCode = Str("whatsapp_default_country_code", "92"),
             TemplateName = Str("whatsapp_template_name", ""),
             TemplateLanguage = Str("whatsapp_template_language", "en_US"),

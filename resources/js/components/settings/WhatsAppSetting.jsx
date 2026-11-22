@@ -29,7 +29,7 @@ const PROVIDER_META = {
     needsCustomUrl: false,
     tokenLabel: "Local Agent Security Key (Auto-Generated)",
     tokenPlaceholder: "karobar_wa_...",
-    urlPlaceholder: "http://127.0.0.1:3001",
+    urlPlaceholder: "http://127.0.0.1:3002",
     helpText:
       "Runs a local WhatsApp Multi-Device bridge directly on this server. Link your device once via QR code or 8-digit pairing code to dispatch A4 PDF documents directly to recipients.",
   },
@@ -159,7 +159,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
     pairing_code: null,
     user: null,
     last_error: null,
-    agent_url: "http://127.0.0.1:3001",
+    agent_url: "http://127.0.0.1:3002",
     api_key: "",
   });
   const [pairingPhone, setPairingPhone] = useState("");
@@ -203,7 +203,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
           pairing_code: data.pairing_code || prev.pairing_code || null,
           user: data.user || null,
           last_error: data.last_error || null,
-          agent_url: data.agent_url || "http://127.0.0.1:3001",
+          agent_url: data.agent_url || "http://127.0.0.1:3002",
           api_key: data.api_key || prev.api_key || "",
         }));
 
@@ -211,7 +211,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
           setForm((prev) => ({
             ...prev,
             whatsapp_access_token: data.api_key,
-            whatsapp_api_url: data.agent_url || "http://127.0.0.1:3001",
+            whatsapp_api_url: data.agent_url || "http://127.0.0.1:3002",
           }));
         }
       } catch {
@@ -256,7 +256,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
         pairing_code: data.pairing_code || null,
         user: data.user || null,
         last_error: data.last_error || null,
-        agent_url: data.agent_url || "http://127.0.0.1:3001",
+        agent_url: data.agent_url || "http://127.0.0.1:3002",
         api_key: data.api_key || prev.api_key,
       }));
 
@@ -264,7 +264,7 @@ export default function WhatsAppSetting({ form, setForm, canUpdate, disableInput
         ...prev,
         whatsapp_enabled: true,
         whatsapp_provider: "local_agent",
-        whatsapp_api_url: data.agent_url || "http://127.0.0.1:3001",
+        whatsapp_api_url: data.agent_url || "http://127.0.0.1:3002",
         whatsapp_access_token: data.api_key || prev.whatsapp_access_token,
       }));
 

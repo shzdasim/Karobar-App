@@ -828,7 +828,6 @@ export default function Topbar({
     const onOpenCashDrawer = () => {
       if (canOpenDrawerPopup) setDrawerModalOpen(true);
     };
-    const onOpenLicenseViewer = () => setLicenseViewerOpen(true);
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("open-product-search", onOpenSearch);
@@ -837,7 +836,6 @@ export default function Topbar({
     window.addEventListener("open-guide-bot", onOpenGuideBot);
     window.addEventListener("open-accounts-register", onOpenAccountsRegister);
     window.addEventListener("open-cash-drawer", onOpenCashDrawer);
-    window.addEventListener("open-license-viewer", onOpenLicenseViewer);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("open-product-search", onOpenSearch);
@@ -846,7 +844,6 @@ export default function Topbar({
       window.removeEventListener("open-guide-bot", onOpenGuideBot);
       window.removeEventListener("open-accounts-register", onOpenAccountsRegister);
       window.removeEventListener("open-cash-drawer", onOpenCashDrawer);
-      window.removeEventListener("open-license-viewer", onOpenLicenseViewer);
     };
   }, [canOpenDrawerPopup]);
 

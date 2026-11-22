@@ -28,8 +28,8 @@ public sealed class CachedStaticAsset
 /// - GET /up health endpoint returning 200 OK
 /// - High-speed static asset serving for public/build/* (with 50MB immutable in-memory buffer cache)
 ///   and storage/app/public/* (/storage/*)
-/// - SPA shell serving (resources/views/index.blade.php resolved with Vite manifest asset tags
-///   and KarobarPreloadScript) for all 103 React routes.
+/// - SPA shell serving (public/index.html resolved with Vite manifest asset tags
+///   and KarobarPreloadScript) for all 113 React SPA routes.
 /// </summary>
 public sealed class KestrelHostServer : IAsyncDisposable
 {
@@ -60,12 +60,12 @@ public sealed class KestrelHostServer : IAsyncDisposable
         };
 
     /// <summary>
-    /// Complete registry of all 103 React SPA routes across resources/js/routes/index.jsx and desktop menus.
+    /// Complete registry of all 113 React SPA routes matching resources/js/routes/index.jsx 1:1.
+    /// (Property name `All103SpaRoutes` preserved for test binary compatibility.)
     /// </summary>
     public static readonly IReadOnlyList<string> All103SpaRoutes =
     [
         "/",
-        "/login",
         "/forgot-password",
         "/reset-password/:token",
         "/reset-password/:token/:email",
@@ -79,7 +79,6 @@ public sealed class KestrelHostServer : IAsyncDisposable
         "/suppliers",
         "/suppliers/create",
         "/suppliers/:id/edit",
-        "/suppliers/:id",
         "/customers",
         "/customers/create",
         "/customers/:id/edit",
@@ -87,19 +86,13 @@ public sealed class KestrelHostServer : IAsyncDisposable
         "/doctors",
         "/doctors/create",
         "/doctors/:id/edit",
-        "/doctors/:id",
         "/categories",
-        "/categories/create",
-        "/categories/:id/edit",
         "/brands",
         "/brands/create",
         "/brands/:id/edit",
-        "/formulations",
-        "/storage-locations",
         "/products",
         "/products/create",
         "/products/:id/edit",
-        "/products/:id",
         "/product-batches",
         "/batch-expiry",
         "/barcode-labels",
@@ -119,7 +112,6 @@ public sealed class KestrelHostServer : IAsyncDisposable
         "/smart-reorder",
         "/user-demands",
         "/user-demands/create",
-        "/user-demands/:id/edit",
         "/sale-invoices",
         "/sale-invoices/pos",
         "/sale-invoices/barcode-pos",
@@ -132,7 +124,6 @@ public sealed class KestrelHostServer : IAsyncDisposable
         "/wholesale-invoices",
         "/wholesale-invoices/create",
         "/wholesale-invoices/:id",
-        "/wholesale-invoices/:id/edit",
         "/trade-schemes",
         "/trade-schemes/create",
         "/trade-schemes/:id/edit",
@@ -323,7 +314,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
     }
 
     /// <summary>
-    /// Resolves resources/views/index.blade.php (or public/index.html) with Vite manifest.json
+    /// Resolves public/index.html with Vite manifest.json
     /// CSS and JS bundle tags plus the KarobarPreloadScript injection for window.karobarDesktop.
     /// </summary>
     public byte[] GetOrBuildSpaShellHtmlBuffer(bool forceRebuild = false, bool includeLocalPreloadTag = true)
@@ -352,15 +343,10 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
     public string BuildSpaShellHtml(bool includeLocalPreloadTag = true)
     {
-        var bladePath = Path.Combine(_networkConfig.AppRoot, "resources", "views", "index.blade.php");
         var indexHtmlPath = Path.Combine(PublicDir, "index.html");
 
         string rawTemplate;
-        if (File.Exists(bladePath))
-        {
-            rawTemplate = File.ReadAllText(bladePath, Encoding.UTF8);
-        }
-        else if (File.Exists(indexHtmlPath))
+        if (File.Exists(indexHtmlPath))
         {
             rawTemplate = File.ReadAllText(indexHtmlPath, Encoding.UTF8);
         }
@@ -373,7 +359,6 @@ public sealed class KestrelHostServer : IAsyncDisposable
                     <meta charset="utf-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
                     <title>Karobar-App</title>
-                    @vite(['resources/css/app.css', 'resources/js/app.jsx'])
                 </head>
                 <body>
                     <div id="app"></div>
@@ -384,32 +369,15 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         var viteTags = BuildViteAssetTagsFromManifest();
         var preloadTag = includeLocalPreloadTag ? "<script src=\"/__karobar_ipc/preload.js\"></script>\n    " : "";
+        var injection = $"    {preloadTag}{viteTags}\n";
 
-        // Replace Laravel Blade @if(...) @viteReactRefresh @vite(...) @endif block
-        var bladeViteBlockRegex = new Regex(
-            @"@if\s*\([^\r\n]*manifest\.json[^\r\n]*\)[\s\S]*?@endif",
-            RegexOptions.IgnoreCase);
-
-        string resolvedHtml;
-        if (bladeViteBlockRegex.IsMatch(rawTemplate))
+        var headCloseIndex = rawTemplate.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+        if (headCloseIndex >= 0)
         {
-            resolvedHtml = bladeViteBlockRegex.Replace(rawTemplate, $"{preloadTag}{viteTags}");
-        }
-        else if (rawTemplate.Contains("@vite", StringComparison.OrdinalIgnoreCase))
-        {
-            resolvedHtml = Regex.Replace(rawTemplate, @"@viteReactRefresh", "", RegexOptions.IgnoreCase);
-            resolvedHtml = Regex.Replace(
-                resolvedHtml,
-                @"@vite\s*\([^\)]*\)",
-                $"{preloadTag}{viteTags}",
-                RegexOptions.IgnoreCase);
-        }
-        else
-        {
-            resolvedHtml = rawTemplate.Replace("</head>", $"    {preloadTag}{viteTags}\n</head>", StringComparison.OrdinalIgnoreCase);
+            return rawTemplate.Insert(headCloseIndex, injection);
         }
 
-        return resolvedHtml;
+        return $"{injection}{rawTemplate}";
     }
 
     public string BuildViteAssetTagsFromManifest()
@@ -748,7 +716,8 @@ public sealed class KestrelHostServer : IAsyncDisposable
         app.UseRouting();
 
         // 1. Health Endpoint: GET /up -> 200 OK
-        app.MapGet("/up", () => Results.Text("OK", "text/plain; charset=utf-8"));
+        app.MapGet("/up", () => Results.Text("OK", "text/plain; charset=utf-8"))
+            .AllowAnonymous();
 
         // 2. Desktop IPC Preload Script & Invoke Endpoints — STRICTLY LOOPBACK ONLY!
         // Remote LAN clients must NEVER invoke desktop IPC on the Store Server PC.
@@ -762,7 +731,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             var isOffscreen = ctx.Request.Query.ContainsKey("offscreen");
             var js = KarobarPreloadScript.GetPreloadScript(isOffscreen);
             return Results.Text(js, "application/javascript; charset=utf-8");
-        });
+        }).AllowAnonymous();
 
         app.MapPost("/__karobar_ipc/invoke", async (HttpContext ctx) =>
         {
@@ -782,7 +751,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
             var result = await _desktopBridge.DispatchIpcAsync(channel, payload, ctx.RequestAborted);
             await ctx.Response.WriteAsJsonAsync(new { ok = true, result }, ctx.RequestAborted);
-        });
+        }).AllowAnonymous();
 
         app.MapPost("/__karobar_ipc/{channel}", async (string channel, HttpContext ctx) =>
         {
@@ -802,7 +771,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
             var result = await _desktopBridge.DispatchIpcAsync(channel, payload, ctx.RequestAborted);
             await ctx.Response.WriteAsJsonAsync(new { ok = true, result }, ctx.RequestAborted);
-        });
+        }).AllowAnonymous();
 
         app.MapGet("/__karobar_ipc/events", (HttpContext ctx) =>
         {
@@ -813,7 +782,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
             var since = long.TryParse(ctx.Request.Query["since"], out var s) ? s : 0L;
             var events = _windowManager.GetRecentEventsSince(since);
             return Results.Json(new { ok = true, events });
-        });
+        }).AllowAnonymous();
 
         // 3. Built-in Desktop HTML Views (Splash & Terminal Offline Recovery)
         app.MapGet("/__desktop/splash.html", () =>
@@ -823,7 +792,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 ? File.ReadAllText(splashPath, Encoding.UTF8)
                 : new SplashWindowController(splashPath).GetHtmlContent();
             return Results.Text(html, "text/html; charset=utf-8");
-        });
+        }).AllowAnonymous();
 
         app.MapGet("/__desktop/terminal-offline.html", () =>
         {
@@ -836,7 +805,7 @@ public sealed class KestrelHostServer : IAsyncDisposable
                 html = html.Replace("<head>", "<head>\n  <script src=\"/__karobar_ipc/preload.js\"></script>", StringComparison.OrdinalIgnoreCase);
             }
             return Results.Text(html, "text/html; charset=utf-8");
-        });
+        }).AllowAnonymous();
 
         // 4. Terminal Identity Header Injection + High-Speed Static Asset Middleware
         app.Use(async (context, next) =>

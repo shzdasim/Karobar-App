@@ -5,6 +5,7 @@ using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Karobar.Api.Controllers;
 
@@ -23,6 +24,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> Login()
     {
         var body = await ReadJsonBodyAsync();
@@ -251,6 +253,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("session/extend")]
     [Authorize]
+    [EnableRateLimiting("throttle_30_1")]
     public async Task<IActionResult> ExtendSession()
     {
         var userId = CurrentUserId;
@@ -307,6 +310,7 @@ public class AuthController : ApiControllerBase
     [HttpPost("verify-password")]
     [HttpPost("auth/confirm-password")]
     [Authorize]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> ConfirmPassword()
     {
         var userId = CurrentUserId;
@@ -335,6 +339,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> ForgotPassword()
     {
         var body = await ReadJsonBodyAsync();
@@ -369,6 +374,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("throttle_10_1")]
     public async Task<IActionResult> ResetPassword()
     {
         var body = await ReadJsonBodyAsync();

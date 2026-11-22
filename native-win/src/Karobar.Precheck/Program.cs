@@ -34,9 +34,9 @@ public static class Program
         };
     }
 
-    private static string[] StripCliPrefix(string[] args)
+    internal static string[] StripCliPrefix(string[] args)
     {
-        if (args.Length >= 2 && (args[0].Equals("--cli", StringComparison.OrdinalIgnoreCase) || args[0].Equals("artisan", StringComparison.OrdinalIgnoreCase)))
+        if (args.Length >= 2 && args[0].Equals("--cli", StringComparison.OrdinalIgnoreCase))
         {
             return args[1..];
         }

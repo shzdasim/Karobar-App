@@ -54,10 +54,10 @@ AllowNoIcons=yes
 CloseApplications=force
 AppMutex=Global\KarobarNativeErpV2Mutex
 RestartApplications=no
-LicenseFile=..\..\installer\legal\TermsAndConditions.txt
+LicenseFile=..\assets\TermsAndConditions.txt
 OutputDir=..\..\dist\installer
 OutputBaseFilename=Karobar-Native-Setup
-SetupIconFile=..\..\desktop\icon.ico
+SetupIconFile=..\assets\icon.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -78,15 +78,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Dirs]
-Name: "{app}"; Permissions: users-modify
 Name: "{app}\database"; Permissions: users-modify
-Name: "{app}\desktop"; Permissions: users-modify
-Name: "{app}\public"; Permissions: users-modify
-Name: "{app}\resources"; Permissions: users-modify
-Name: "{app}\runtime"; Permissions: users-modify
-Name: "{app}\runtime\node"; Permissions: users-modify
-Name: "{app}\runtime\whatsapp-agent"; Permissions: users-modify
-Name: "{app}\scripts"; Permissions: users-modify
 Name: "{app}\storage"; Permissions: users-modify
 Name: "{app}\storage\app"; Permissions: users-modify
 Name: "{app}\storage\app\public"; Permissions: users-modify
@@ -98,12 +90,15 @@ Name: "{app}\storage\logs"; Permissions: users-modify
 [Files]
 ; Lightweight standalone precheck helper extracted on wizard boot to compute Machine ID & verify Ed25519 signature BEFORE installation
 Source: "{#PrecheckStageDir}\{#MyPrecheckExeName}"; Flags: dontcopy
-Source: "..\..\desktop\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Full staged Native C#/.NET 9 + WebView2 + React 19 SPA bundle (+ portable Node.js for optional WhatsApp sidecar)
-; CRITICAL ZERO-DATA-LOSS EXCLUSIONS: Never overwrite existing SQLite database, .env, machine-id, license-clock, WhatsApp session, uploaded logos/files, or backups!
+; CRITICAL ZERO-DATA-LOSS EXCLUSIONS: Never overwrite existing SQLite database, .env, machine-id, license-clock, WhatsApp session, uploaded logos/files, network-mode, Cube learned knowledge, logs, or backups!
 Source: "{#BuildStageDir}\*"; DestDir: "{app}"; \
-  Excludes: "database\database.sqlite*,storage\app\.machine-id,storage\app\.license-clock,storage\app\.app-key,storage\app\whatsapp-auth\*,storage\app\whatsapp-agent\*,storage\app\public\*,storage\app\backups\*,storage\backups\*,.env"; \
+  Excludes: "database\database.sqlite*,storage\app\.machine-id,storage\app\.license-clock,storage\app\.app-key,storage\app\network-mode.json,storage\app\cube-learned-knowledge.json,storage\app\whatsapp-auth\*,storage\app\whatsapp-agent\*,storage\app\public\*,storage\app\backups\*,storage\backups\*,storage\logs\*,.env"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+Type: files; Name: "{app}\public\build\assets\*"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
@@ -113,14 +108,14 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 [Run]
 ; Install Developer Authenticode Certificate into local Trusted Root & Trusted Publishers store so Karobar-App.exe is trusted on this PC
 Filename: "{sys}\certutil.exe"; \
-  Parameters: "-addstore -f ""Root"" ""{app}\desktop\MalikAsimShahzad-KarobarERP.cer"""; \
+  Parameters: "-addstore -f ""Root"" ""{app}\assets\MalikAsimShahzad-KarobarERP.cer"""; \
   Flags: runhidden waituntilterminated; \
-  Check: FileExists(ExpandConstant('{app}\desktop\MalikAsimShahzad-KarobarERP.cer'))
+  Check: FileExists(ExpandConstant('{app}\assets\MalikAsimShahzad-KarobarERP.cer'))
 
 Filename: "{sys}\certutil.exe"; \
-  Parameters: "-addstore -f ""TrustedPublisher"" ""{app}\desktop\MalikAsimShahzad-KarobarERP.cer"""; \
+  Parameters: "-addstore -f ""TrustedPublisher"" ""{app}\assets\MalikAsimShahzad-KarobarERP.cer"""; \
   Flags: runhidden waituntilterminated; \
-  Check: FileExists(ExpandConstant('{app}\desktop\MalikAsimShahzad-KarobarERP.cer'))
+  Check: FileExists(ExpandConstant('{app}\assets\MalikAsimShahzad-KarobarERP.cer'))
 
 ; Post-Install / Upgrade Native CLI Bootstrapper:
 ; - In upgrade mode (--upgrade-only via admin-init.json): backs up SQLite DB, runs schema updates & permissions, preserves 100% of users, license, settings & store data.
@@ -199,9 +194,26 @@ begin
   Result := GetEnv('TEMP') + '\karobar-native-ota-upgrade.flag';
 end;
 
+function ExplicitOtaFlagPath(): String;
+begin
+  Result := Trim(ExpandConstant('{param:OTAFLAG|}'));
+end;
+
+procedure CleanupOtaUpgradeFlags();
+var
+  ParamFlagPath: String;
+begin
+  ParamFlagPath := ExplicitOtaFlagPath();
+  if (ParamFlagPath <> '') and FileExists(ParamFlagPath) then
+    DeleteFile(ParamFlagPath);
+  if FileExists(OtaUpgradeFlagPath()) then
+    DeleteFile(OtaUpgradeFlagPath());
+end;
+
 function IsCliUpgradeMode(): Boolean;
 var
   SrcExeUpper: String;
+  ParamFlagPath: String;
 begin
   if IsCliUpgradeSessionResolved then
   begin
@@ -209,10 +221,12 @@ begin
     Exit;
   end;
   SrcExeUpper := UpperCase(ExtractFileName(ExpandConstant('{srcexe}')));
+  ParamFlagPath := ExplicitOtaFlagPath();
   IsCliUpgradeSession :=
     WizardSilent() or
     (ExpandConstant('{param:UPGRADE|0}') = '1') or
     (Pos('KAROBAR-NATIVE-UPDATE', SrcExeUpper) > 0) or
+    ((ParamFlagPath <> '') and FileExists(ParamFlagPath)) or
     FileExists(OtaUpgradeFlagPath());
   IsCliUpgradeSessionResolved := True;
   Result := IsCliUpgradeSession;
@@ -984,13 +998,85 @@ begin
       SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-mode.json'), NetCfgJson, False);
       SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App-Native\network-config.json'), NetCfgJson, False);
     end;
-    if FileExists(OtaUpgradeFlagPath()) then
-      DeleteFile(OtaUpgradeFlagPath());
+    CleanupOtaUpgradeFlags();
   end;
 end;
 
 procedure DeinitializeSetup();
 begin
-  if FileExists(OtaUpgradeFlagPath()) then
-    DeleteFile(OtaUpgradeFlagPath());
+  CleanupOtaUpgradeFlags();
+end;
+
+function IsWebView2RuntimeInstalled(): Boolean;
+var
+  Pv: String;
+begin
+  Result := False;
+  if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv) and
+     (Trim(Pv) <> '') and (Trim(Pv) <> '0.0.0.0') then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv) and
+     (Trim(Pv) <> '') and (Trim(Pv) <> '0.0.0.0') then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv) and
+     (Trim(Pv) <> '') and (Trim(Pv) <> '0.0.0.0') then
+  begin
+    Result := True;
+    Exit;
+  end;
+end;
+
+function OnWebView2DownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+begin
+  if ProgressMax > 0 then
+    WizardForm.StatusLabel.Caption := Format('Downloading Microsoft Edge WebView2 Runtime (%d%%)...', [(Progress * 100) div ProgressMax])
+  else
+    WizardForm.StatusLabel.Caption := 'Downloading Microsoft Edge WebView2 Runtime...';
+  Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  BootstrapperPath: String;
+  ResultCode: Integer;
+  ExecOk: Boolean;
+begin
+  Result := '';
+  if IsWebView2RuntimeInstalled() then
+    Exit;
+
+  WizardForm.StatusLabel.Caption := 'Downloading Microsoft Edge WebView2 Evergreen Runtime...';
+  try
+    DownloadTemporaryFile(
+      'https://go.microsoft.com/fwlink/p/?LinkId=2124703',
+      'MicrosoftEdgeWebview2Setup.exe',
+      '',
+      @OnWebView2DownloadProgress
+    );
+    BootstrapperPath := ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe');
+    WizardForm.StatusLabel.Caption := 'Installing Microsoft Edge WebView2 Runtime...';
+    ExecOk := Exec(BootstrapperPath, '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    if ExecOk and (ResultCode = 0) then
+    begin
+      Exit;
+    end;
+    if ExecOk and (ResultCode = 3010) then
+    begin
+      NeedsRestart := True;
+      Exit;
+    end;
+    if IsWebView2RuntimeInstalled() then
+    begin
+      Exit;
+    end;
+    Result := 'Microsoft Edge WebView2 Runtime installation failed (exit code ' + IntToStr(ResultCode) + '). Please connect to the internet or install WebView2 Evergreen Runtime and retry.';
+  except
+    Result := 'Microsoft Edge WebView2 Runtime is required and could not be downloaded (' + GetExceptionMessage + '). Please connect to the internet or install WebView2 Evergreen Runtime and retry.';
+  end;
 end;

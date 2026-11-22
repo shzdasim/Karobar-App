@@ -95,7 +95,7 @@ public class UserController : ApiControllerBase
 
         if (!await IsAdminAsync())
         {
-            if (roles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || r.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+            if (roles.Any(KarobarDb.IsAdminRoleName))
             {
                 return Forbidden("Non-admin users cannot assign the Admin role.");
             }
@@ -174,7 +174,7 @@ public class UserController : ApiControllerBase
             }
         }
 
-        var targetIsAdmin = await Db.UserHasRoleAsync(id, "Admin", "admin", "super-admin");
+        var targetIsAdmin = await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames);
         if (!await IsAdminAsync() && targetIsAdmin)
         {
             return Forbidden("Non-admin users cannot modify or delete an Administrator account.");
@@ -187,14 +187,14 @@ public class UserController : ApiControllerBase
 
         var requestedRoles = hasRolesInput ? GetStringList(body, "roles") : new List<string>();
         if (!await IsAdminAsync() && hasRolesInput &&
-            requestedRoles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || r.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+            requestedRoles.Any(KarobarDb.IsAdminRoleName))
         {
             return Forbidden("Only an Administrator can assign the Admin role.");
         }
         if (targetIsAdmin)
         {
             var willBeInactive = status != null && !status.Equals("active", StringComparison.OrdinalIgnoreCase);
-            var willLoseAdmin = hasRolesInput && !requestedRoles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase));
+            var willLoseAdmin = hasRolesInput && !requestedRoles.Any(KarobarDb.IsAdminRoleName);
 
             if (willLoseAdmin && CurrentUserId == id)
             {
@@ -250,7 +250,7 @@ public class UserController : ApiControllerBase
         var target = await Db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id });
         if (target == null) return NotFound(new { message = "User not found" });
 
-        if (!await IsAdminAsync() && await Db.UserHasRoleAsync(id, "Admin", "admin", "super-admin"))
+        if (!await IsAdminAsync() && await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames))
         {
             return Forbidden("Non-admin users cannot modify or delete an Administrator account.");
         }
@@ -287,18 +287,15 @@ public class UserController : ApiControllerBase
         var roles = GetStringList(body, "roles");
 
         var callerIsAdmin = await IsAdminAsync();
-        var targetIsAdmin = await Db.UserHasRoleAsync(id, "Admin");
-        var assignsReservedAdmin = roles.Any(r =>
-            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("super-admin", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Super Admin", StringComparison.OrdinalIgnoreCase));
+        var targetIsAdmin = await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames);
+        var assignsReservedAdmin = roles.Any(KarobarDb.IsAdminRoleName);
 
         if (!callerIsAdmin && (targetIsAdmin || assignsReservedAdmin))
         {
             return Forbidden("Only an Administrator can assign or modify Admin roles.");
         }
 
-        if (targetIsAdmin && !roles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
+        if (targetIsAdmin && !roles.Any(KarobarDb.IsAdminRoleName))
         {
             if (CurrentUserId == id)
             {
@@ -376,7 +373,7 @@ public class UserController : ApiControllerBase
             {
                 return Unprocessable($"Role '{role}' does not exist.");
             }
-            if (!callerIsAdmin && (role.Equals("Admin", StringComparison.OrdinalIgnoreCase) || role.Equals("super-admin", StringComparison.OrdinalIgnoreCase)))
+            if (!callerIsAdmin && KarobarDb.IsAdminRoleName(role))
             {
                 return Forbidden("Only an Administrator can assign the Admin role.");
             }
@@ -391,7 +388,7 @@ public class UserController : ApiControllerBase
             var target = await Db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id = targetId });
             if (target == null) continue;
             var targetName = target.GetValueOrDefault("name")?.ToString() ?? $"User #{targetId}";
-            var targetIsAdmin = await Db.UserHasRoleAsync(targetId, "Admin", "admin", "super-admin");
+            var targetIsAdmin = await Db.UserHasRoleAsync(targetId, KarobarDb.AdminRoleNames);
 
             if (!callerIsAdmin && targetIsAdmin)
             {
@@ -424,7 +421,7 @@ public class UserController : ApiControllerBase
             }
             else if (action == "assign_role")
             {
-                var losesAdmin = targetIsAdmin && !role.Equals("Admin", StringComparison.OrdinalIgnoreCase) && !role.Equals("super-admin", StringComparison.OrdinalIgnoreCase);
+                var losesAdmin = targetIsAdmin && !KarobarDb.IsAdminRoleName(role);
                 if (losesAdmin && targetId == actorId)
                 {
                     skipped.Add($"{targetName} (cannot remove Admin role from your own account)");
@@ -470,7 +467,7 @@ public class UserController : ApiControllerBase
 
     private async Task<bool> IsLastActiveAdminAsync(long userId)
     {
-        if (!await Db.UserHasRoleAsync(userId, "Admin")) return false;
+        if (!await Db.UserHasRoleAsync(userId, KarobarDb.AdminRoleNames)) return false;
 
         var otherActiveAdmins = await Db.ExecuteScalarAsync<int>(@"
             SELECT COUNT(DISTINCT u.id)
@@ -479,7 +476,7 @@ public class UserController : ApiControllerBase
             INNER JOIN roles r ON r.id = mhr.role_id
             WHERE u.id != @userId
               AND u.status = 'active'
-              AND r.name = 'Admin'",
+              AND LOWER(r.name) IN ('admin', 'super-admin', 'super admin')",
             new { userId });
 
         return otherActiveAdmins == 0;
