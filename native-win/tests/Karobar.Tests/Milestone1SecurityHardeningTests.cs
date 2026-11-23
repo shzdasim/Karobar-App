@@ -144,6 +144,10 @@ public class Milestone1SecurityHardeningTests
         var tmpRoot = Path.Combine(Path.GetTempPath(), $"karobar_iss04_{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(tmpRoot, "public"));
         Directory.CreateDirectory(Path.Combine(tmpRoot, "storage", "app"));
+        // On Windows, differential patch eligibility requires the bundled portable Node + Baileys runtime.
+        Directory.CreateDirectory(Path.Combine(tmpRoot, "runtime", "node"));
+        await File.WriteAllTextAsync(Path.Combine(tmpRoot, "runtime", "node", "node.exe"), "");
+        Directory.CreateDirectory(Path.Combine(tmpRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys"));
         await File.WriteAllTextAsync(
             Path.Combine(tmpRoot, "public", "version.json"),
             """{"app_name":"Karobar-App Native","version":"2.0.48","build_number":48,"repository":"evil/fake-repo","runtime_layout":"split-v2","deps_fingerprint":"fp1"}""");

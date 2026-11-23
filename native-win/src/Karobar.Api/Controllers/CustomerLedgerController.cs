@@ -527,7 +527,12 @@ public class CustomerLedgerController : ApiControllerBase
             }
         }
 
-        await Db.ExecuteAsync("DELETE FROM customer_ledgers WHERE id = @id", new { id = customerLedger });
+        var deleted = await Db.ExecuteAsync("DELETE FROM customer_ledgers WHERE id = @id", new { id = customerLedger });
+        if (deleted == 0)
+        {
+            return NotFound(new { message = "Customer ledger entry not found." });
+        }
+
         return Ok(new { status = "ok" });
     }
 

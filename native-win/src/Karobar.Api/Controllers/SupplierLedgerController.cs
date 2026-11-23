@@ -555,7 +555,12 @@ public class SupplierLedgerController : ApiControllerBase
             }
         }
 
-        await Db.ExecuteAsync("DELETE FROM supplier_ledgers WHERE id = @id", new { id });
+        var deleted = await Db.ExecuteAsync("DELETE FROM supplier_ledgers WHERE id = @id", new { id });
+        if (deleted == 0)
+        {
+            return NotFound(new { message = "Supplier ledger entry not found." });
+        }
+
         return Ok(new { status = "ok" });
     }
 
