@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using Karobar.Services.Infrastructure;
 
@@ -228,37 +229,49 @@ public class AccountService
 
         var hasTxnTable = await _db.HasTableAsync("account_transactions");
         await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
-        if (locked == null) return null;
-
-        var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
-        await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        long txnId;
+        try
         {
-            ["current_balance"] = newBalance
-        }, "id", conn, tx);
+            var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
+            if (locked == null)
+            {
+                await tx.RollbackAsync();
+                return null;
+            }
 
-        if (!hasTxnTable)
-        {
+            var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
+            await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+            {
+                ["current_balance"] = newBalance
+            }, "id", conn, tx);
+
+            if (!hasTxnTable)
+            {
+                await tx.CommitAsync();
+                return null;
+            }
+
+            var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
+            txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            {
+                ["account_id"] = accountId,
+                ["user_id"] = userId,
+                ["type"] = "deposit",
+                ["amount"] = amount,
+                ["balance_after"] = newBalance,
+                ["reference_type"] = refType,
+                ["reference_id"] = refId,
+                ["description"] = description ?? $"Deposit to {accName}",
+                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            }, conn, tx);
             await tx.CommitAsync();
-            return null;
         }
-
-        var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
-        var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+        catch
         {
-            ["account_id"] = accountId,
-            ["user_id"] = userId,
-            ["type"] = "deposit",
-            ["amount"] = amount,
-            ["balance_after"] = newBalance,
-            ["reference_type"] = refType,
-            ["reference_id"] = refId,
-            ["description"] = description ?? $"Deposit to {accName}",
-            ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        }, conn, tx);
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM account_transactions WHERE id = @id", new { id = txnId });
     }
@@ -296,37 +309,49 @@ public class AccountService
 
         var hasTxnTable = await _db.HasTableAsync("account_transactions");
         await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
-        if (locked == null) return null;
-
-        var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
-        await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        long txnId;
+        try
         {
-            ["current_balance"] = newBalance
-        }, "id", conn, tx);
+            var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx);
+            if (locked == null)
+            {
+                await tx.RollbackAsync();
+                return null;
+            }
 
-        if (!hasTxnTable)
-        {
+            var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
+            await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+            {
+                ["current_balance"] = newBalance
+            }, "id", conn, tx);
+
+            if (!hasTxnTable)
+            {
+                await tx.CommitAsync();
+                return null;
+            }
+
+            var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
+            txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            {
+                ["account_id"] = accountId,
+                ["user_id"] = userId,
+                ["type"] = "withdrawal",
+                ["amount"] = amount,
+                ["balance_after"] = newBalance,
+                ["reference_type"] = refType,
+                ["reference_id"] = refId,
+                ["description"] = description ?? $"Withdrawal from {accName}",
+                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            }, conn, tx);
             await tx.CommitAsync();
-            return null;
         }
-
-        var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
-        var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+        catch
         {
-            ["account_id"] = accountId,
-            ["user_id"] = userId,
-            ["type"] = "withdrawal",
-            ["amount"] = amount,
-            ["balance_after"] = newBalance,
-            ["reference_type"] = refType,
-            ["reference_id"] = refId,
-            ["description"] = description ?? $"Withdrawal from {accName}",
-            ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        }, conn, tx);
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return await _db.QuerySingleOrDefaultAsync("SELECT * FROM account_transactions WHERE id = @id", new { id = txnId });
     }
@@ -351,51 +376,65 @@ public class AccountService
         }
 
         await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var fromLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = fromAccountId }, conn, tx)
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        Dictionary<string, object?> fromLocked;
+        Dictionary<string, object?> toLocked;
+        string fromName;
+        string toName;
+        string desc;
+        long outTxnId;
+        long inTxnId;
+        try
+        {
+            fromLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = fromAccountId }, conn, tx)
                          ?? throw new KeyNotFoundException("Source account not found.");
-        var toLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = toAccountId }, conn, tx)
+            toLocked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = toAccountId }, conn, tx)
                        ?? throw new KeyNotFoundException("Destination account not found.");
 
-        var fromBalanceAfter = Math.Round(ToDecimal(fromLocked.GetValueOrDefault("current_balance")) - amount, 2);
-        var toBalanceAfter = Math.Round(ToDecimal(toLocked.GetValueOrDefault("current_balance")) + amount, 2);
+            var fromBalanceAfter = Math.Round(ToDecimal(fromLocked.GetValueOrDefault("current_balance")) - amount, 2);
+            var toBalanceAfter = Math.Round(ToDecimal(toLocked.GetValueOrDefault("current_balance")) + amount, 2);
 
-        await _db.UpdateAsync("accounts", fromAccountId, new Dictionary<string, object?> { ["current_balance"] = fromBalanceAfter }, "id", conn, tx);
-        await _db.UpdateAsync("accounts", toAccountId, new Dictionary<string, object?> { ["current_balance"] = toBalanceAfter }, "id", conn, tx);
+            await _db.UpdateAsync("accounts", fromAccountId, new Dictionary<string, object?> { ["current_balance"] = fromBalanceAfter }, "id", conn, tx);
+            await _db.UpdateAsync("accounts", toAccountId, new Dictionary<string, object?> { ["current_balance"] = toBalanceAfter }, "id", conn, tx);
 
-        var fromName = fromLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
-        var toName = toLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
-        var desc = !string.IsNullOrWhiteSpace(notes) ? $" - {notes}" : "";
-        var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            fromName = fromLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
+            toName = toLocked.GetValueOrDefault("name")?.ToString() ?? "Account";
+            desc = !string.IsNullOrWhiteSpace(notes) ? $" - {notes}" : "";
+            var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
-        var outTxnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            outTxnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            {
+                ["account_id"] = fromAccountId,
+                ["user_id"] = userId,
+                ["type"] = "transfer_out",
+                ["amount"] = amount,
+                ["balance_after"] = fromBalanceAfter,
+                ["reference_type"] = "transfer",
+                ["reference_id"] = toAccountId,
+                ["description"] = $"Transfer to {toName}{desc}",
+                ["transaction_date"] = nowStr
+            }, conn, tx);
+
+            inTxnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            {
+                ["account_id"] = toAccountId,
+                ["user_id"] = userId,
+                ["type"] = "transfer_in",
+                ["amount"] = amount,
+                ["balance_after"] = toBalanceAfter,
+                ["reference_type"] = "transfer",
+                ["reference_id"] = fromAccountId,
+                ["description"] = $"Transfer from {fromName}{desc}",
+                ["transaction_date"] = nowStr
+            }, conn, tx);
+
+            await tx.CommitAsync();
+        }
+        catch
         {
-            ["account_id"] = fromAccountId,
-            ["user_id"] = userId,
-            ["type"] = "transfer_out",
-            ["amount"] = amount,
-            ["balance_after"] = fromBalanceAfter,
-            ["reference_type"] = "transfer",
-            ["reference_id"] = toAccountId,
-            ["description"] = $"Transfer to {toName}{desc}",
-            ["transaction_date"] = nowStr
-        }, conn, tx);
-
-        var inTxnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
-        {
-            ["account_id"] = toAccountId,
-            ["user_id"] = userId,
-            ["type"] = "transfer_in",
-            ["amount"] = amount,
-            ["balance_after"] = toBalanceAfter,
-            ["reference_type"] = "transfer",
-            ["reference_id"] = fromAccountId,
-            ["description"] = $"Transfer from {fromName}{desc}",
-            ["transaction_date"] = nowStr
-        }, conn, tx);
-
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var cashDrawerService = new CashDrawerService(_db);
         if (IsDefaultCashDrawerAccount(fromLocked))
@@ -447,43 +486,53 @@ public class AccountService
         }
 
         await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx)
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        Dictionary<string, object?> locked;
+        bool isDeposit;
+        string desc;
+        long txnId;
+        try
+        {
+            locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId }, conn, tx)
                      ?? throw new KeyNotFoundException("Account not found.");
 
-        var isDeposit = string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase);
-        decimal newBalance;
-        string desc;
-        if (isDeposit)
-        {
-            newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
-            desc = $"Manual deposit / adjustment: {reason}";
-        }
-        else
-        {
-            newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
-            desc = $"Manual expense / withdrawal: {reason}";
-        }
+            isDeposit = string.Equals(type, "deposit", StringComparison.OrdinalIgnoreCase);
+            decimal newBalance;
+            if (isDeposit)
+            {
+                newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
+                desc = $"Manual deposit / adjustment: {reason}";
+            }
+            else
+            {
+                newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
+                desc = $"Manual expense / withdrawal: {reason}";
+            }
 
-        await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
-        {
-            ["current_balance"] = newBalance
-        }, "id", conn, tx);
+            await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+            {
+                ["current_balance"] = newBalance
+            }, "id", conn, tx);
 
-        var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+            {
+                ["account_id"] = accountId,
+                ["user_id"] = userId,
+                ["type"] = "adjustment",
+                ["amount"] = isDeposit ? amount : -amount,
+                ["balance_after"] = newBalance,
+                ["reference_type"] = "manual",
+                ["reference_id"] = null,
+                ["description"] = desc,
+                ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            }, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
         {
-            ["account_id"] = accountId,
-            ["user_id"] = userId,
-            ["type"] = "adjustment",
-            ["amount"] = isDeposit ? amount : -amount,
-            ["balance_after"] = newBalance,
-            ["reference_type"] = "manual",
-            ["reference_id"] = null,
-            ["description"] = desc,
-            ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        }, conn, tx);
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         if (IsDefaultCashDrawerAccount(locked))
         {
@@ -783,6 +832,303 @@ public class AccountService
                 await DepositAsync(acc, revAmount, refType, invId, descriptionPrefix, userId);
             }
         }
+    }
+
+    private async Task<bool> HasTableInTxAsync(string tableName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                new { name = tableName },
+                tx);
+            return count > 0;
+        }
+        return await _db.HasTableAsync(tableName);
+    }
+
+    public async Task<Dictionary<string, object?>?> SyncCashDrawerBalanceInTxAsync(
+        Dictionary<string, object?>? session,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        if (!await HasTableInTxAsync("accounts", conn, tx))
+        {
+            return null;
+        }
+
+        var cashAccount = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE type = 'cash' AND is_default = 1 ORDER BY id ASC LIMIT 1",
+            null,
+            conn,
+            tx);
+
+        cashAccount ??= await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE type = 'cash' ORDER BY id ASC LIMIT 1",
+            null,
+            conn,
+            tx);
+
+        if (cashAccount == null)
+        {
+            var id = await _db.InsertAsync("accounts", new Dictionary<string, object?>
+            {
+                ["name"] = "Cash in Hand (Drawer)",
+                ["type"] = "cash",
+                ["code"] = "cash_drawer",
+                ["icon"] = "drawer",
+                ["opening_balance"] = 0m,
+                ["current_balance"] = 0m,
+                ["is_active"] = true,
+                ["is_default"] = true,
+                ["notes"] = "Primary cash counter / drawer balance"
+            }, conn, tx);
+
+            cashAccount = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id }, conn, tx);
+            if (cashAccount != null)
+            {
+                cashAccount["was_recently_created"] = true;
+            }
+        }
+        else if (Math.Abs(ToDecimal(cashAccount.GetValueOrDefault("opening_balance"))) > 0.0001m)
+        {
+            var id = ToLong(cashAccount["id"]);
+            await _db.UpdateAsync("accounts", id, new Dictionary<string, object?>
+            {
+                ["opening_balance"] = 0m
+            }, "id", conn, tx);
+            cashAccount["opening_balance"] = 0m;
+        }
+
+        return cashAccount;
+    }
+
+    public async Task<Dictionary<string, object?>?> GetDefaultAccountInTxAsync(
+        string method,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        if (!await HasTableInTxAsync("accounts", conn, tx))
+        {
+            return null;
+        }
+
+        var type = MethodTypeMap.TryGetValue(method ?? "cash", out var mapped) ? mapped : "cash";
+        if (type == "cash")
+        {
+            await SyncCashDrawerBalanceInTxAsync(null, conn, tx);
+        }
+
+        var account = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE is_active = 1 AND type = @type AND is_default = 1 ORDER BY id ASC LIMIT 1",
+            new { type },
+            conn,
+            tx);
+
+        account ??= await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE is_active = 1 AND type = @type ORDER BY id ASC LIMIT 1",
+            new { type },
+            conn,
+            tx);
+
+        if (account == null)
+        {
+            account = await SyncCashDrawerBalanceInTxAsync(null, conn, tx)
+                      ?? await _db.QuerySingleOrDefaultAsync(
+                          "SELECT * FROM accounts WHERE is_active = 1 ORDER BY id ASC LIMIT 1",
+                          null,
+                          conn,
+                          tx);
+        }
+
+        return account;
+    }
+
+    public async Task<Dictionary<string, object?>?> ResolveAccountInTxAsync(
+        long? accountId,
+        string fallbackMethod,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        if (!await HasTableInTxAsync("accounts", conn, tx))
+        {
+            return null;
+        }
+
+        if (accountId.HasValue && accountId.Value > 0)
+        {
+            var acc = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM accounts WHERE id = @id",
+                new { id = accountId.Value },
+                conn,
+                tx);
+            if (acc != null)
+            {
+                return acc;
+            }
+        }
+
+        return await GetDefaultAccountInTxAsync(fallbackMethod, conn, tx);
+    }
+
+    public async Task<Dictionary<string, object?>?> DepositInTxAsync(
+        Dictionary<string, object?>? account,
+        decimal amount,
+        string refType,
+        long? refId,
+        string? description,
+        long? userId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        if (account == null) return null;
+        return await DepositInTxAsync(ToLong(account["id"]), amount, refType, refId, description, userId, conn, tx);
+    }
+
+    public async Task<Dictionary<string, object?>?> DepositInTxAsync(
+        long accountId,
+        decimal amount,
+        string refType,
+        long? refId,
+        string? description,
+        long? userId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        ArgumentNullException.ThrowIfNull(tx);
+
+        if (accountId <= 0 || !await HasTableInTxAsync("accounts", conn, tx))
+        {
+            return null;
+        }
+
+        amount = Math.Round(amount, 2);
+        if (amount <= 0m)
+        {
+            throw new InvalidOperationException("Deposit amount must be greater than zero.");
+        }
+
+        var locked = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE id = @id",
+            new { id = accountId },
+            conn,
+            tx);
+        if (locked == null)
+        {
+            return null;
+        }
+
+        var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) + amount, 2);
+        await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+        {
+            ["current_balance"] = newBalance
+        }, "id", conn, tx);
+
+        if (!await HasTableInTxAsync("account_transactions", conn, tx))
+        {
+            return null;
+        }
+
+        var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
+        var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+        {
+            ["account_id"] = accountId,
+            ["user_id"] = userId,
+            ["type"] = "deposit",
+            ["amount"] = amount,
+            ["balance_after"] = newBalance,
+            ["reference_type"] = refType,
+            ["reference_id"] = refId,
+            ["description"] = description ?? $"Deposit to {accName}",
+            ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+        }, conn, tx);
+
+        return await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM account_transactions WHERE id = @id",
+            new { id = txnId },
+            conn,
+            tx);
+    }
+
+    public async Task<Dictionary<string, object?>?> WithdrawInTxAsync(
+        Dictionary<string, object?>? account,
+        decimal amount,
+        string refType,
+        long? refId,
+        string? description,
+        long? userId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        if (account == null) return null;
+        return await WithdrawInTxAsync(ToLong(account["id"]), amount, refType, refId, description, userId, conn, tx);
+    }
+
+    public async Task<Dictionary<string, object?>?> WithdrawInTxAsync(
+        long accountId,
+        decimal amount,
+        string refType,
+        long? refId,
+        string? description,
+        long? userId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        ArgumentNullException.ThrowIfNull(tx);
+
+        if (accountId <= 0 || !await HasTableInTxAsync("accounts", conn, tx))
+        {
+            return null;
+        }
+
+        amount = Math.Round(amount, 2);
+        if (amount <= 0m)
+        {
+            throw new InvalidOperationException("Withdrawal amount must be greater than zero.");
+        }
+
+        var locked = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM accounts WHERE id = @id",
+            new { id = accountId },
+            conn,
+            tx);
+        if (locked == null)
+        {
+            return null;
+        }
+
+        var newBalance = Math.Round(ToDecimal(locked.GetValueOrDefault("current_balance")) - amount, 2);
+        await _db.UpdateAsync("accounts", accountId, new Dictionary<string, object?>
+        {
+            ["current_balance"] = newBalance
+        }, "id", conn, tx);
+
+        if (!await HasTableInTxAsync("account_transactions", conn, tx))
+        {
+            return null;
+        }
+
+        var accName = locked.GetValueOrDefault("name")?.ToString() ?? "Account";
+        var txnId = await _db.InsertAsync("account_transactions", new Dictionary<string, object?>
+        {
+            ["account_id"] = accountId,
+            ["user_id"] = userId,
+            ["type"] = "withdrawal",
+            ["amount"] = amount,
+            ["balance_after"] = newBalance,
+            ["reference_type"] = refType,
+            ["reference_id"] = refId,
+            ["description"] = description ?? $"Withdrawal from {accName}",
+            ["transaction_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+        }, conn, tx);
+
+        return await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM account_transactions WHERE id = @id",
+            new { id = txnId },
+            conn,
+            tx);
     }
 
     public static long ToLong(object? val)

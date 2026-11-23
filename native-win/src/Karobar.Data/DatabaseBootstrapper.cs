@@ -290,6 +290,7 @@ public sealed class DatabaseBootstrapper
         {
             await context.Database.EnsureCreatedAsync(cancellationToken);
             await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
+            await SeedTradeSchemePermissionsAsync(conn, cancellationToken);
             return;
         }
 
@@ -409,7 +410,9 @@ public sealed class DatabaseBootstrapper
             }
         }
 
+        await EnsurePurchaseInvoiceUniqueIndexAsync(conn, cancellationToken);
         await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
+        await SeedTradeSchemePermissionsAsync(conn, cancellationToken);
     }
 
     public const string MigrateNativeWhatsAppPort3002MigrationName = "2026_11_22_000001_migrate_native_whatsapp_agent_port_3002";
@@ -492,6 +495,163 @@ public sealed class DatabaseBootstrapper
         catch
         {
             // Minimal / custom test DBs without expected migration metadata should not fail schema bootstrap.
+        }
+    }
+
+    private static async Task EnsurePurchaseInvoiceUniqueIndexAsync(DbConnection conn, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var hasTable = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='purchase_invoices'") > 0;
+            if (!hasTable)
+            {
+                return;
+            }
+
+            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in await conn.QueryAsync("PRAGMA table_info(\"purchase_invoices\")"))
+            {
+                if (row is IDictionary<string, object> dict &&
+                    dict.TryGetValue("name", out var nameObj) &&
+                    nameObj != null)
+                {
+                    cols.Add(nameObj.ToString()!);
+                }
+            }
+
+            if (!cols.Contains("supplier_id") || !cols.Contains("invoice_number"))
+            {
+                return;
+            }
+
+            foreach (var idxRow in await conn.QueryAsync("PRAGMA index_list(\"purchase_invoices\")"))
+            {
+                if (idxRow is not IDictionary<string, object> idxDict) continue;
+                var isUnique = idxDict.TryGetValue("unique", out var uObj) &&
+                               uObj != null &&
+                               Convert.ToInt64(uObj, System.Globalization.CultureInfo.InvariantCulture) == 1;
+                if (!isUnique) continue;
+
+                var idxName = idxDict.TryGetValue("name", out var nObj) ? nObj?.ToString() : null;
+                if (string.IsNullOrWhiteSpace(idxName)) continue;
+
+                var escapedIdx = idxName.Replace("\"", "\"\"");
+                var idxCols = new List<string>();
+                foreach (var infoRow in await conn.QueryAsync($"PRAGMA index_info(\"{escapedIdx}\")"))
+                {
+                    if (infoRow is IDictionary<string, object> infoDict &&
+                        infoDict.TryGetValue("name", out var colObj) &&
+                        colObj != null)
+                    {
+                        idxCols.Add(colObj.ToString()!);
+                    }
+                }
+
+                if (idxCols.Count == 2 &&
+                    ((idxCols[0].Equals("supplier_id", StringComparison.OrdinalIgnoreCase) &&
+                      idxCols[1].Equals("invoice_number", StringComparison.OrdinalIgnoreCase)) ||
+                     (idxCols[0].Equals("invoice_number", StringComparison.OrdinalIgnoreCase) &&
+                      idxCols[1].Equals("supplier_id", StringComparison.OrdinalIgnoreCase))))
+                {
+                    return;
+                }
+            }
+
+            var hasDuplicate = await conn.ExecuteScalarAsync<int?>(@"
+                SELECT 1
+                FROM ""purchase_invoices""
+                WHERE ""supplier_id"" IS NOT NULL
+                  AND ""invoice_number"" IS NOT NULL
+                GROUP BY ""supplier_id"", ""invoice_number""
+                HAVING COUNT(*) > 1
+                LIMIT 1;");
+            if (hasDuplicate.HasValue)
+            {
+                return;
+            }
+
+            await conn.ExecuteAsync(
+                "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_purchase_invoices_supplier_id_invoice_number\" ON \"purchase_invoices\" (\"supplier_id\", \"invoice_number\");");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Minimal / custom test DBs or locked legacy schemas should not fail bootstrap.
+        }
+    }
+
+    private static async Task SeedTradeSchemePermissionsAsync(DbConnection conn, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var hasPermissions = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='permissions'") > 0;
+            if (!hasPermissions)
+            {
+                return;
+            }
+
+            var permCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in await conn.QueryAsync("PRAGMA table_info(\"permissions\")"))
+            {
+                if (row is IDictionary<string, object> dict &&
+                    dict.TryGetValue("name", out var nameObj) &&
+                    nameObj != null)
+                {
+                    permCols.Add(nameObj.ToString()!);
+                }
+            }
+
+            if (!permCols.Contains("name") || !permCols.Contains("guard_name"))
+            {
+                return;
+            }
+
+            var hasCreatedAt = permCols.Contains("created_at");
+            var hasUpdatedAt = permCols.Contains("updated_at");
+            var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+            foreach (var permName in new[] { "trade-scheme.view", "trade-scheme.manage" })
+            {
+                var exists = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM \"permissions\" WHERE LOWER(\"name\") = LOWER(@name) AND \"guard_name\" = @guardName",
+                    new { name = permName, guardName = "sanctum" }) > 0;
+                if (exists)
+                {
+                    continue;
+                }
+
+                if (hasCreatedAt && hasUpdatedAt)
+                {
+                    await conn.ExecuteAsync(
+                        "INSERT OR IGNORE INTO \"permissions\" (\"name\", \"guard_name\", \"created_at\", \"updated_at\") VALUES (@name, @guardName, @now, @now);",
+                        new { name = permName, guardName = "sanctum", now });
+                }
+                else if (hasCreatedAt)
+                {
+                    await conn.ExecuteAsync(
+                        "INSERT OR IGNORE INTO \"permissions\" (\"name\", \"guard_name\", \"created_at\") VALUES (@name, @guardName, @now);",
+                        new { name = permName, guardName = "sanctum", now });
+                }
+                else
+                {
+                    await conn.ExecuteAsync(
+                        "INSERT OR IGNORE INTO \"permissions\" (\"name\", \"guard_name\") VALUES (@name, @guardName);",
+                        new { name = permName, guardName = "sanctum" });
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Minimal / custom test DBs should not fail schema bootstrap.
         }
     }
 

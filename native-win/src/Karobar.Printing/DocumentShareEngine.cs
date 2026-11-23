@@ -158,11 +158,140 @@ public sealed class DocumentShareEngine
     private readonly PdfDocumentGenerator _pdfGenerator;
     private readonly HttpClient _httpClient;
 
+    public static bool IsLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return false;
+        var clean = host.Trim().Trim('[', ']').TrimEnd('.');
+        var pctIdx = clean.IndexOf('%');
+        if (pctIdx >= 0) clean = clean[..pctIdx];
+        if (clean.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!IPAddress.TryParse(clean, out var ip)) return false;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        return IPAddress.IsLoopback(ip);
+    }
+
+    private static bool IsBlockedMetadataOrLinkLocalHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return true;
+
+        var clean = host.Trim().Trim('[', ']').TrimEnd('.');
+        var pctIdx = clean.IndexOf('%');
+        if (pctIdx >= 0)
+        {
+            clean = clean[..pctIdx];
+        }
+
+        if (string.IsNullOrWhiteSpace(clean) ||
+            clean.Equals("metadata.google.internal", StringComparison.OrdinalIgnoreCase) ||
+            clean.Equals("metadata.goog", StringComparison.OrdinalIgnoreCase) ||
+            clean.StartsWith("metadata.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (IPAddress.TryParse(clean, out var ip))
+        {
+            if (ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
+            if (IPAddress.Any.Equals(ip) || IPAddress.IPv6Any.Equals(ip))
+            {
+                return true;
+            }
+
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                var bytes = ip.GetAddressBytes();
+                if (bytes[0] == 169 && bytes[1] == 254)
+                {
+                    return true;
+                }
+            }
+            else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && ip.IsIPv6LinkLocal)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeWhatsAppProvider(string? provider)
+    {
+        var raw = (provider ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(raw))
+        {
+            return "local_agent";
+        }
+
+        return AllowedWhatsAppProviders.Contains(raw) ? raw : "local_agent";
+    }
+
+    public static bool IsAllowedWhatsAppApiUrl(
+        string? rawUrl,
+        string? provider,
+        out Uri? validatedUri,
+        out string? errorMessage)
+    {
+        validatedUri = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(rawUrl) ||
+            !Uri.TryCreate(rawUrl.Trim(), UriKind.Absolute, out var uri))
+        {
+            errorMessage = "WhatsApp API URL must be a valid absolute URL.";
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "WhatsApp API URL must use http:// or https://.";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            errorMessage = "WhatsApp API URL must not contain embedded credentials.";
+            return false;
+        }
+
+        if (IsBlockedMetadataOrLinkLocalHost(uri.Host))
+        {
+            errorMessage = "WhatsApp API URL cannot target link-local, unspecified, or cloud metadata addresses.";
+            return false;
+        }
+
+        var normalizedProvider = NormalizeWhatsAppProvider(provider);
+        if (normalizedProvider == "local_agent" && !IsLoopbackHost(uri.Host))
+        {
+            errorMessage = "Local WhatsApp Agent URL must target localhost / loopback (127.0.0.1) only.";
+            return false;
+        }
+
+        validatedUri = uri;
+        return true;
+    }
+
+    private static void EnsureAllowedWhatsAppEndpoint(string? url, string provider)
+    {
+        if (!IsAllowedWhatsAppApiUrl(url, provider, out _, out var err))
+        {
+            throw new InvalidOperationException(err ?? "WhatsApp API URL is not allowed.");
+        }
+    }
+
     private static bool IsPrivateOrLoopbackHost(string? host)
     {
         if (string.IsNullOrWhiteSpace(host)) return false;
-        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
-        if (!IPAddress.TryParse(host, out var ip)) return false;
+        var clean = host.Trim().Trim('[', ']').TrimEnd('.');
+        var pctIdx = clean.IndexOf('%');
+        if (pctIdx >= 0) clean = clean[..pctIdx];
+        if (clean.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!IPAddress.TryParse(clean, out var ip)) return false;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
         if (IPAddress.IsLoopback(ip)) return true;
         var b = ip.GetAddressBytes();
         if (b.Length == 4)
@@ -186,6 +315,7 @@ public sealed class DocumentShareEngine
         {
             var handler = new HttpClientHandler
             {
+                AllowAutoRedirect = false,
                 // Enforce strict TLS certificate verification on public cloud APIs (Meta Graph, Whapi, UltraMsg, Green-API, Wasender);
                 // only allow self-signed certificates on loopback / private LAN self-hosted gateways (WAHA / Evolution / custom LAN webhook).
                 ServerCertificateCustomValidationCallback = (req, _, _, errors) =>
@@ -561,13 +691,15 @@ public sealed class DocumentShareEngine
         string? signedPdfUrl = null,
         CancellationToken cancellationToken = default)
     {
-        var provider = AllowedWhatsAppProviders.Contains((config.Provider ?? "").ToLowerInvariant())
-            ? (config.Provider ?? "meta_cloud").ToLowerInvariant()
-            : "meta_cloud";
+        var provider = NormalizeWhatsAppProvider(config.Provider);
         var token = (config.AccessToken ?? "").Trim();
         var phoneOrInstanceId = (config.PhoneNumberId ?? "").Trim();
         var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v20.0" : config.ApiVersion.Trim();
         var customUrl = (config.ApiUrl ?? "").Trim();
+        if (!string.IsNullOrEmpty(customUrl))
+        {
+            EnsureAllowedWhatsAppEndpoint(customUrl, provider);
+        }
         var pdfBase64 = Convert.ToBase64String(pdfBytes);
 
         // 1. Built-in Karobar Free WhatsApp Agent (Node.js + @whiskeysockets/baileys on port 3002)
@@ -577,6 +709,7 @@ public sealed class DocumentShareEngine
             var endpoint = baseUrl.EndsWith("/send-document", StringComparison.OrdinalIgnoreCase)
                 ? baseUrl
                 : $"{baseUrl}/send-document";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
@@ -613,6 +746,7 @@ public sealed class DocumentShareEngine
             var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://localhost:3000").TrimEnd('/');
             var endpoint = baseUrl.EndsWith("/api/sendFile", StringComparison.OrdinalIgnoreCase) ? baseUrl : $"{baseUrl}/api/sendFile";
             var sessionName = !string.IsNullOrEmpty(phoneOrInstanceId) ? phoneOrInstanceId : "default";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
@@ -640,6 +774,7 @@ public sealed class DocumentShareEngine
             var endpoint = baseUrl.Contains("/message/sendMedia", StringComparison.OrdinalIgnoreCase)
                 ? baseUrl
                 : $"{baseUrl}/message/sendMedia/{instance}";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("apikey", token);
@@ -665,6 +800,7 @@ public sealed class DocumentShareEngine
         if (provider == "whapi_cloud")
         {
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://gate.whapi.cloud").TrimEnd('/')}/messages/document";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             var dataUri = $"data:application/pdf;name={Uri.EscapeDataString(filename)};base64,{pdfBase64}";
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
@@ -689,6 +825,7 @@ public sealed class DocumentShareEngine
         if (provider == "wasender")
         {
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://www.wasenderapi.com").TrimEnd('/')}/api/send-message";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new
@@ -713,6 +850,7 @@ public sealed class DocumentShareEngine
         {
             var cleanInstance = Regex.Replace(phoneOrInstanceId, "^instance", "", RegexOptions.IgnoreCase);
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.ultramsg.com").TrimEnd('/')}/instance{cleanInstance}/messages/document";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
@@ -740,6 +878,7 @@ public sealed class DocumentShareEngine
             var cleanInstance = Regex.Replace(phoneOrInstanceId, "^waInstance", "", RegexOptions.IgnoreCase);
             var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.green-api.com").TrimEnd('/');
             var endpoint = $"{baseUrl}/waInstance{cleanInstance}/sendFileByUpload/{token}";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var form = new MultipartFormDataContent();
             var fileContent = new ByteArrayContent(pdfBytes);
@@ -764,6 +903,7 @@ public sealed class DocumentShareEngine
             {
                 throw new InvalidOperationException("Custom WhatsApp API endpoint URL is not configured.");
             }
+            EnsureAllowedWhatsAppEndpoint(customUrl, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, customUrl);
             if (!string.IsNullOrEmpty(token)) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new
@@ -788,6 +928,11 @@ public sealed class DocumentShareEngine
         }
 
         // 9. Official Meta WhatsApp Cloud API ('meta_cloud')
+        var metaMediaEndpoint = $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/media";
+        var metaMsgEndpoint = $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages";
+        EnsureAllowedWhatsAppEndpoint(metaMediaEndpoint, provider);
+        EnsureAllowedWhatsAppEndpoint(metaMsgEndpoint, provider);
+
         using var mediaForm = new MultipartFormDataContent();
         var pdfPart = new ByteArrayContent(pdfBytes);
         pdfPart.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
@@ -795,7 +940,7 @@ public sealed class DocumentShareEngine
         mediaForm.Add(new StringContent("whatsapp"), "messaging_product");
         mediaForm.Add(new StringContent("application/pdf"), "type");
 
-        using var mediaReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/media")
+        using var mediaReq = new HttpRequestMessage(HttpMethod.Post, metaMediaEndpoint)
         {
             Content = mediaForm
         };
@@ -815,7 +960,7 @@ public sealed class DocumentShareEngine
             throw new InvalidOperationException($"Failed to upload PDF document to WhatsApp Cloud API: {mediaBody}");
         }
 
-        using var msgReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages");
+        using var msgReq = new HttpRequestMessage(HttpMethod.Post, metaMsgEndpoint);
         msgReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         msgReq.Content = new StringContent(JsonSerializer.Serialize(new
         {
@@ -835,7 +980,7 @@ public sealed class DocumentShareEngine
             if (!string.IsNullOrWhiteSpace(tplName))
             {
                 var tplLang = string.IsNullOrWhiteSpace(config.TemplateLanguage) ? "en_US" : config.TemplateLanguage.Trim();
-                using var tplReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages");
+                using var tplReq = new HttpRequestMessage(HttpMethod.Post, metaMsgEndpoint);
                 tplReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 tplReq.Content = new StringContent(JsonSerializer.Serialize(new
                 {
@@ -887,13 +1032,15 @@ public sealed class DocumentShareEngine
         string messageText,
         CancellationToken cancellationToken = default)
     {
-        var provider = AllowedWhatsAppProviders.Contains((config.Provider ?? "").ToLowerInvariant())
-            ? (config.Provider ?? "meta_cloud").ToLowerInvariant()
-            : "meta_cloud";
+        var provider = NormalizeWhatsAppProvider(config.Provider);
         var token = (config.AccessToken ?? "").Trim();
         var phoneOrInstanceId = (config.PhoneNumberId ?? "").Trim();
         var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v21.0" : config.ApiVersion.Trim();
         var customUrl = (config.ApiUrl ?? "").Trim();
+        if (!string.IsNullOrEmpty(customUrl))
+        {
+            EnsureAllowedWhatsAppEndpoint(customUrl, provider);
+        }
 
         if (provider == "local_agent")
         {
@@ -903,6 +1050,7 @@ public sealed class DocumentShareEngine
                 : (baseUrl.EndsWith("/send-document", StringComparison.OrdinalIgnoreCase)
                     ? baseUrl[..^"/send-document".Length] + "/send-text"
                     : $"{baseUrl}/send-text");
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
 
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
@@ -934,6 +1082,7 @@ public sealed class DocumentShareEngine
         {
             var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://localhost:3000").TrimEnd('/');
             var endpoint = $"{baseUrl}/api/sendText";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             var sessionName = !string.IsNullOrEmpty(phoneOrInstanceId) ? phoneOrInstanceId : "default";
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("X-Api-Key", token);
@@ -952,7 +1101,9 @@ public sealed class DocumentShareEngine
         {
             var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "http://localhost:8080").TrimEnd('/');
             var instance = !string.IsNullOrEmpty(phoneOrInstanceId) ? phoneOrInstanceId : "default";
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/message/sendText/{instance}");
+            var endpoint = $"{baseUrl}/message/sendText/{instance}";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             if (!string.IsNullOrEmpty(token)) req.Headers.TryAddWithoutValidation("apikey", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new
             {
@@ -967,6 +1118,7 @@ public sealed class DocumentShareEngine
         if (provider == "whapi_cloud")
         {
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://gate.whapi.cloud").TrimEnd('/')}/messages/text";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new { to = normalizedPhone, body = messageText }), Encoding.UTF8, "application/json");
@@ -978,6 +1130,7 @@ public sealed class DocumentShareEngine
         if (provider == "wasender")
         {
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://www.wasenderapi.com").TrimEnd('/')}/api/send-message";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new { phone = $"+{normalizedPhone}", text = messageText }), Encoding.UTF8, "application/json");
@@ -990,6 +1143,7 @@ public sealed class DocumentShareEngine
         {
             var cleanInstance = Regex.Replace(phoneOrInstanceId, "^instance", "", RegexOptions.IgnoreCase);
             var endpoint = $"{(!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.ultramsg.com").TrimEnd('/')}/instance{cleanInstance}/messages/chat";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
                 Content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -1009,6 +1163,7 @@ public sealed class DocumentShareEngine
             var cleanInstance = Regex.Replace(phoneOrInstanceId, "^waInstance", "", RegexOptions.IgnoreCase);
             var baseUrl = (!string.IsNullOrEmpty(customUrl) ? customUrl : "https://api.green-api.com").TrimEnd('/');
             var endpoint = $"{baseUrl}/waInstance{cleanInstance}/sendMessage/{token}";
+            EnsureAllowedWhatsAppEndpoint(endpoint, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Content = new StringContent(JsonSerializer.Serialize(new { chatId = $"{normalizedPhone}@c.us", message = messageText }), Encoding.UTF8, "application/json");
             using var res = await _httpClient.SendAsync(req, cancellationToken);
@@ -1019,6 +1174,7 @@ public sealed class DocumentShareEngine
         if (provider == "custom_http")
         {
             if (string.IsNullOrEmpty(customUrl)) throw new InvalidOperationException("Custom WhatsApp API endpoint URL is not configured.");
+            EnsureAllowedWhatsAppEndpoint(customUrl, provider);
             using var req = new HttpRequestMessage(HttpMethod.Post, customUrl);
             if (!string.IsNullOrEmpty(token)) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Content = new StringContent(JsonSerializer.Serialize(new
@@ -1034,7 +1190,9 @@ public sealed class DocumentShareEngine
         }
 
         // Official Meta Cloud API text message
-        using var metaReq = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages");
+        var metaTextEndpoint = $"https://graph.facebook.com/{version}/{phoneOrInstanceId}/messages";
+        EnsureAllowedWhatsAppEndpoint(metaTextEndpoint, provider);
+        using var metaReq = new HttpRequestMessage(HttpMethod.Post, metaTextEndpoint);
         metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         metaReq.Content = new StringContent(JsonSerializer.Serialize(new
         {

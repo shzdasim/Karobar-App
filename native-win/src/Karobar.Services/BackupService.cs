@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Services;
 
@@ -445,28 +446,149 @@ public class BackupService
         return true;
     }
 
+    private static bool IsMacOsMetadataZipEntry(string fullName)
+    {
+        var normalized = fullName.Replace('\\', '/');
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(s => s.Equals("__MACOSX", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+        var fileName = Path.GetFileName(normalized);
+        return fileName.StartsWith("._", StringComparison.Ordinal);
+    }
+
+    private static async Task ValidateCandidateSqliteDatabaseAsync(string sqliteFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(sqliteFilePath) || !File.Exists(sqliteFilePath))
+        {
+            throw new InvalidOperationException("Backup SQLite file not found.");
+        }
+
+        var fileInfo = new FileInfo(sqliteFilePath);
+        if (fileInfo.Length < 100)
+        {
+            throw new InvalidOperationException("Backup file is not a valid SQLite 3 database.");
+        }
+
+        var header = new byte[16];
+        await using (var fs = new FileStream(sqliteFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            var totalRead = 0;
+            while (totalRead < 16)
+            {
+                var read = await fs.ReadAsync(header.AsMemory(totalRead, 16 - totalRead));
+                if (read == 0) break;
+                totalRead += read;
+            }
+            if (totalRead < 16 || !header.AsSpan(0, 16).SequenceEqual("SQLite format 3\0"u8))
+            {
+                throw new InvalidOperationException("Backup file is not a valid SQLite 3 database.");
+            }
+        }
+
+        try
+        {
+            var connStr = new SqliteConnectionStringBuilder
+            {
+                DataSource = sqliteFilePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString();
+
+            await using var conn = new SqliteConnection(connStr);
+            await conn.OpenAsync();
+
+            var quickCheck = await conn.ExecuteScalarAsync<string>("PRAGMA quick_check(1);");
+            if (!string.Equals(quickCheck, "ok", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Backup SQLite database failed integrity verification (PRAGMA quick_check).");
+            }
+
+            var tableNames = (await conn.QueryAsync<string>(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!tableNames.Contains("users") || !tableNames.Contains("settings"))
+            {
+                throw new InvalidOperationException("Backup SQLite database is missing required Karobar schema tables (users, settings).");
+            }
+        }
+        catch (SqliteException ex)
+        {
+            throw new InvalidOperationException("Backup file is corrupted or not a readable SQLite 3 database.", ex);
+        }
+    }
+
+    private async Task<string?> CreatePreRestoreSafetySnapshotAsync()
+    {
+        if (!File.Exists(_db.SqlitePath))
+        {
+            return null;
+        }
+
+        var snapPath = Path.Combine(
+            _backupPath,
+            $"pre-restore-safety-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.sqlite");
+
+        try
+        {
+            Directory.CreateDirectory(_backupPath);
+
+            var srcConnStr = new SqliteConnectionStringBuilder
+            {
+                DataSource = _db.SqlitePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString();
+            var dstConnStr = new SqliteConnectionStringBuilder
+            {
+                DataSource = snapPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false
+            }.ToString();
+
+            await using (var srcConn = new SqliteConnection(srcConnStr))
+            await using (var dstConn = new SqliteConnection(dstConnStr))
+            {
+                await srcConn.OpenAsync();
+                await using (var timeoutCmd = srcConn.CreateCommand())
+                {
+                    timeoutCmd.CommandText = "PRAGMA busy_timeout=15000;";
+                    await timeoutCmd.ExecuteNonQueryAsync();
+                }
+                await dstConn.OpenAsync();
+                srcConn.BackupDatabase(dstConn);
+            }
+
+            var snapInfo = new FileInfo(snapPath);
+            if (!snapInfo.Exists || snapInfo.Length <= 0)
+            {
+                throw new InvalidOperationException("Pre-restore safety backup file is empty.");
+            }
+
+            return snapPath;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (File.Exists(snapPath)) File.Delete(snapPath);
+            }
+            catch
+            {
+            }
+
+            throw new InvalidOperationException($"Pre-restore safety backup failed: {ex.Message}. Restore aborted.", ex);
+        }
+    }
+
     public async Task RestoreBackupAsync(long id, string password, long? currentUserId = null)
     {
         var path = await GetDownloadPathAsync(id);
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {
             throw new InvalidOperationException("Backup file not found on disk.");
-        }
-
-        // Pre-restore WAL-safe safety snapshot via SQLite Online Backup API (never raw File.Copy on live WAL DB)
-        EnsureBackupDirectoryExists();
-        if (File.Exists(_db.SqlitePath))
-        {
-            try
-            {
-                var snapPath = Path.Combine(_backupPath, $"pre-restore-safety-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite");
-                using var srcConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_db.SqlitePath};Mode=ReadOnly;Pooling=False;");
-                using var dstConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={snapPath};Mode=ReadWriteCreate;Pooling=False;");
-                await srcConn.OpenAsync();
-                await dstConn.OpenAsync();
-                srcConn.BackupDatabase(dstConn);
-            }
-            catch { }
         }
 
         var lower = path.ToLowerInvariant();
@@ -484,6 +606,8 @@ public class BackupService
             }
             using (doc)
             {
+                await CreatePreRestoreSafetySnapshotAsync();
+
                 if (doc.RootElement.TryGetProperty("settings", out var sEl) && sEl.ValueKind == JsonValueKind.Object && await _db.HasTableAsync("settings"))
                 {
                     var cur = await _db.QuerySingleOrDefaultAsync("SELECT id FROM settings ORDER BY id ASC LIMIT 1");
@@ -514,68 +638,92 @@ public class BackupService
                 sqlContent = await File.ReadAllTextAsync(path, Encoding.UTF8);
             }
 
-            await RestoreFromSqlScriptAsync(sqlContent);
+            var snapPath = await RestoreFromSqlScriptAsync(sqlContent);
             KarobarDb.FlushSchemaCache();
-            await UpgradeRestoredSchemaAsync();
+            await UpgradeRestoredSchemaAsync(snapPath);
         }
         else if (lower.EndsWith(".sqlite") || lower.EndsWith(".db"))
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await ValidateCandidateSqliteDatabaseAsync(path);
+            var snapPath = await CreatePreRestoreSafetySnapshotAsync();
+
+            SqliteConnection.ClearAllPools();
             File.Copy(path, _db.SqlitePath, overwrite: true);
             try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
             try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
             KarobarDb.FlushSchemaCache();
-            await UpgradeRestoredSchemaAsync();
+            await UpgradeRestoredSchemaAsync(snapPath);
         }
         else if (lower.EndsWith(".zip"))
         {
-            using var archive = ZipFile.OpenRead(path);
-            var sqliteEntry = archive.Entries.FirstOrDefault(e =>
-                e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
-                e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase));
-            var sqlEntry = archive.Entries.FirstOrDefault(e =>
-                e.FullName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) ||
-                e.FullName.EndsWith(".sql.gz", StringComparison.OrdinalIgnoreCase));
-            if (sqliteEntry != null)
+            ZipArchive archive;
+            try
             {
-                var tmpExtract = Path.Combine(Path.GetTempPath(), $"karobar_restore_{Guid.NewGuid():N}.sqlite");
-                try
+                archive = ZipFile.OpenRead(path);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidOperationException("Backup ZIP archive is corrupted or invalid.", ex);
+            }
+
+            using (archive)
+            {
+                var sqliteEntry = archive.Entries
+                    .Where(e => !IsMacOsMetadataZipEntry(e.FullName) &&
+                                (e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+                                 e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase)))
+                    .OrderByDescending(e => e.Length)
+                    .FirstOrDefault();
+                var sqlEntry = archive.Entries
+                    .Where(e => !IsMacOsMetadataZipEntry(e.FullName) &&
+                                (e.FullName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) ||
+                                 e.FullName.EndsWith(".sql.gz", StringComparison.OrdinalIgnoreCase)))
+                    .OrderByDescending(e => e.Length)
+                    .FirstOrDefault();
+                if (sqliteEntry != null)
                 {
-                    ExtractZipEntryLimited(sqliteEntry, tmpExtract, MaxExtractedBackupBytes);
-                    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                    File.Copy(tmpExtract, _db.SqlitePath, overwrite: true);
-                    try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
-                    try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+                    var tmpExtract = Path.Combine(Path.GetTempPath(), $"karobar_restore_{Guid.NewGuid():N}.sqlite");
+                    try
+                    {
+                        ExtractZipEntryLimited(sqliteEntry, tmpExtract, MaxExtractedBackupBytes);
+                        await ValidateCandidateSqliteDatabaseAsync(tmpExtract);
+                        var snapPath = await CreatePreRestoreSafetySnapshotAsync();
+
+                        SqliteConnection.ClearAllPools();
+                        File.Copy(tmpExtract, _db.SqlitePath, overwrite: true);
+                        try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
+                        try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+                        KarobarDb.FlushSchemaCache();
+                        await UpgradeRestoredSchemaAsync(snapPath);
+                    }
+                    finally
+                    {
+                        try { if (File.Exists(tmpExtract)) File.Delete(tmpExtract); } catch { }
+                    }
+                }
+                else if (sqlEntry != null)
+                {
+                    string sqlContent;
+                    await using (var entryStream = sqlEntry.Open())
+                    {
+                        if (sqlEntry.FullName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await using var gz = new GZipStream(entryStream, CompressionMode.Decompress);
+                            sqlContent = await ReadStreamLimitedAsync(gz, MaxExtractedBackupBytes);
+                        }
+                        else
+                        {
+                            sqlContent = await ReadStreamLimitedAsync(entryStream, MaxExtractedBackupBytes);
+                        }
+                    }
+                    var snapPath = await RestoreFromSqlScriptAsync(sqlContent);
                     KarobarDb.FlushSchemaCache();
-                    await UpgradeRestoredSchemaAsync();
+                    await UpgradeRestoredSchemaAsync(snapPath);
                 }
-                finally
+                else
                 {
-                    try { if (File.Exists(tmpExtract)) File.Delete(tmpExtract); } catch { }
+                    throw new InvalidOperationException("ZIP archive does not contain a .sqlite, .db, or .sql database backup.");
                 }
-            }
-            else if (sqlEntry != null)
-            {
-                string sqlContent;
-                await using (var entryStream = sqlEntry.Open())
-                {
-                    if (sqlEntry.FullName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-                    {
-                        await using var gz = new GZipStream(entryStream, CompressionMode.Decompress);
-                        sqlContent = await ReadStreamLimitedAsync(gz, MaxExtractedBackupBytes);
-                    }
-                    else
-                    {
-                        sqlContent = await ReadStreamLimitedAsync(entryStream, MaxExtractedBackupBytes);
-                    }
-                }
-                await RestoreFromSqlScriptAsync(sqlContent);
-                KarobarDb.FlushSchemaCache();
-                await UpgradeRestoredSchemaAsync();
-            }
-            else
-            {
-                throw new InvalidOperationException("ZIP archive does not contain a .sqlite, .db, or .sql database backup.");
             }
         }
         else
@@ -592,7 +740,7 @@ public class BackupService
         }
     }
 
-    private async Task UpgradeRestoredSchemaAsync()
+    private async Task UpgradeRestoredSchemaAsync(string? safetySnapPath = null)
     {
         try
         {
@@ -603,7 +751,22 @@ public class BackupService
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Karobar BackupService] Post-restore schema upgrade warning: {ex.Message}");
+            if (!string.IsNullOrEmpty(safetySnapPath) && File.Exists(safetySnapPath))
+            {
+                try
+                {
+                    SqliteConnection.ClearAllPools();
+                    File.Copy(safetySnapPath, _db.SqlitePath, overwrite: true);
+                    try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
+                    try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+                    KarobarDb.FlushSchemaCache();
+                }
+                catch
+                {
+                }
+            }
+
+            throw new InvalidOperationException($"Post-restore schema upgrade failed: {ex.Message}", ex);
         }
     }
 
@@ -774,7 +937,7 @@ public class BackupService
         return sb.ToString();
     }
 
-    private async Task RestoreFromSqlScriptAsync(string sqlContent)
+    private async Task<string?> RestoreFromSqlScriptAsync(string sqlContent)
     {
         if (string.IsNullOrWhiteSpace(sqlContent))
         {
@@ -785,8 +948,9 @@ public class BackupService
         var tmpDb = Path.Combine(Path.GetTempPath(), $"karobar_sql_restore_{Guid.NewGuid():N}.sqlite");
         try
         {
-            using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmpDb};Mode=ReadWriteCreate;Pooling=False;"))
+            try
             {
+                using var conn = new SqliteConnection($"Data Source={tmpDb};Mode=ReadWriteCreate;Pooling=False;");
                 await conn.OpenAsync();
                 await conn.ExecuteAsync("PRAGMA foreign_keys = OFF; PRAGMA synchronous = OFF;");
                 using var tx = conn.BeginTransaction();
@@ -805,11 +969,19 @@ public class BackupService
                 tx.Commit();
                 await conn.ExecuteAsync("PRAGMA foreign_keys = ON;");
             }
+            catch (SqliteException ex)
+            {
+                throw new InvalidOperationException($"SQL backup script is invalid or corrupted: {ex.Message}", ex);
+            }
 
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await ValidateCandidateSqliteDatabaseAsync(tmpDb);
+            var snapPath = await CreatePreRestoreSafetySnapshotAsync();
+
+            SqliteConnection.ClearAllPools();
             File.Copy(tmpDb, _db.SqlitePath, overwrite: true);
             try { if (File.Exists(_db.SqlitePath + "-wal")) File.Delete(_db.SqlitePath + "-wal"); } catch { }
             try { if (File.Exists(_db.SqlitePath + "-shm")) File.Delete(_db.SqlitePath + "-shm"); } catch { }
+            return snapPath;
         }
         finally
         {

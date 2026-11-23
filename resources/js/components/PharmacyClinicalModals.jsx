@@ -515,7 +515,7 @@ export function PrescriptionAttachmentModal({ isOpen, onClose, invoice, onUpdate
                   <a
                     href={existingUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
                   >
                     <span>Open Full</span>

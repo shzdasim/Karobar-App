@@ -1,30 +1,52 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import axios from "axios";
+import { resolveResetPasswordParams } from "../utils/uiResilienceHelpers";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
   const { token, email: paramEmail } = useParams();
-  
+  const [searchParams] = useSearchParams();
+  const searchString = searchParams.toString();
+  const {
+    token: resolvedToken,
+    email: resolvedEmail,
+    errorMessage: linkError,
+  } = resolveResetPasswordParams({
+    paramToken: token,
+    paramEmail,
+    search: searchString,
+  });
+
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState(paramEmail || "");
+  const [email, setEmail] = useState(resolvedEmail || "");
   const [isValidating, setIsValidating] = useState(true);
 
   useEffect(() => {
-    if (paramEmail) {
-      setEmail(paramEmail);
-      setIsValidating(false);
-    }
-  }, [paramEmail]);
+    setEmail(resolvedEmail);
+    setError(linkError);
+    setIsValidating(false);
+  }, [resolvedToken, resolvedEmail, linkError]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (!resolvedToken) {
+      setError("Invalid or missing password reset token. Please request a new reset link.");
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
 
     if (password !== passwordConfirmation) {
       setError("Passwords do not match");
@@ -40,8 +62,8 @@ export default function ResetPassword() {
 
     try {
       await axios.post("/api/reset-password", {
-        email,
-        token,
+        email: trimmedEmail,
+        token: resolvedToken,
         password,
         password_confirmation: passwordConfirmation,
       });

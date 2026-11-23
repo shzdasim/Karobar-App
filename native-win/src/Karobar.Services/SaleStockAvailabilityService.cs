@@ -29,9 +29,26 @@ public class SaleStockAvailabilityService
         IDbConnection? conn = null,
         IDbTransaction? tx = null)
     {
-        if (expiredOverride && overrideCredentials != null && overrideCredentials.Count > 0)
+        long? effectiveUserId = userId;
+        bool authorizerResolved = false;
+        bool? cachedCanOverrideExpired = null;
+
+        async Task<bool> CanCurrentOrAuthorizedUserOverrideExpiredAsync()
         {
-            userId = await _calcService.ResolveAuthorizingUserIdAsync(userId, overrideCredentials, "sale-invoice.expired-override");
+            if (!authorizerResolved)
+            {
+                if (expiredOverride && overrideCredentials != null && overrideCredentials.Count > 0)
+                {
+                    effectiveUserId = await _calcService.ResolveAuthorizingUserIdAsync(
+                        userId,
+                        overrideCredentials,
+                        "sale-invoice.expired-override");
+                }
+                authorizerResolved = true;
+            }
+
+            cachedCanOverrideExpired ??= await CanOverrideExpiredAsync(effectiveUserId);
+            return cachedCanOverrideExpired.Value;
         }
 
         originalItems ??= new List<Dictionary<string, object?>>();
@@ -175,7 +192,7 @@ public class SaleStockAvailabilityService
                         });
                     }
 
-                    if (!await CanOverrideExpiredAsync(userId))
+                    if (!await CanCurrentOrAuthorizedUserOverrideExpiredAsync())
                     {
                         throw new InvoiceValidationException("You do not have permission to sell expired stock.", statusCode: 403, customPayload: new Dictionary<string, object?>
                         {
@@ -241,7 +258,7 @@ public class SaleStockAvailabilityService
                                 });
                             }
 
-                            if (!await CanOverrideExpiredAsync(userId))
+                            if (!await CanCurrentOrAuthorizedUserOverrideExpiredAsync())
                             {
                                 throw new InvoiceValidationException("You do not have permission to sell expired stock.", statusCode: 403, customPayload: new Dictionary<string, object?>
                                 {

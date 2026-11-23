@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 
 import {
   ArrowDownOnSquareIcon,
@@ -147,18 +148,11 @@ export default function StockAdjustmentReport() {
         },
         responseType: "blob",
       });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `stock-adjustment-${fromDate || "report"}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      openReportPdfSafely({
+        data: res.data,
+        filename: `stock-adjustment-${fromDate || "report"}.pdf`,
+        revokeDelayMs: 10000,
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to generate PDF");

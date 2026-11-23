@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import {
+  executeOperatorPinConfirm,
+  isOperatorPinValidationError,
+} from "../utils/uiResilienceHelpers";
 
 export function useOperatorPinPrompt(moduleKey) {
   const { isOperatorPinRequiredFor, operatorPinAutoSubmit } = useSaleSystem();
@@ -39,7 +43,7 @@ export function useOperatorPinPrompt(moduleKey) {
       try {
         await executeFn(undefined);
       } catch (err) {
-        if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
+        if (isOperatorPinValidationError(err)) {
           openForAction(executeFn, "");
           return;
         }
@@ -58,23 +62,26 @@ export function useOperatorPinPrompt(moduleKey) {
 
     setSubmitting(true);
     setErrorMessage("");
-    try {
-      await action(pin);
-      setIsOpen(false);
-      setErrorMessage("");
-      pendingActionRef.current = null;
-    } catch (err) {
-      if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
-        setErrorMessage(
-          err?.response?.data?.message || "Invalid 4-digit operator code. Please try again."
-        );
-      } else {
+    await executeOperatorPinConfirm({
+      action,
+      pin,
+      onSuccess: () => {
         setIsOpen(false);
+        setErrorMessage("");
         pendingActionRef.current = null;
-      }
-    } finally {
-      setSubmitting(false);
-    }
+      },
+      onPinError: (message) => {
+        setErrorMessage(message);
+      },
+      onNonPinError: () => {
+        setIsOpen(false);
+        setErrorMessage("");
+        pendingActionRef.current = null;
+      },
+      onFinally: () => {
+        setSubmitting(false);
+      },
+    });
   }, []);
 
   return {

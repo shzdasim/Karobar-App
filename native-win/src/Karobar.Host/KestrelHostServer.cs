@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -188,10 +190,13 @@ public sealed class KestrelHostServer : IAsyncDisposable
     private readonly WebView2WindowManager _windowManager;
     private readonly KarobarDesktopBridge _desktopBridge;
     private readonly ConcurrentDictionary<string, CachedStaticAsset> _staticAssetCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string _ipcToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
 
     private long _staticAssetCacheBytes;
     private byte[]? _cachedSpaHtmlBuffer;
     private byte[]? _cachedLanSpaHtmlBuffer;
+    private string? _cachedSpaCspHeader;
+    private string? _cachedLegacyCspHeader;
     private WebApplication? _app;
 
     public KestrelHostServer(
@@ -210,11 +215,299 @@ public sealed class KestrelHostServer : IAsyncDisposable
     public NetworkConfigManager NetworkConfig => _networkConfig;
     public WebView2WindowManager WindowManager => _windowManager;
     public KarobarDesktopBridge DesktopBridge => _desktopBridge;
+    public string IpcToken => _ipcToken;
     public int ActivePort => _networkConfig.ActivePort;
     public string PublicDir => Path.Combine(_networkConfig.AppRoot, "public");
     public string StoragePublicDir => Path.Combine(_networkConfig.AppRoot, "storage", "app", "public");
     public bool IsRunning => _app != null;
     public IServiceProvider? Services => _app?.Services;
+
+    private static readonly Regex InlineScriptBlockRegex = new(
+        @"<script(?![^>]*\bsrc\s*=)[^>]*>(?<body>[\s\S]*?)</script>",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex LegacyInlineHtmlPathRegex = new(
+        @"^/(print(/|$)|supplier-ledger/print(/|$)|customer-ledger/print(/|$)|server-launch(/|$)|sale-invoices/\d+/dosage-labels(/|$))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static bool IsAllowedLoopbackOrigin(string? rawOriginOrReferer, int activePort)
+    {
+        if (string.IsNullOrWhiteSpace(rawOriginOrReferer))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(rawOriginOrReferer.Trim(), UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        var host = uri.Host;
+        var isLoopbackHost = string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(host, "[::1]", StringComparison.OrdinalIgnoreCase);
+        if (!isLoopbackHost)
+        {
+            return false;
+        }
+
+        return activePort <= 0 || uri.Port == activePort;
+    }
+
+    public bool ValidatePreloadRequest(
+        HttpContext ctx,
+        out int statusCode,
+        out string deniedScript)
+    {
+        if (!IsLoopbackRequest(ctx))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            deniedScript = "// desktop preload disabled for remote LAN clients\n";
+            return false;
+        }
+
+        var secFetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString().Trim();
+        if (!string.IsNullOrEmpty(secFetchSite) &&
+            !string.Equals(secFetchSite, "same-origin", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(secFetchSite, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            deniedScript = "// cross-site or same-site preload denied\n";
+            return false;
+        }
+
+        var referer = ctx.Request.Headers.Referer.ToString().Trim();
+        if (!string.IsNullOrEmpty(referer) && !IsAllowedLoopbackOrigin(referer, ActivePort))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            deniedScript = "// untrusted referer preload denied\n";
+            return false;
+        }
+
+        statusCode = StatusCodes.Status200OK;
+        deniedScript = string.Empty;
+        return true;
+    }
+
+    public bool ValidateIpcRequest(
+        HttpContext ctx,
+        bool requireJsonContentType,
+        out int statusCode,
+        out string error)
+    {
+        if (!IsLoopbackRequest(ctx))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            error = "Desktop IPC is restricted to localhost.";
+            return false;
+        }
+
+        var secFetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString().Trim();
+        if (string.Equals(secFetchSite, "cross-site", StringComparison.OrdinalIgnoreCase))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            error = "Cross-site IPC requests are forbidden.";
+            return false;
+        }
+
+        var origin = ctx.Request.Headers.Origin.ToString().Trim();
+        if (!string.IsNullOrEmpty(origin) && !IsAllowedLoopbackOrigin(origin, ActivePort))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            error = "Untrusted Origin for desktop IPC.";
+            return false;
+        }
+
+        var referer = ctx.Request.Headers.Referer.ToString().Trim();
+        if (string.IsNullOrEmpty(origin) && !string.IsNullOrEmpty(referer) && !IsAllowedLoopbackOrigin(referer, ActivePort))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            error = "Untrusted Referer for desktop IPC.";
+            return false;
+        }
+
+        var providedToken = ctx.Request.Headers["X-Karobar-Ipc-Token"].ToString().Trim();
+        var providedBytes = Encoding.UTF8.GetBytes(providedToken);
+        var expectedBytes = Encoding.UTF8.GetBytes(_ipcToken);
+        if (providedBytes.Length != expectedBytes.Length ||
+            !CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes))
+        {
+            statusCode = StatusCodes.Status403Forbidden;
+            error = "Missing or invalid desktop IPC token.";
+            return false;
+        }
+
+        if (requireJsonContentType)
+        {
+            if (!MediaTypeHeaderValue.TryParse(ctx.Request.ContentType, out var mt) ||
+                !string.Equals(mt.MediaType, "application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                statusCode = StatusCodes.Status415UnsupportedMediaType;
+                error = "Content-Type must be application/json.";
+                return false;
+            }
+        }
+
+        statusCode = StatusCodes.Status200OK;
+        error = string.Empty;
+        return true;
+    }
+
+    public static bool HasMethodOverrideAuth(HttpContext context)
+    {
+        var auth = context.Request.Headers.Authorization.ToString().Trim();
+        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) && auth.Length > 7)
+        {
+            return true;
+        }
+
+        if (context.Request.Query.TryGetValue("api_token", out var apiTok) &&
+            !string.IsNullOrWhiteSpace(apiTok))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool ShouldInspectFormForMethodOverride(HttpContext context)
+    {
+        return HttpMethods.IsPost(context.Request.Method) &&
+               context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+               HasMethodOverrideAuth(context) &&
+               context.Request.HasFormContentType &&
+               context.Request.ContentLength is > 0 and <= 10L * 1024L * 1024L;
+    }
+
+    public static IReadOnlyList<string> ExtractInlineScriptHashes(string? html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return [];
+        }
+
+        var hashes = new List<string>();
+        foreach (Match m in InlineScriptBlockRegex.Matches(html))
+        {
+            var body = m.Groups["body"].Value;
+            if (string.IsNullOrEmpty(body))
+            {
+                continue;
+            }
+
+            var normalizedBody = body
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace("\r", "\n", StringComparison.Ordinal);
+            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedBody));
+            hashes.Add($"'sha256-{Convert.ToBase64String(digest)}'");
+        }
+
+        return hashes.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    public static bool IsLegacyInlineHtmlPath(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path) && LegacyInlineHtmlPathRegex.IsMatch(path);
+    }
+
+    public string GetContentSecurityPolicyHeader(bool allowLegacyUnsafeInline)
+    {
+        if (allowLegacyUnsafeInline && !string.IsNullOrEmpty(_cachedLegacyCspHeader))
+        {
+            return _cachedLegacyCspHeader;
+        }
+        if (!allowLegacyUnsafeInline && !string.IsNullOrEmpty(_cachedSpaCspHeader))
+        {
+            return _cachedSpaCspHeader;
+        }
+
+        var scriptHashes = new List<string>();
+        var indexHtmlPath = Path.Combine(PublicDir, "index.html");
+        if (File.Exists(indexHtmlPath))
+        {
+            try
+            {
+                scriptHashes.AddRange(ExtractInlineScriptHashes(File.ReadAllText(indexHtmlPath, Encoding.UTF8)));
+            }
+            catch { }
+        }
+
+        var offlinePath = _windowManager.ResolveTerminalOfflineHtmlPath();
+        if (File.Exists(offlinePath))
+        {
+            try
+            {
+                scriptHashes.AddRange(ExtractInlineScriptHashes(File.ReadAllText(offlinePath, Encoding.UTF8)));
+            }
+            catch { }
+        }
+
+        var devHmr = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("KAROBAR_DEV_HMR"));
+        var devScriptSrc = devHmr ? " http://127.0.0.1:5173 http://localhost:5173" : "";
+        var devConnectSrc = devHmr ? " http://127.0.0.1:5173 http://localhost:5173 ws://127.0.0.1:5173 ws://localhost:5173" : "";
+
+        var hashTokens = scriptHashes.Count > 0 ? " " + string.Join(" ", scriptHashes.Distinct(StringComparer.Ordinal)) : "";
+        var scriptSrcDirective = allowLegacyUnsafeInline
+            ? $"script-src 'self' 'unsafe-inline'{devScriptSrc}"
+            : $"script-src 'self'{hashTokens}{devScriptSrc}";
+
+        var policy =
+            $"default-src 'self'; " +
+            $"base-uri 'self'; " +
+            $"object-src 'self' blob:; " +
+            $"frame-ancestors 'self'; " +
+            $"form-action 'self'; " +
+            $"frame-src 'self' blob:; " +
+            $"img-src 'self' data: blob:; " +
+            $"font-src 'self' data:; " +
+            $"style-src 'self' 'unsafe-inline'; " +
+            $"{scriptSrcDirective}; " +
+            $"connect-src 'self' https://api.github.com{devConnectSrc}";
+
+        if (allowLegacyUnsafeInline)
+        {
+            _cachedLegacyCspHeader = policy;
+        }
+        else
+        {
+            _cachedSpaCspHeader = policy;
+        }
+
+        return policy;
+    }
+
+    public void ApplySecurityHeaders(HttpContext context)
+    {
+        var headers = context.Response.Headers;
+        if (!headers.ContainsKey("X-Content-Type-Options"))
+        {
+            headers["X-Content-Type-Options"] = "nosniff";
+        }
+        if (!headers.ContainsKey("Referrer-Policy"))
+        {
+            headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        }
+        if (!headers.ContainsKey("X-Frame-Options"))
+        {
+            headers["X-Frame-Options"] = "SAMEORIGIN";
+        }
+        if (!headers.ContainsKey("Permissions-Policy"))
+        {
+            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+        }
+        if (!headers.ContainsKey("Content-Security-Policy"))
+        {
+            var isLegacy = IsLegacyInlineHtmlPath(context.Request.Path.Value);
+            headers["Content-Security-Policy"] = GetContentSecurityPolicyHeader(isLegacy);
+        }
+    }
 
     /// <summary>
     /// Returns true if the given IP address is local loopback (including IPv4-mapped IPv6 `::ffff:127.0.0.1`
@@ -661,8 +954,9 @@ public sealed class KestrelHostServer : IAsyncDisposable
         builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
         {
             o.MultipartBodyLengthLimit = 1024L * 1024 * 1024;
-            o.ValueLengthLimit = int.MaxValue;
-            o.MultipartHeadersLengthLimit = int.MaxValue;
+            o.ValueLengthLimit = 4 * 1024 * 1024;
+            o.MultipartHeadersLengthLimit = 16 * 1024;
+            o.KeyLengthLimit = 2048;
         });
 
         // Register Host Singletons
@@ -684,24 +978,50 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         var app = builder.Build();
 
-        // 0. Laravel _method spoofing (POST with ?_method=PUT or FormData _method=PUT/PATCH/DELETE)
+        // 0. Laravel _method spoofing (POST /api/... with ?_method=PUT, X-HTTP-Method-Override, or authenticated bounded FormData _method=PUT/PATCH/DELETE)
         // Must execute BEFORE UseRouting() so endpoint routing matches [HttpPut]/[HttpPatch]/[HttpDelete].
         app.Use(async (context, next) =>
         {
-            if (HttpMethods.IsPost(context.Request.Method))
+            if (HttpMethods.IsPost(context.Request.Method) &&
+                context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
             {
                 string? spoofed = null;
-                if (context.Request.Query.TryGetValue("_method", out var qMethod) && !string.IsNullOrWhiteSpace(qMethod))
+                if (context.Request.Headers.TryGetValue("X-HTTP-Method-Override", out var hMethod) &&
+                    !string.IsNullOrWhiteSpace(hMethod))
+                {
+                    spoofed = hMethod.ToString().Trim().ToUpperInvariant();
+                }
+                else if (context.Request.Query.TryGetValue("_method", out var qMethod) &&
+                         !string.IsNullOrWhiteSpace(qMethod))
                 {
                     spoofed = qMethod.ToString().Trim().ToUpperInvariant();
                 }
-                else if (context.Request.HasFormContentType)
+                else if (ShouldInspectFormForMethodOverride(context))
                 {
-                    context.Request.EnableBuffering();
-                    var form = await context.Request.ReadFormAsync(context.RequestAborted);
-                    if (form.TryGetValue("_method", out var fMethod) && !string.IsNullOrWhiteSpace(fMethod))
+                    try
                     {
-                        spoofed = fMethod.ToString().Trim().ToUpperInvariant();
+                        context.Request.EnableBuffering(bufferThreshold: 64 * 1024, bufferLimit: 10L * 1024L * 1024L);
+                        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+                        if (form.TryGetValue("_method", out var fMethod) && !string.IsNullOrWhiteSpace(fMethod))
+                        {
+                            spoofed = fMethod.ToString().Trim().ToUpperInvariant();
+                        }
+                        if (context.Request.Body.CanSeek)
+                        {
+                            context.Request.Body.Position = 0;
+                        }
+                    }
+                    catch (InvalidDataException)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                        await context.Response.WriteAsJsonAsync(new { message = "Malformed form payload." }, context.RequestAborted);
+                        return;
+                    }
+                    catch (BadHttpRequestException ex)
+                    {
+                        context.Response.StatusCode = ex.StatusCode;
+                        await context.Response.WriteAsJsonAsync(new { message = "Malformed request payload." }, context.RequestAborted);
+                        return;
                     }
                 }
 
@@ -715,6 +1035,17 @@ public sealed class KestrelHostServer : IAsyncDisposable
         });
         app.UseRouting();
 
+        // Global baseline security headers & Content-Security-Policy
+        app.Use(async (context, next) =>
+        {
+            context.Response.OnStarting(() =>
+            {
+                ApplySecurityHeaders(context);
+                return Task.CompletedTask;
+            });
+            await next();
+        });
+
         // 1. Health Endpoint: GET /up -> 200 OK
         app.MapGet("/up", () => Results.Text("OK", "text/plain; charset=utf-8"))
             .AllowAnonymous();
@@ -724,49 +1055,77 @@ public sealed class KestrelHostServer : IAsyncDisposable
         // (Native WebView2 Terminal PCs inject their OWN local preload via AddScriptToExecuteOnDocumentCreatedAsync.)
         app.MapGet("/__karobar_ipc/preload.js", (HttpContext ctx) =>
         {
-            if (!IsLoopbackRequest(ctx))
+            if (!ValidatePreloadRequest(ctx, out var preloadStatus, out var deniedScript))
             {
-                return Results.Text("// desktop preload disabled for remote LAN clients\n", "application/javascript; charset=utf-8");
+                return Results.Text(deniedScript, "application/javascript; charset=utf-8", statusCode: preloadStatus);
             }
+
+            ctx.Response.Headers.CacheControl = "no-store, private";
             var isOffscreen = ctx.Request.Query.ContainsKey("offscreen");
-            var js = KarobarPreloadScript.GetPreloadScript(isOffscreen);
+            var js = KarobarPreloadScript.GetPreloadScript(
+                isOffscreen,
+                ipcToken: isOffscreen ? null : _ipcToken,
+                trustedOrigin: $"http://127.0.0.1:{ActivePort}");
             return Results.Text(js, "application/javascript; charset=utf-8");
         }).AllowAnonymous();
 
         app.MapPost("/__karobar_ipc/invoke", async (HttpContext ctx) =>
         {
-            if (!IsLoopbackRequest(ctx))
+            if (!ValidateIpcRequest(ctx, requireJsonContentType: true, out var statusCode, out var error))
             {
-                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Desktop IPC is restricted to localhost." }, ctx.RequestAborted);
+                ctx.Response.StatusCode = statusCode;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error }, ctx.RequestAborted);
                 return;
             }
 
-            using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
-            var root = doc.RootElement;
-            var channel = root.TryGetProperty("channel", out var chProp) && chProp.ValueKind == JsonValueKind.String
-                ? chProp.GetString() ?? ""
-                : "";
-            JsonElement? payload = root.TryGetProperty("payload", out var plProp) ? plProp.Clone() : null;
+            JsonDocument doc;
+            try
+            {
+                doc = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Invalid JSON payload." }, ctx.RequestAborted);
+                return;
+            }
 
-            var result = await _desktopBridge.DispatchIpcAsync(channel, payload, ctx.RequestAborted);
-            await ctx.Response.WriteAsJsonAsync(new { ok = true, result }, ctx.RequestAborted);
+            using (doc)
+            {
+                var root = doc.RootElement;
+                var channel = root.TryGetProperty("channel", out var chProp) && chProp.ValueKind == JsonValueKind.String
+                    ? chProp.GetString() ?? ""
+                    : "";
+                JsonElement? payload = root.TryGetProperty("payload", out var plProp) ? plProp.Clone() : null;
+
+                var result = await _desktopBridge.DispatchIpcAsync(channel, payload, ctx.RequestAborted);
+                await ctx.Response.WriteAsJsonAsync(new { ok = true, result }, ctx.RequestAborted);
+            }
         }).AllowAnonymous();
 
         app.MapPost("/__karobar_ipc/{channel}", async (string channel, HttpContext ctx) =>
         {
-            if (!IsLoopbackRequest(ctx))
+            if (!ValidateIpcRequest(ctx, requireJsonContentType: true, out var statusCode, out var error))
             {
-                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Desktop IPC is restricted to localhost." }, ctx.RequestAborted);
+                ctx.Response.StatusCode = statusCode;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error }, ctx.RequestAborted);
                 return;
             }
 
             JsonElement? payload = null;
             if (ctx.Request.ContentLength is > 0)
             {
-                using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
-                payload = doc.RootElement.Clone();
+                try
+                {
+                    using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
+                    payload = doc.RootElement.Clone();
+                }
+                catch (JsonException)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Invalid JSON payload." }, ctx.RequestAborted);
+                    return;
+                }
             }
 
             var result = await _desktopBridge.DispatchIpcAsync(channel, payload, ctx.RequestAborted);
@@ -775,9 +1134,9 @@ public sealed class KestrelHostServer : IAsyncDisposable
 
         app.MapGet("/__karobar_ipc/events", (HttpContext ctx) =>
         {
-            if (!IsLoopbackRequest(ctx))
+            if (!ValidateIpcRequest(ctx, requireJsonContentType: false, out var statusCode, out var error))
             {
-                return Results.Json(new { ok = false, error = "Desktop IPC is restricted to localhost." }, statusCode: StatusCodes.Status403Forbidden);
+                return Results.Json(new { ok = false, error }, statusCode: statusCode);
             }
             var since = long.TryParse(ctx.Request.Query["since"], out var s) ? s : 0L;
             var events = _windowManager.GetRecentEventsSince(since);

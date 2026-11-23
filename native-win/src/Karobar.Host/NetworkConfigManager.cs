@@ -1,5 +1,8 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,6 +26,9 @@ public sealed class NetworkConfig
 
     [JsonPropertyName("pairingToken")]
     public string PairingToken { get; set; } = "";
+
+    [JsonPropertyName("serverCertThumbprint")]
+    public string ServerCertThumbprint { get; set; } = "";
 }
 
 public sealed class NetworkConfigUpdate
@@ -41,6 +47,9 @@ public sealed class NetworkConfigUpdate
 
     [JsonPropertyName("pairingToken")]
     public string? PairingToken { get; set; }
+
+    [JsonPropertyName("serverCertThumbprint")]
+    public string? ServerCertThumbprint { get; set; }
 
     [JsonPropertyName("relaunch")]
     public bool Relaunch { get; set; }
@@ -328,7 +337,8 @@ public sealed class NetworkConfigManager
                 TerminalName = !string.IsNullOrWhiteSpace(loaded?.TerminalName)
                     ? loaded!.TerminalName.Trim()
                     : $"Counter ({defaultHostname})",
-                PairingToken = (loaded?.PairingToken ?? string.Empty).Trim()
+                PairingToken = (loaded?.PairingToken ?? string.Empty).Trim(),
+                ServerCertThumbprint = (loaded?.ServerCertThumbprint ?? string.Empty).Trim()
             };
 
             if (loaded == null || !hadTerminalIdOnDisk)
@@ -376,7 +386,10 @@ public sealed class NetworkConfigManager
                     : current.TerminalName,
                 PairingToken = partial.PairingToken != null
                     ? partial.PairingToken.Trim()
-                    : current.PairingToken
+                    : current.PairingToken,
+                ServerCertThumbprint = partial.ServerCertThumbprint != null
+                    ? partial.ServerCertThumbprint.Trim()
+                    : current.ServerCertThumbprint
             };
 
             _networkConfigCache = next;
@@ -410,6 +423,109 @@ public sealed class NetworkConfigManager
     }
 
     public string getAppBaseUrl() => GetAppBaseUrl();
+
+    public static bool IsSameOrigin(string? requestUrl, string? expectedOriginOrUrl)
+    {
+        if (string.IsNullOrWhiteSpace(requestUrl) || string.IsNullOrWhiteSpace(expectedOriginOrUrl))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(requestUrl.Trim(), UriKind.Absolute, out var reqUri) ||
+            !Uri.TryCreate(expectedOriginOrUrl.Trim(), UriKind.Absolute, out var expUri))
+        {
+            return false;
+        }
+
+        if ((!string.Equals(reqUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(reqUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.Equals(expUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(expUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(reqUri.UserInfo) || !string.IsNullOrEmpty(expUri.UserInfo))
+        {
+            return false;
+        }
+
+        return string.Equals(reqUri.Scheme, expUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(reqUri.Host, expUri.Host, StringComparison.OrdinalIgnoreCase) &&
+               reqUri.Port == expUri.Port;
+    }
+
+    public static bool IsPrivateOrLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        var clean = host.Trim().Trim('[', ']');
+        if (string.Equals(clean, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(clean, out var ip))
+        {
+            return false;
+        }
+
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            ip = ip.MapToIPv4();
+        }
+
+        if (IPAddress.IsLoopback(ip))
+        {
+            return true;
+        }
+
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            if (b[0] == 169 && b[1] == 254 && b[2] == 169 && b[3] == 254)
+            {
+                return false;
+            }
+            if (b[0] == 10) return true;
+            if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
+            if (b[0] == 192 && b[1] == 168) return true;
+            if (b[0] == 169 && b[1] == 254) return true;
+            return false;
+        }
+
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal) return true;
+            var b = ip.GetAddressBytes();
+            if ((b[0] & 0xFE) == 0xFC) return true; // RFC 4193 Unique Local Address fc00::/7
+        }
+
+        return false;
+    }
+
+    public static bool ValidateServerCertificate(
+        HttpRequestMessage? req,
+        X509Certificate2? cert,
+        SslPolicyErrors errors,
+        string? pinnedThumbprint = null)
+    {
+        var normalizedPin = (pinnedThumbprint ?? string.Empty).Replace(":", "", StringComparison.Ordinal).Replace(" ", "", StringComparison.Ordinal).Trim();
+        if (!string.IsNullOrEmpty(normalizedPin))
+        {
+            if (cert == null) return false;
+            var actualHash = cert.GetCertHashString(HashAlgorithmName.SHA256);
+            if (actualHash.Length != normalizedPin.Length) return false;
+            var aBytes = Encoding.ASCII.GetBytes(actualHash.ToUpperInvariant());
+            var bBytes = Encoding.ASCII.GetBytes(normalizedPin.ToUpperInvariant());
+            return CryptographicOperations.FixedTimeEquals(aBytes, bBytes);
+        }
+
+        return errors == SslPolicyErrors.None || IsPrivateOrLoopbackHost(req?.RequestUri?.Host);
+    }
 
     private string? _cachedAppVersion;
 
@@ -513,7 +629,9 @@ public sealed class NetworkConfigManager
 
         using var handler = new HttpClientHandler
         {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            AllowAutoRedirect = false,
+            ServerCertificateCustomValidationCallback = (req, cert, _, errors) =>
+                ValidateServerCertificate(req, cert, errors, cfg.ServerCertThumbprint)
         };
         using var client = new HttpClient(handler)
         {
@@ -662,6 +780,7 @@ public sealed class NetworkConfigManager
         ServerUrl = src.ServerUrl,
         TerminalId = src.TerminalId,
         TerminalName = src.TerminalName,
-        PairingToken = src.PairingToken
+        PairingToken = src.PairingToken,
+        ServerCertThumbprint = src.ServerCertThumbprint
     };
 }

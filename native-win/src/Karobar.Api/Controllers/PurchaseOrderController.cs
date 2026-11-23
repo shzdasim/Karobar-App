@@ -188,37 +188,49 @@ public class PurchaseOrderController : ApiControllerBase
         var (valid, errResult, header, items) = await ValidateOrderPayloadAsync(body);
         if (!valid) return errResult!;
 
+        await PrewarmWriteSchemaAsync();
+        var hasUserDemandsTable = await Db.HasTableAsync("user_demands");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        header!["status"] = "ordered";
-        header["created_by"] = CurrentUserId;
-        header["updated_by"] = CurrentUserId;
-
-        var orderId = await Db.InsertAsync("purchase_orders", header, conn, tx);
-        var orderNumber = "PO-" + orderId.ToString("D5");
-        await Db.UpdateAsync("purchase_orders", orderId, new Dictionary<string, object?>
+        long orderId;
+        try
         {
-            ["number"] = orderNumber
-        }, "id", conn, tx);
+            header!["status"] = "ordered";
+            header["created_by"] = CurrentUserId;
+            header["updated_by"] = CurrentUserId;
 
-        foreach (var item in items!)
-        {
-            item["purchase_order_id"] = orderId;
-            await Db.InsertAsync("purchase_order_items", item, conn, tx);
+            orderId = await Db.InsertAsync("purchase_orders", header, conn, tx);
+            var orderNumber = "PO-" + orderId.ToString("D5");
+            await Db.UpdateAsync("purchase_orders", orderId, new Dictionary<string, object?>
+            {
+                ["number"] = orderNumber
+            }, "id", conn, tx);
+
+            foreach (var item in items!)
+            {
+                item["purchase_order_id"] = orderId;
+                await Db.InsertAsync("purchase_order_items", item, conn, tx);
+            }
+
+            var productIds = items.Select(i => ToLong(i.GetValueOrDefault("product_id"))).Where(pid => pid > 0).Distinct().ToArray();
+            if (productIds.Length > 0 && hasUserDemandsTable)
+            {
+                await Db.ExecuteAsync(
+                    "UPDATE user_demands SET status = 'ordered', updated_at = @now WHERE product_id IN @ids AND status = 'pending'",
+                    new { ids = productIds, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") },
+                    conn,
+                    tx);
+            }
+
+            await tx.CommitAsync();
         }
-
-        var productIds = items.Select(i => ToLong(i.GetValueOrDefault("product_id"))).Where(pid => pid > 0).Distinct().ToArray();
-        if (productIds.Length > 0 && await Db.HasTableAsync("user_demands"))
+        catch
         {
-            await Db.ExecuteAsync(
-                "UPDATE user_demands SET status = 'ordered', updated_at = @now WHERE product_id IN @ids AND status = 'pending'",
-                new { ids = productIds, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") },
-                conn,
-                tx);
+            await tx.RollbackAsync();
+            throw;
         }
-
-        await tx.CommitAsync();
 
         var loaded = await LoadPurchaseOrderAsync(orderId);
         return StatusCode(201, loaded);
@@ -235,7 +247,8 @@ public class PurchaseOrderController : ApiControllerBase
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Purchase Order not found." });
 
-        var hasInvoices = await Db.HasTableAsync("purchase_invoices") &&
+        var hasPurchaseInvoicesTable = await Db.HasTableAsync("purchase_invoices");
+        var hasInvoices = hasPurchaseInvoicesTable &&
                           await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }) > 0;
         var status = existing.GetValueOrDefault("status")?.ToString() ?? "";
         if (!string.Equals(status, "ordered", StringComparison.OrdinalIgnoreCase) || hasInvoices)
@@ -247,30 +260,57 @@ public class PurchaseOrderController : ApiControllerBase
         var (valid, errResult, header, items) = await ValidateOrderPayloadAsync(body);
         if (!valid) return errResult!;
 
+        await PrewarmWriteSchemaAsync();
+        var hasUserDemandsTable = await Db.HasTableAsync("user_demands");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        header!["updated_by"] = CurrentUserId;
-        await Db.UpdateAsync("purchase_orders", id, header, "id", conn, tx);
-        await Db.ExecuteAsync("DELETE FROM purchase_order_items WHERE purchase_order_id = @id", new { id }, conn, tx);
-
-        foreach (var item in items!)
+        try
         {
-            item["purchase_order_id"] = id;
-            await Db.InsertAsync("purchase_order_items", item, conn, tx);
-        }
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Purchase Order not found." });
+            }
 
-        var productIds = items.Select(i => ToLong(i.GetValueOrDefault("product_id"))).Where(pid => pid > 0).Distinct().ToArray();
-        if (productIds.Length > 0 && await Db.HasTableAsync("user_demands"))
+            var lockedHasInvoices = hasPurchaseInvoicesTable &&
+                                    await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }, conn, tx) > 0;
+            var lockedStatus = lockedExisting.GetValueOrDefault("status")?.ToString() ?? "";
+            if (!string.Equals(lockedStatus, "ordered", StringComparison.OrdinalIgnoreCase) || lockedHasInvoices)
+            {
+                await tx.RollbackAsync();
+                return StatusCode(409, new { message = "Only unreceived orders can be edited." });
+            }
+
+            header!["updated_by"] = CurrentUserId;
+            await Db.UpdateAsync("purchase_orders", id, header, "id", conn, tx);
+            await Db.ExecuteAsync("DELETE FROM purchase_order_items WHERE purchase_order_id = @id", new { id }, conn, tx);
+
+            foreach (var item in items!)
+            {
+                item["purchase_order_id"] = id;
+                await Db.InsertAsync("purchase_order_items", item, conn, tx);
+            }
+
+            var productIds = items.Select(i => ToLong(i.GetValueOrDefault("product_id"))).Where(pid => pid > 0).Distinct().ToArray();
+            if (productIds.Length > 0 && hasUserDemandsTable)
+            {
+                await Db.ExecuteAsync(
+                    "UPDATE user_demands SET status = 'ordered', updated_at = @now WHERE product_id IN @ids AND status = 'pending'",
+                    new { ids = productIds, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") },
+                    conn,
+                    tx);
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
         {
-            await Db.ExecuteAsync(
-                "UPDATE user_demands SET status = 'ordered', updated_at = @now WHERE product_id IN @ids AND status = 'pending'",
-                new { ids = productIds, now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") },
-                conn,
-                tx);
+            await tx.RollbackAsync();
+            throw;
         }
-
-        await tx.CommitAsync();
 
         var loaded = await LoadPurchaseOrderAsync(id);
         return Ok(loaded);
@@ -287,7 +327,8 @@ public class PurchaseOrderController : ApiControllerBase
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Purchase Order not found." });
 
-        var hasInvoices = await Db.HasTableAsync("purchase_invoices") &&
+        var hasPurchaseInvoicesTable = await Db.HasTableAsync("purchase_invoices");
+        var hasInvoices = hasPurchaseInvoicesTable &&
                           await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }) > 0;
         var status = existing.GetValueOrDefault("status")?.ToString() ?? "";
         if (!string.Equals(status, "ordered", StringComparison.OrdinalIgnoreCase) || hasInvoices)
@@ -295,13 +336,45 @@ public class PurchaseOrderController : ApiControllerBase
             return StatusCode(409, new { message = "Only unreceived orders can be cancelled." });
         }
 
-        await Db.UpdateAsync("purchase_orders", id, new Dictionary<string, object?>
-        {
-            ["status"] = "cancelled",
-            ["updated_by"] = CurrentUserId
-        });
+        await PrewarmWriteSchemaAsync();
 
-        var updated = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id });
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+
+        Dictionary<string, object?>? updated;
+        try
+        {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Purchase Order not found." });
+            }
+
+            var lockedHasInvoices = hasPurchaseInvoicesTable &&
+                                    await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }, conn, tx) > 0;
+            var lockedStatus = lockedExisting.GetValueOrDefault("status")?.ToString() ?? "";
+            if (!string.Equals(lockedStatus, "ordered", StringComparison.OrdinalIgnoreCase) || lockedHasInvoices)
+            {
+                await tx.RollbackAsync();
+                return StatusCode(409, new { message = "Only unreceived orders can be cancelled." });
+            }
+
+            await Db.UpdateAsync("purchase_orders", id, new Dictionary<string, object?>
+            {
+                ["status"] = "cancelled",
+                ["updated_by"] = CurrentUserId
+            }, "id", conn, tx);
+
+            updated = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
         return Ok(updated);
     }
 
@@ -316,7 +389,8 @@ public class PurchaseOrderController : ApiControllerBase
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Purchase Order not found." });
 
-        var hasInvoices = await Db.HasTableAsync("purchase_invoices") &&
+        var hasPurchaseInvoicesTable = await Db.HasTableAsync("purchase_invoices");
+        var hasInvoices = hasPurchaseInvoicesTable &&
                           await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }) > 0;
         var status = (existing.GetValueOrDefault("status")?.ToString() ?? "").ToLowerInvariant();
         if (status is not ("ordered" or "cancelled") || hasInvoices)
@@ -324,14 +398,49 @@ public class PurchaseOrderController : ApiControllerBase
             return StatusCode(409, new { message = "Received Purchase Orders cannot be deleted." });
         }
 
+        await PrewarmWriteSchemaAsync();
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        await Db.ExecuteAsync("DELETE FROM purchase_order_items WHERE purchase_order_id = @id", new { id }, conn, tx);
-        await Db.ExecuteAsync("DELETE FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+        try
+        {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Purchase Order not found." });
+            }
 
-        await tx.CommitAsync();
+            var lockedHasInvoices = hasPurchaseInvoicesTable &&
+                                    await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM purchase_invoices WHERE purchase_order_id = @id", new { id }, conn, tx) > 0;
+            var lockedStatus = (lockedExisting.GetValueOrDefault("status")?.ToString() ?? "").ToLowerInvariant();
+            if (lockedStatus is not ("ordered" or "cancelled") || lockedHasInvoices)
+            {
+                await tx.RollbackAsync();
+                return StatusCode(409, new { message = "Received Purchase Orders cannot be deleted." });
+            }
+
+            await Db.ExecuteAsync("DELETE FROM purchase_order_items WHERE purchase_order_id = @id", new { id }, conn, tx);
+            await Db.ExecuteAsync("DELETE FROM purchase_orders WHERE id = @id", new { id }, conn, tx);
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
         return NoContent();
+    }
+
+    private async Task PrewarmWriteSchemaAsync()
+    {
+        await Db.GetTableColumnsAsync("purchase_orders");
+        await Db.GetTableColumnsAsync("purchase_order_items");
+        await Db.GetTableColumnsAsync("purchase_invoices");
+        await Db.GetTableColumnsAsync("user_demands");
     }
 
     [HttpPost("{id:long}/receive")]

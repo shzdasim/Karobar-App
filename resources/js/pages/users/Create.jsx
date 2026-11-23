@@ -1,7 +1,9 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { createUser } from "@/api/users";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/api/usePermissions.js";
+import { extractApiErrorMessage } from "@/utils/operatorPinHelpers.js";
 import UserForm from "./UserForm.jsx";
 
 export default function CreateUser() {
@@ -15,6 +17,8 @@ export default function CreateUser() {
     try {
       await createUser(payload);
       nav("/users");
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err, "Failed to create user."));
     } finally {
       setSubmitting(false);
     }

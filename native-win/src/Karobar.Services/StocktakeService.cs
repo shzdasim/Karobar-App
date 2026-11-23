@@ -1,6 +1,7 @@
 using System.Data;
 using Dapper;
 using Karobar.Services.Infrastructure;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Services;
 
@@ -79,10 +80,26 @@ public class StocktakeService
 
     public async Task SnapshotItemsAsync(Dictionary<string, object?> session)
     {
-        var sessionId = Convert.ToInt64(session["id"]);
-        await _db.ExecuteAsync("DELETE FROM stocktake_items WHERE stocktake_session_id = @sessionId", new { sessionId });
+        await using var conn = await _db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        try
+        {
+            await SnapshotItemsCoreAsync(session, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
 
-        var products = await ResolveProductsAsync(session);
+    private async Task SnapshotItemsCoreAsync(Dictionary<string, object?> session, SqliteConnection conn, SqliteTransaction tx)
+    {
+        var sessionId = Convert.ToInt64(session["id"]);
+        await _db.ExecuteAsync("DELETE FROM stocktake_items WHERE stocktake_session_id = @sessionId", new { sessionId }, conn, tx);
+
+        var products = await ResolveProductsAsync(session, conn, tx);
         if (products.Count == 0) return;
 
         var sessionType = session.GetValueOrDefault("session_type")?.ToString() ?? "full";
@@ -98,9 +115,9 @@ public class StocktakeService
         var productIds = products.Select(p => Convert.ToInt64(p["id"])).Distinct().ToList();
         var allBatches = new List<Dictionary<string, object?>>();
 
-        if (await _db.HasTableAsync("batches"))
+        if (await TableExistsAsync("batches", conn, tx))
         {
-            var hasStorageLocCol = await _db.HasColumnAsync("batches", "storage_location_id");
+            var hasStorageLocCol = await ColumnExistsAsync("batches", "storage_location_id", conn, tx);
             foreach (var chunk in productIds.Chunk(400))
             {
                 var sql = "SELECT * FROM batches WHERE product_id IN @ids";
@@ -108,7 +125,7 @@ public class StocktakeService
                 {
                     sql += " AND (storage_location_id = @locId OR storage_location_id IS NULL)";
                 }
-                var rows = await _db.QueryListAsync(sql, new { ids = chunk.ToArray(), locId = filterLocationId });
+                var rows = await _db.QueryListAsync(sql, new { ids = chunk.ToArray(), locId = filterLocationId }, conn, tx);
                 allBatches.AddRange(rows);
             }
         }
@@ -118,8 +135,6 @@ public class StocktakeService
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-        await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
 
         foreach (var product in products)
         {
@@ -200,28 +215,47 @@ public class StocktakeService
                 }, conn, tx);
             }
         }
-
-        await tx.CommitAsync();
     }
 
     public async Task<Dictionary<string, object?>> StartSessionAsync(long sessionId)
     {
-        var session = await _db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id = sessionId });
-        if (session == null) throw new KeyNotFoundException("Stocktake session not found.");
+        await _db.GetTableColumnsAsync("stocktake_items");
+        await _db.GetTableColumnsAsync("stocktake_sessions");
 
-        var status = session.GetValueOrDefault("status")?.ToString() ?? "";
-        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            throw new InvalidOperationException($"Only draft sessions can be started. Current status: {status}");
+            try
+            {
+                var session = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM stocktake_sessions WHERE id = @id",
+                    new { id = sessionId },
+                    conn,
+                    tx);
+                if (session == null) throw new KeyNotFoundException("Stocktake session not found.");
+
+                var status = session.GetValueOrDefault("status")?.ToString() ?? "";
+                if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Only draft sessions can be started. Current status: {status}");
+                }
+
+                await SnapshotItemsCoreAsync(session, conn, tx);
+
+                await _db.UpdateAsync("stocktake_sessions", sessionId, new Dictionary<string, object?>
+                {
+                    ["status"] = "in_progress",
+                    ["started_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                }, "id", conn, tx);
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
-
-        await SnapshotItemsAsync(session);
-
-        await _db.UpdateAsync("stocktake_sessions", sessionId, new Dictionary<string, object?>
-        {
-            ["status"] = "in_progress",
-            ["started_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        });
 
         SyncPulseService.Bump("stock");
         return (await GetSessionByIdAsync(sessionId, false))!;
@@ -390,175 +424,200 @@ public class StocktakeService
 
     public async Task<Dictionary<string, object?>> FinalizeSessionAsync(long sessionId, long? userId)
     {
-        var session = await _db.QuerySingleOrDefaultAsync("SELECT * FROM stocktake_sessions WHERE id = @id", new { id = sessionId });
-        if (session == null) throw new KeyNotFoundException("Stocktake session not found.");
+        await _db.GetTableColumnsAsync("stock_adjustments");
+        await _db.GetTableColumnsAsync("stock_adjustment_items");
+        await _db.GetTableColumnsAsync("stocktake_items");
+        await _db.GetTableColumnsAsync("batches");
+        await _db.GetTableColumnsAsync("products");
+        await _db.GetTableColumnsAsync("stocktake_sessions");
 
-        var status = session.GetValueOrDefault("status")?.ToString() ?? "";
-        if (!string.Equals(status, "pending_review", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Only sessions in pending_review can be finalized.");
-        }
-
-        var pendingCount = await _db.ExecuteScalarAsync<int>(
-            "SELECT COUNT(1) FROM stocktake_items WHERE stocktake_session_id = @sessionId AND status = 'pending'",
-            new { sessionId });
-        if (pendingCount > 0)
-        {
-            throw new InvalidOperationException($"All items must be counted before finalizing. {pendingCount} item(s) still pending.");
-        }
-
-        var referenceNo = session.GetValueOrDefault("reference_no")?.ToString() ?? $"ST-{sessionId}";
         var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var postedNumber = $"STOCKTAKE-{referenceNo}";
-
-        await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var adjId = await _db.InsertAsync("stock_adjustments", new Dictionary<string, object?>
-        {
-            ["posted_number"] = postedNumber,
-            ["posted_date"] = dateStr,
-            ["note"] = $"Stocktake finalization for session {referenceNo}",
-            ["total_worth"] = 0m,
-            ["user_id"] = userId
-        }, conn, tx);
-
-        var items = await _db.QueryListAsync(
-            "SELECT * FROM stocktake_items WHERE stocktake_session_id = @sessionId ORDER BY id ASC",
-            new { sessionId }, conn, tx);
-
-        decimal totalWorth = 0m;
+        string referenceNo;
+        string postedNumber;
+        long adjId;
         decimal netSignedValue = 0m;
-        var hasBatchesTable = await _db.HasTableAsync("batches");
 
-        foreach (var item in items)
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            var itemId = Convert.ToInt64(item["id"]);
-            var productId = Convert.ToInt64(item["product_id"]);
-            var product = await _db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
-            if (product == null) continue;
-
-            var batchNumber = item.GetValueOrDefault("batch_number")?.ToString();
-            bool hasBatch = !string.IsNullOrWhiteSpace(batchNumber);
-            Dictionary<string, object?>? batch = null;
-            decimal liveSystemQty;
-
-            if (hasBatch && hasBatchesTable)
+            try
             {
-                batch = await _db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
-                    new { productId, batchNumber }, conn, tx);
-                liveSystemQty = batch != null ? ToDecimal(batch.GetValueOrDefault("quantity")) : 0m;
-            }
-            else
-            {
-                decimal batchSum = 0m;
-                if (hasBatchesTable)
+                var session = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM stocktake_sessions WHERE id = @id",
+                    new { id = sessionId },
+                    conn,
+                    tx);
+                if (session == null) throw new KeyNotFoundException("Stocktake session not found.");
+
+                var status = session.GetValueOrDefault("status")?.ToString() ?? "";
+                if (!string.Equals(status, "pending_review", StringComparison.OrdinalIgnoreCase))
                 {
-                    batchSum = await conn.ExecuteScalarAsync<decimal?>(
-                        "SELECT COALESCE(SUM(COALESCE(quantity, 0)), 0) FROM batches WHERE product_id = @productId",
-                        new { productId }, tx) ?? 0m;
+                    throw new InvalidOperationException("Only sessions in pending_review can be finalized.");
                 }
-                bool hasBatchedSessionItem = items.Any(it =>
-                    Convert.ToInt64(it["product_id"]) == productId &&
-                    !string.IsNullOrWhiteSpace(it.GetValueOrDefault("batch_number")?.ToString()));
 
-                var prodQty = GetProductQty(product);
-                liveSystemQty = hasBatchedSessionItem ? Math.Max(0m, prodQty - batchSum) : prodQty;
-            }
-
-            var countedQty = item.TryGetValue("counted_qty", out var cq) && cq != null
-                ? ToDecimal(cq)
-                : liveSystemQty;
-            var liveVarianceQty = countedQty - liveSystemQty;
-
-            var itemSystemQty = ToDecimal(item.GetValueOrDefault("system_qty"));
-            var itemVarianceQty = ToDecimal(item.GetValueOrDefault("variance_qty"));
-            var unitCost = ToDecimal(item.GetValueOrDefault("unit_purchase_price"));
-            if (unitCost <= 0m) unitCost = ToDecimal(product.GetValueOrDefault("unit_purchase_price"));
-
-            if (Math.Abs(liveSystemQty - itemSystemQty) > 0.0001m || Math.Abs(liveVarianceQty - itemVarianceQty) > 0.0001m)
-            {
-                await _db.UpdateAsync("stocktake_items", itemId, new Dictionary<string, object?>
+                var pendingCount = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM stocktake_items WHERE stocktake_session_id = @sessionId AND status = 'pending'",
+                    new { sessionId },
+                    tx);
+                if (pendingCount > 0)
                 {
-                    ["system_qty"] = liveSystemQty,
-                    ["variance_qty"] = liveVarianceQty,
-                    ["variance_value"] = Math.Abs(liveVarianceQty) * unitCost
-                }, "id", conn, tx);
-            }
+                    throw new InvalidOperationException($"All items must be counted before finalizing. {pendingCount} item(s) still pending.");
+                }
 
-            if (liveVarianceQty == 0m) continue;
+                referenceNo = session.GetValueOrDefault("reference_no")?.ToString() ?? $"ST-{sessionId}";
+                postedNumber = $"STOCKTAKE-{referenceNo}";
 
-            var worth = Math.Abs(liveVarianceQty) * unitCost;
-            totalWorth += worth;
-            netSignedValue += (liveVarianceQty * unitCost);
-
-            await _db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
-            {
-                ["stock_adjustment_id"] = adjId,
-                ["product_id"] = productId,
-                ["batch_number"] = hasBatch ? batchNumber : null,
-                ["expiry"] = item.GetValueOrDefault("expiry_date")?.ToString(),
-                ["pack_size"] = null,
-                ["previous_qty"] = liveSystemQty,
-                ["actual_qty"] = countedQty,
-                ["diff_qty"] = liveVarianceQty,
-                ["unit_purchase_price"] = unitCost,
-                ["worth_adjusted"] = worth
-            }, conn, tx);
-
-            if (hasBatch && hasBatchesTable)
-            {
-                if (batch != null)
+                adjId = await _db.InsertAsync("stock_adjustments", new Dictionary<string, object?>
                 {
-                    var bUpdate = new Dictionary<string, object?>
+                    ["posted_number"] = postedNumber,
+                    ["posted_date"] = dateStr,
+                    ["note"] = $"Stocktake finalization for session {referenceNo}",
+                    ["total_worth"] = 0m,
+                    ["user_id"] = userId
+                }, conn, tx);
+
+                var items = await _db.QueryListAsync(
+                    "SELECT * FROM stocktake_items WHERE stocktake_session_id = @sessionId ORDER BY id ASC",
+                    new { sessionId }, conn, tx);
+
+                decimal totalWorth = 0m;
+                var hasBatchesTable = await TableExistsAsync("batches", conn, tx);
+
+                foreach (var item in items)
+                {
+                    var itemId = Convert.ToInt64(item["id"]);
+                    var productId = Convert.ToInt64(item["product_id"]);
+                    var product = await _db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
+                    if (product == null) continue;
+
+                    var batchNumber = item.GetValueOrDefault("batch_number")?.ToString();
+                    bool hasBatch = !string.IsNullOrWhiteSpace(batchNumber);
+                    Dictionary<string, object?>? batch = null;
+                    decimal liveSystemQty;
+
+                    if (hasBatch && hasBatchesTable)
                     {
-                        ["quantity"] = Math.Max(0m, countedQty)
-                    };
-                    if (string.IsNullOrWhiteSpace(batch.GetValueOrDefault("expiry_date")?.ToString()) &&
-                        !string.IsNullOrWhiteSpace(item.GetValueOrDefault("expiry_date")?.ToString()))
-                    {
-                        bUpdate["expiry_date"] = item.GetValueOrDefault("expiry_date")?.ToString();
+                        batch = await _db.QuerySingleOrDefaultAsync(
+                            "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
+                            new { productId, batchNumber }, conn, tx);
+                        liveSystemQty = batch != null ? ToDecimal(batch.GetValueOrDefault("quantity")) : 0m;
                     }
-                    await _db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), bUpdate, "id", conn, tx);
-                }
-                else if (countedQty > 0m)
-                {
-                    var itemExpiry = item.GetValueOrDefault("expiry_date")?.ToString()?.Trim();
-                    await _db.InsertAsync("batches", new Dictionary<string, object?>
+                    else
                     {
+                        decimal batchSum = 0m;
+                        if (hasBatchesTable)
+                        {
+                            batchSum = await conn.ExecuteScalarAsync<decimal?>(
+                                "SELECT COALESCE(SUM(COALESCE(quantity, 0)), 0) FROM batches WHERE product_id = @productId",
+                                new { productId }, tx) ?? 0m;
+                        }
+                        bool hasBatchedSessionItem = items.Any(it =>
+                            Convert.ToInt64(it["product_id"]) == productId &&
+                            !string.IsNullOrWhiteSpace(it.GetValueOrDefault("batch_number")?.ToString()));
+
+                        var prodQty = GetProductQty(product);
+                        liveSystemQty = hasBatchedSessionItem ? Math.Max(0m, prodQty - batchSum) : prodQty;
+                    }
+
+                    var countedQty = item.TryGetValue("counted_qty", out var cq) && cq != null
+                        ? ToDecimal(cq)
+                        : liveSystemQty;
+                    var liveVarianceQty = countedQty - liveSystemQty;
+
+                    var itemSystemQty = ToDecimal(item.GetValueOrDefault("system_qty"));
+                    var itemVarianceQty = ToDecimal(item.GetValueOrDefault("variance_qty"));
+                    var unitCost = ToDecimal(item.GetValueOrDefault("unit_purchase_price"));
+                    if (unitCost <= 0m) unitCost = ToDecimal(product.GetValueOrDefault("unit_purchase_price"));
+
+                    if (Math.Abs(liveSystemQty - itemSystemQty) > 0.0001m || Math.Abs(liveVarianceQty - itemVarianceQty) > 0.0001m)
+                    {
+                        await _db.UpdateAsync("stocktake_items", itemId, new Dictionary<string, object?>
+                        {
+                            ["system_qty"] = liveSystemQty,
+                            ["variance_qty"] = liveVarianceQty,
+                            ["variance_value"] = Math.Abs(liveVarianceQty) * unitCost
+                        }, "id", conn, tx);
+                    }
+
+                    if (liveVarianceQty == 0m) continue;
+
+                    var worth = Math.Abs(liveVarianceQty) * unitCost;
+                    totalWorth += worth;
+                    netSignedValue += (liveVarianceQty * unitCost);
+
+                    await _db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
+                    {
+                        ["stock_adjustment_id"] = adjId,
                         ["product_id"] = productId,
-                        ["batch_number"] = batchNumber,
-                        ["expiry_date"] = string.IsNullOrWhiteSpace(itemExpiry)
-                            ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
-                            : itemExpiry,
-                        ["quantity"] = Math.Max(0m, countedQty)
+                        ["batch_number"] = hasBatch ? batchNumber : null,
+                        ["expiry"] = item.GetValueOrDefault("expiry_date")?.ToString(),
+                        ["pack_size"] = null,
+                        ["previous_qty"] = liveSystemQty,
+                        ["actual_qty"] = countedQty,
+                        ["diff_qty"] = liveVarianceQty,
+                        ["unit_purchase_price"] = unitCost,
+                        ["worth_adjusted"] = worth
                     }, conn, tx);
+
+                    if (hasBatch && hasBatchesTable)
+                    {
+                        if (batch != null)
+                        {
+                            var bUpdate = new Dictionary<string, object?>
+                            {
+                                ["quantity"] = Math.Max(0m, countedQty)
+                            };
+                            if (string.IsNullOrWhiteSpace(batch.GetValueOrDefault("expiry_date")?.ToString()) &&
+                                !string.IsNullOrWhiteSpace(item.GetValueOrDefault("expiry_date")?.ToString()))
+                            {
+                                bUpdate["expiry_date"] = item.GetValueOrDefault("expiry_date")?.ToString();
+                            }
+                            await _db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), bUpdate, "id", conn, tx);
+                        }
+                        else if (countedQty > 0m)
+                        {
+                            var itemExpiry = item.GetValueOrDefault("expiry_date")?.ToString()?.Trim();
+                            await _db.InsertAsync("batches", new Dictionary<string, object?>
+                            {
+                                ["product_id"] = productId,
+                                ["batch_number"] = batchNumber,
+                                ["expiry_date"] = string.IsNullOrWhiteSpace(itemExpiry)
+                                    ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
+                                    : itemExpiry,
+                                ["quantity"] = Math.Max(0m, countedQty)
+                            }, conn, tx);
+                        }
+
+                        var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
+                        await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+                    }
+                    else
+                    {
+                        var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
+                        await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+                    }
                 }
 
-                var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
-                await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+                await _db.UpdateAsync("stock_adjustments", adjId, new Dictionary<string, object?>
+                {
+                    ["total_worth"] = totalWorth
+                }, "id", conn, tx);
+
+                await _db.UpdateAsync("stocktake_sessions", sessionId, new Dictionary<string, object?>
+                {
+                    ["status"] = "finalized",
+                    ["completed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                    ["stock_adjustment_id"] = adjId
+                }, "id", conn, tx);
+
+                await tx.CommitAsync();
             }
-            else
+            catch
             {
-                var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
-                await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+                await tx.RollbackAsync();
+                throw;
             }
         }
-
-        await _db.UpdateAsync("stock_adjustments", adjId, new Dictionary<string, object?>
-        {
-            ["total_worth"] = totalWorth
-        }, "id", conn, tx);
-
-        await _db.UpdateAsync("stocktake_sessions", sessionId, new Dictionary<string, object?>
-        {
-            ["status"] = "finalized",
-            ["completed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
-            ["stock_adjustment_id"] = adjId
-        }, "id", conn, tx);
-
-        await tx.CommitAsync();
 
         // Audit trail
         var adjSnapshot = await _db.QuerySingleOrDefaultAsync("SELECT * FROM stock_adjustments WHERE id = @id", new { id = adjId });
@@ -897,9 +956,46 @@ public class StocktakeService
         return items;
     }
 
-    private async Task<List<Dictionary<string, object?>>> ResolveProductsAsync(Dictionary<string, object?> session)
+    private async Task<bool> TableExistsAsync(string tableName, IDbConnection? conn, IDbTransaction? tx)
     {
-        if (!await _db.HasTableAsync("products")) return new List<Dictionary<string, object?>>();
+        if (conn != null)
+        {
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                new { name = tableName },
+                tx);
+            return count > 0;
+        }
+        return await _db.HasTableAsync(tableName);
+    }
+
+    private async Task<bool> ColumnExistsAsync(string tableName, string columnName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var escaped = tableName.Replace("\"", "\"\"");
+            var rows = await conn.QueryAsync($"PRAGMA table_info(\"{escaped}\")", transaction: tx);
+            foreach (var r in rows)
+            {
+                var dict = (IDictionary<string, object>)r;
+                if (dict.TryGetValue("name", out var nameObj) &&
+                    nameObj != null &&
+                    string.Equals(nameObj.ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return await _db.HasColumnAsync(tableName, columnName);
+    }
+
+    private async Task<List<Dictionary<string, object?>>> ResolveProductsAsync(
+        Dictionary<string, object?> session,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
+    {
+        if (!await TableExistsAsync("products", conn, tx)) return new List<Dictionary<string, object?>>();
 
         var sessionType = session.GetValueOrDefault("session_type")?.ToString() ?? "full";
         var scopeType = session.GetValueOrDefault("scope_type")?.ToString();
@@ -924,8 +1020,8 @@ public class StocktakeService
                     sql += " WHERE supplier_id = @scopeId";
                     break;
                 case "storage_location":
-                    var hasProdLoc = await _db.HasColumnAsync("products", "storage_location_id");
-                    var hasBatches = await _db.HasTableAsync("batches") && await _db.HasColumnAsync("batches", "storage_location_id");
+                    var hasProdLoc = await ColumnExistsAsync("products", "storage_location_id", conn, tx);
+                    var hasBatches = await TableExistsAsync("batches", conn, tx) && await ColumnExistsAsync("batches", "storage_location_id", conn, tx);
                     if (hasProdLoc && hasBatches)
                     {
                         sql += " WHERE storage_location_id = @scopeId OR id IN (SELECT product_id FROM batches WHERE storage_location_id = @scopeId)";
@@ -943,7 +1039,7 @@ public class StocktakeService
         }
 
         sql += " ORDER BY id ASC";
-        return await _db.QueryListAsync(sql, new { scopeId });
+        return await _db.QueryListAsync(sql, new { scopeId }, conn, tx);
     }
 
     public static decimal GetProductQty(Dictionary<string, object?> p)

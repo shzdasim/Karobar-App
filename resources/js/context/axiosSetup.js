@@ -1,5 +1,10 @@
 import axios from "axios";
 import { saveLastVisitedPath } from "../utils/lastVisitedPage.js";
+import {
+  escapeHtml,
+  classifyAuth401Action,
+  getBrowserPairingTokenHeader,
+} from "../utils/securityHelpers.js";
 
 function getSharedCacheStore() {
   if (typeof window !== "undefined") {
@@ -196,7 +201,6 @@ function invalidateCacheForMutation(mutationUrl = "") {
 let notifDebounceTimer = null;
 let drawerDebounceTimer = null;
 let inventoryDebounceTimer = null;
-let inflightSessionExtend = null;
 let inventoryChannel = null;
 
 try {
@@ -268,11 +272,11 @@ function broadcastInventoryChange(meta = {}) {
   }, 100);
 }
 
-function dispatchSessionExpiredModal() {
+function dispatchSessionExpiredModal(detail = {}) {
   try {
-    window.dispatchEvent(new CustomEvent("karobar:session-expired"));
+    window.dispatchEvent(new CustomEvent("karobar:session-expired", { detail }));
     if (window.top && window.top !== window) {
-      window.top.dispatchEvent(new CustomEvent("karobar:session-expired"));
+      window.top.dispatchEvent(new CustomEvent("karobar:session-expired", { detail }));
     }
   } catch {
     // ignore cross-frame dispatch errors
@@ -409,7 +413,10 @@ export function initAxiosAuth() {
         const termName = localStorage.getItem("karobar_terminal_name") || "";
         const termMode = localStorage.getItem("karobar_terminal_mode") || (isDesktopApp ? "standalone" : "browser");
         const termHost = localStorage.getItem("karobar_terminal_hostname") || "";
-        const pairingToken = localStorage.getItem("karobar_pairing_token") || "";
+        const pairingToken = getBrowserPairingTokenHeader({
+          isDesktop: isDesktopApp,
+          storage: localStorage,
+        });
         if (termUid && !config.headers["X-Terminal-Id"]) {
           config.headers["X-Terminal-Id"] = termUid;
         }
@@ -520,8 +527,8 @@ export function initAxiosAuth() {
             overlay.id = "karobar-terminal-blocked-overlay";
             overlay.style.cssText =
               "position:fixed;inset:0;z-index:2147483640;background:rgba(15,23,42,0.92);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#f8fafc;";
-            const tName = String(detail.terminal_name || localStorage.getItem("karobar_terminal_name") || "This Terminal").replace(/[<>&"]/g, "");
-            const tUid = String(detail.terminal_uid || localStorage.getItem("karobar_terminal_uid") || "").replace(/[<>&"]/g, "");
+            const tName = escapeHtml(detail.terminal_name || localStorage.getItem("karobar_terminal_name") || "This Terminal");
+            const tUid = escapeHtml(detail.terminal_uid || localStorage.getItem("karobar_terminal_uid") || "");
             const isDesktopHost = Boolean(window.karobarDesktop?.isDesktop);
             overlay.innerHTML =
               '<div style="max-width:520px;width:100%;background:#1e293b;border:1px solid #475569;border-radius:16px;padding:28px;box-shadow:0 25px 50px rgba(0,0,0,0.5);">' +
@@ -554,42 +561,24 @@ export function initAxiosAuth() {
         return Promise.reject(err);
       }
 
-      // When a 401 occurs while logged in, do NOT abruptly close the session or lose unsaved invoice work.
-      // Instead, show the "Wait 10 Minutes / Login Now" popup and extend the backend token for 10 minutes
-      // so the in-flight request (e.g. saving an invoice) succeeds without data loss.
-      if (status === 401 && !url.includes("/login") && !url.includes("/session/extend")) {
+      // When a 401 occurs while logged in, do NOT abruptly close the session, reload the page,
+      // or spam `/api/session/extend` with an already-rejected token. Instead, open the
+      // SessionExpiryModal in inline re-authentication mode so unsaved work remains intact.
+      if (status === 401) {
         const currentToken = localStorage.getItem("token");
-        if (!currentToken || window.location.pathname === "/") {
+        const action = classifyAuth401Action({
+          status,
+          url,
+          token: currentToken,
+          pathname: typeof window !== "undefined" ? window.location.pathname : "/",
+        });
+        if (action === "force_logout") {
           forceLogoutAndRedirect();
           return Promise.reject(err);
         }
-
-        // Open the Session Expiry Popup ("Wait 10 Minutes" / "Login Now")
-        dispatchSessionExpiredModal();
-
-        if (err.config && !err.config._retriedAfterSessionExtend) {
-          err.config._retriedAfterSessionExtend = true;
-          if (!inflightSessionExtend) {
-            inflightSessionExtend = axios
-              .post(
-                "/api/session/extend",
-                { minutes: 10 },
-                { headers: { Authorization: `Bearer ${currentToken}` } }
-              )
-              .finally(() => {
-                inflightSessionExtend = null;
-              });
-          }
-
-          return inflightSessionExtend
-            .then(() => axios.request(err.config))
-            .catch((extendErr) => {
-              const extStatus = extendErr?.response?.status;
-              if (extStatus === 401 || extStatus === 403) {
-                forceLogoutAndRedirect();
-              }
-              return Promise.reject(err);
-            });
+        if (action === "prompt_reauth") {
+          dispatchSessionExpiredModal({ reason: "unauthorized", status: 401, url });
+          return Promise.reject(err);
         }
       }
 

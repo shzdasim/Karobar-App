@@ -356,6 +356,7 @@ public class KarobarDbContext : DbContext
         modelBuilder.Entity<Product>().HasIndex(x => x.ProductCode).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => x.Barcode).IsUnique();
         modelBuilder.Entity<SaleInvoice>().HasIndex(x => x.PostedNumber).IsUnique();
+        modelBuilder.Entity<PurchaseInvoice>().HasIndex(x => new { x.SupplierId, x.InvoiceNumber }).IsUnique();
         modelBuilder.Entity<SaleReturn>().HasIndex(x => x.PostedNumber).IsUnique();
         modelBuilder.Entity<PurchaseReturn>().HasIndex(x => x.PostedNumber).IsUnique();
         modelBuilder.Entity<StockAdjustment>().HasIndex(x => x.PostedNumber).IsUnique();

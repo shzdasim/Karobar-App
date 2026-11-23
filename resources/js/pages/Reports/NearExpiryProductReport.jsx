@@ -20,6 +20,7 @@ import SupplierSearch from "@/components/SupplierSearch.jsx";
 import BrandSearch from "@/components/BrandSearch.jsx";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -190,18 +191,11 @@ export default function NearExpiryProductReport() {
         },
         responseType: "blob",
       });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `near-expiry-products-${fromDate || "report"}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      openReportPdfSafely({
+        data: res.data,
+        filename: `near-expiry-products-${fromDate || "report"}.pdf`,
+        revokeDelayMs: 10000,
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to generate PDF");

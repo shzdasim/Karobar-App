@@ -1,10 +1,10 @@
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.StaticFiles;
 
 namespace Karobar.Api.Controllers;
 
@@ -140,9 +140,16 @@ public class ExpenseController : ApiControllerBase
         }
 
         string? receiptPath = null;
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("receipt") is { Length: > 0 } file)
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("receipt") is { } file)
         {
-            receiptPath = await SaveReceiptFileAsync(file);
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "expense-receipts", allowPdf: true);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid receipt file.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["receipt"] = new[] { errMsg } });
+            }
+            receiptPath = relPath;
         }
 
         var data = new Dictionary<string, object?>
@@ -171,11 +178,18 @@ public class ExpenseController : ApiControllerBase
         }
         catch (KeyNotFoundException ex)
         {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, receiptPath, "expense-receipts");
             return Unprocessable(ex.Message, new() { ["expense_category_id"] = new[] { ex.Message } });
         }
         catch (InvalidOperationException ex)
         {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, receiptPath, "expense-receipts");
             return Unprocessable(ex.Message);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, receiptPath, "expense-receipts");
+            throw;
         }
     }
 
@@ -230,18 +244,36 @@ public class ExpenseController : ApiControllerBase
         if (body.ContainsKey("payee")) data["payee"] = GetString(body, "payee");
         if (body.ContainsKey("description")) data["description"] = GetString(body, "description");
 
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("receipt") is { Length: > 0 } file)
+        var oldReceiptPath = existing.GetValueOrDefault("receipt_path")?.ToString();
+        string? newReceiptPath = null;
+        var shouldDeleteOld = false;
+
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("receipt") is { } file)
         {
-            data["receipt_path"] = await SaveReceiptFileAsync(file);
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "expense-receipts", allowPdf: true);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid receipt file.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["receipt"] = new[] { errMsg } });
+            }
+            newReceiptPath = relPath;
+            data["receipt_path"] = newReceiptPath;
+            shouldDeleteOld = true;
         }
         else if (GetBool(body, "remove_receipt", false))
         {
             data["receipt_path"] = null;
+            shouldDeleteOld = true;
         }
 
         try
         {
             var updated = await _expenseService.UpdateExpenseAsync(id, data, CurrentUserId, CurrentTerminalId);
+            if (shouldDeleteOld && !string.Equals(oldReceiptPath, newReceiptPath, StringComparison.OrdinalIgnoreCase))
+            {
+                SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldReceiptPath, "expense-receipts");
+            }
             return Ok(new Dictionary<string, object?>
             {
                 ["message"] = "Expense updated successfully.",
@@ -250,11 +282,18 @@ public class ExpenseController : ApiControllerBase
         }
         catch (KeyNotFoundException ex)
         {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newReceiptPath, "expense-receipts");
             return NotFound(new { message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newReceiptPath, "expense-receipts");
             return Unprocessable(ex.Message);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newReceiptPath, "expense-receipts");
+            throw;
         }
     }
 
@@ -364,44 +403,20 @@ public class ExpenseController : ApiControllerBase
         var row = await Db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id AND deleted_at IS NULL", new { id = expense });
         if (row == null) return NotFound(new { message = "Expense not found." });
 
-        var relPath = (row.GetValueOrDefault("receipt_path")?.ToString() ?? "").TrimStart('/', '\\');
-        if (string.IsNullOrWhiteSpace(relPath) ||
-            !relPath.StartsWith("expense-receipts/", StringComparison.OrdinalIgnoreCase) ||
-            relPath.Contains(".."))
+        var rawRelPath = row.GetValueOrDefault("receipt_path")?.ToString();
+        if (!SafeFileStorageHelper.TryResolveContainedStoragePath(Db, rawRelPath, "expense-receipts", out var fullPath) ||
+            !System.IO.File.Exists(fullPath))
         {
             return NotFound(new { message = "Receipt attachment not found." });
         }
 
-        var fullPath = Db.StoragePath($"app/public/{relPath}");
-        if (!System.IO.File.Exists(fullPath))
+        if (!SafeFileStorageHelper.TryGetSafeReceiptMimeType(fullPath, out var contentType))
         {
-            return NotFound(new { message = "Receipt attachment not found." });
+            return StatusCode(403, new { message = "Unsafe receipt file type cannot be served." });
         }
 
-        var provider = new FileExtensionContentTypeProvider();
-        if (!provider.TryGetContentType(fullPath, out var contentType))
-        {
-            contentType = "application/octet-stream";
-        }
-
-        return PhysicalFile(fullPath, contentType);
-    }
-
-    private async Task<string> SaveReceiptFileAsync(Microsoft.AspNetCore.Http.IFormFile file)
-    {
-        var ext = Path.GetExtension(file.FileName);
-        if (string.IsNullOrWhiteSpace(ext)) ext = ".jpg";
-        var fileName = $"{Guid.NewGuid():N}{ext}";
-        var relPath = $"expense-receipts/{fileName}";
-        var fullPath = Db.StoragePath($"app/public/{relPath}");
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        await using var fs = new FileStream(fullPath, FileMode.Create);
-        await file.CopyToAsync(fs);
-        return relPath;
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        Response.Headers["Content-Security-Policy"] = "sandbox; default-src 'none';";
+        return PhysicalFile(fullPath, contentType, Path.GetFileName(fullPath));
     }
 }

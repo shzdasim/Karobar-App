@@ -388,14 +388,12 @@ public sealed class OffscreenPrintWorker : IDisposable
                 {
                     var reqUri = reqArgs.Request.Uri ?? "";
                     var appBaseUrl = _windowManager.NetworkConfig.GetAppBaseUrl();
-                    var localIpBase = $"http://127.0.0.1:{_windowManager.NetworkConfig.ActivePort}";
-                    var localhostBase = $"http://localhost:{_windowManager.NetworkConfig.ActivePort}";
+                    var activePort = _windowManager.NetworkConfig.ActivePort;
 
-                    var isAppOrigin = (!string.IsNullOrWhiteSpace(appBaseUrl) &&
-                                       reqUri.StartsWith(appBaseUrl, StringComparison.OrdinalIgnoreCase)) ||
-                                      (_windowManager.NetworkConfig.ActivePort > 0 &&
-                                       (reqUri.StartsWith(localIpBase, StringComparison.OrdinalIgnoreCase) ||
-                                        reqUri.StartsWith(localhostBase, StringComparison.OrdinalIgnoreCase)));
+                    var isAppOrigin = NetworkConfigManager.IsSameOrigin(reqUri, appBaseUrl) ||
+                                      (!_windowManager.NetworkConfig.IsTerminalMode() && activePort > 0 &&
+                                       (NetworkConfigManager.IsSameOrigin(reqUri, $"http://127.0.0.1:{activePort}") ||
+                                        NetworkConfigManager.IsSameOrigin(reqUri, $"http://localhost:{activePort}")));
 
                     if (isAppOrigin)
                     {

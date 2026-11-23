@@ -19,6 +19,7 @@ import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 import { printHtmlViaIframe, printSlipUrl } from "@/utils/printHelper.js";
+import { escapeHtml } from "@/utils/securityHelpers.js";
 import CashDrawerParityBanner from "./CashDrawerParityBanner.jsx";
 
 const TRANSACTION_TYPE_OPTIONS = [
@@ -235,27 +236,37 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
         ? `${tx.reference_label}${tx.party_name ? ` (${tx.party_name})` : ''}`
         : (tx.reference_type ? tx.reference_type.split('\\').pop() + ' #' + (tx.reference_id || '') : '-');
       const descText = tx.notes ? `${refText !== '-' ? refText + ' — ' : ''}${tx.notes}` : refText;
+      const safeType = escapeHtml((tx.type || '').replace('_', ' '));
       return `
         <tr>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">#${idx + 1}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${timeStr}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: capitalize; font-weight: 600;">${(tx.type || '').replace('_', ' ')}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${descText}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(timeStr)}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: capitalize; font-weight: 600;">${safeType}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(descText)}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: ${isPlus ? '#10b981' : '#f43f5e'}; font-weight: bold;">
-            ${isPlus ? '+' : '-'}${formatCurrency(tx.amount)}
+            ${isPlus ? '+' : '-'}${escapeHtml(formatCurrency(tx.amount))}
           </td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">
-            ${formatCurrency(tx.balance_after)}
+            ${escapeHtml(formatCurrency(tx.balance_after))}
           </td>
         </tr>
       `;
     }).join("");
 
+    const safeSessionId = escapeHtml(session.id);
+    const safeStatus = escapeHtml(String(session.status || '').toUpperCase());
+    const safeCashierName = escapeHtml(session.user?.name || 'N/A');
+    const safeOpenedAt = escapeHtml(new Date(session.opened_at).toLocaleString());
+    const safeClosedAt = escapeHtml(session.closed_at ? new Date(session.closed_at).toLocaleString() : 'Active (In Progress)');
+    const safeDuration = escapeHtml(summary.duration || '-');
+    const safeTxnCount = escapeHtml(summary.transactions_count ?? 0);
+    const safeNotes = session.notes ? escapeHtml(session.notes) : '';
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Cash Drawer Shift Report #${session.id}</title>
+        <title>Cash Drawer Shift Report #${safeSessionId}</title>
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 24px; color: #1e293b; line-height: 1.4; }
           .header { text-align: center; border-bottom: 2px dashed #94a3b8; padding-bottom: 14px; margin-bottom: 16px; }
@@ -277,44 +288,44 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       <body>
         <div class="header">
           <h1 class="title">Cash Register Shift Report</h1>
-          <div class="subtitle">Shift #${session.id} • ${session.status.toUpperCase()}</div>
+          <div class="subtitle">Shift #${safeSessionId} • ${safeStatus}</div>
         </div>
 
         <div class="meta-grid">
-          <div><strong>Cashier:</strong> ${session.user?.name || 'N/A'}</div>
-          <div><strong>Status:</strong> ${session.status.toUpperCase()}</div>
-          <div><strong>Opened:</strong> ${new Date(session.opened_at).toLocaleString()}</div>
-          <div><strong>Closed:</strong> ${session.closed_at ? new Date(session.closed_at).toLocaleString() : 'Active (In Progress)'}</div>
-          <div><strong>Duration:</strong> ${summary.duration || '-'}</div>
-          <div><strong>Transactions:</strong> ${summary.transactions_count || 0}</div>
+          <div><strong>Cashier:</strong> ${safeCashierName}</div>
+          <div><strong>Status:</strong> ${safeStatus}</div>
+          <div><strong>Opened:</strong> ${safeOpenedAt}</div>
+          <div><strong>Closed:</strong> ${safeClosedAt}</div>
+          <div><strong>Duration:</strong> ${safeDuration}</div>
+          <div><strong>Transactions:</strong> ${safeTxnCount}</div>
         </div>
 
         <div class="section-title">Cash Flow Summary</div>
         <table class="summary-table">
-          <tr><td>Starting Cash Float:</td><td style="text-align: right; font-weight: 600;">${formatCurrency(summary.opening_balance)}</td></tr>
-          <tr><td style="color: #10b981;">+ Cash Sales:</td><td style="text-align: right;">+${formatCurrency(summary.cash_sales)}</td></tr>
-          <tr><td style="color: #10b981;">+ Customer Debt Payments:</td><td style="text-align: right;">+${formatCurrency(summary.customer_payments)}</td></tr>
-          <tr><td style="color: #10b981;">+ Supplier Returns / Refunds:</td><td style="text-align: right;">+${formatCurrency(summary.purchase_returns || 0)}</td></tr>
-          <tr><td style="color: #10b981;">+ Float Additions / Cash In:</td><td style="text-align: right;">+${formatCurrency(summary.manual_cash_in)}</td></tr>
-          <tr class="bold" style="color: #10b981;"><td>Total Cash Inflow:</td><td style="text-align: right;">+${formatCurrency(summary.total_cash_in)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Cash Purchases:</td><td style="text-align: right;">-${formatCurrency(summary.cash_purchases)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Cash Returns:</td><td style="text-align: right;">-${formatCurrency(summary.cash_returns)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Supplier Payments:</td><td style="text-align: right;">-${formatCurrency(summary.supplier_payments)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Operating Shop Expenses:</td><td style="text-align: right;">-${formatCurrency(summary.expenses || 0)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Staff Salary Advances:</td><td style="text-align: right;">-${formatCurrency(summary.staff_advances || 0)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Manual Cash Out / Safe Drops:</td><td style="text-align: right;">-${formatCurrency(summary.manual_cash_out)}</td></tr>
-          <tr class="bold" style="color: #f43f5e;"><td>Total Cash Outflow:</td><td style="text-align: right;">-${formatCurrency(summary.total_cash_out)}</td></tr>
-          <tr class="total-row"><td style="padding: 6px 0;">Expected Cash in Drawer:</td><td style="text-align: right; padding: 6px 0;">${formatCurrency(summary.expected_balance)}</td></tr>
+          <tr><td>Starting Cash Float:</td><td style="text-align: right; font-weight: 600;">${escapeHtml(formatCurrency(summary.opening_balance))}</td></tr>
+          <tr><td style="color: #10b981;">+ Cash Sales:</td><td style="text-align: right;">+${escapeHtml(formatCurrency(summary.cash_sales))}</td></tr>
+          <tr><td style="color: #10b981;">+ Customer Debt Payments:</td><td style="text-align: right;">+${escapeHtml(formatCurrency(summary.customer_payments))}</td></tr>
+          <tr><td style="color: #10b981;">+ Supplier Returns / Refunds:</td><td style="text-align: right;">+${escapeHtml(formatCurrency(summary.purchase_returns || 0))}</td></tr>
+          <tr><td style="color: #10b981;">+ Float Additions / Cash In:</td><td style="text-align: right;">+${escapeHtml(formatCurrency(summary.manual_cash_in))}</td></tr>
+          <tr class="bold" style="color: #10b981;"><td>Total Cash Inflow:</td><td style="text-align: right;">+${escapeHtml(formatCurrency(summary.total_cash_in))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Cash Purchases:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.cash_purchases))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Cash Returns:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.cash_returns))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Supplier Payments:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.supplier_payments))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Operating Shop Expenses:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.expenses || 0))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Staff Salary Advances:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.staff_advances || 0))}</td></tr>
+          <tr><td style="color: #f43f5e;">- Manual Cash Out / Safe Drops:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.manual_cash_out))}</td></tr>
+          <tr class="bold" style="color: #f43f5e;"><td>Total Cash Outflow:</td><td style="text-align: right;">-${escapeHtml(formatCurrency(summary.total_cash_out))}</td></tr>
+          <tr class="total-row"><td style="padding: 6px 0;">Expected Cash in Drawer:</td><td style="text-align: right; padding: 6px 0;">${escapeHtml(formatCurrency(summary.expected_balance))}</td></tr>
           ${isClosed ? `
-            <tr><td style="padding-top: 6px;"><strong>Actual Cash Counted:</strong></td><td style="text-align: right; padding-top: 6px; font-weight: bold;">${formatCurrency(session.closing_balance_actual)}</td></tr>
+            <tr><td style="padding-top: 6px;"><strong>Actual Cash Counted:</strong></td><td style="text-align: right; padding-top: 6px; font-weight: bold;">${escapeHtml(formatCurrency(session.closing_balance_actual))}</td></tr>
             <tr style="font-weight: bold; color: ${diff === 0 ? '#10b981' : diff > 0 ? '#3b82f6' : '#f43f5e'};">
               <td>Reconciliation Discrepancy:</td>
-              <td style="text-align: right;">${diff === 0 ? 'Balanced (0.00)' : (diff > 0 ? '+' : '') + formatCurrency(diff)}</td>
+              <td style="text-align: right;">${diff === 0 ? 'Balanced (0.00)' : (diff > 0 ? '+' : '') + escapeHtml(formatCurrency(diff))}</td>
             </tr>
           ` : ''}
         </table>
 
-        ${session.notes ? `<div style="font-size: 11px; margin: 8px 0; background: #f8fafc; padding: 6px; border-radius: 4px;"><strong>Notes:</strong> ${session.notes}</div>` : ''}
+        ${safeNotes ? `<div style="font-size: 11px; margin: 8px 0; background: #f8fafc; padding: 6px; border-radius: 4px;"><strong>Notes:</strong> ${safeNotes}</div>` : ''}
 
         <div class="section-title">Itemized Shift Transactions (${orderedTxns.length})</div>
         <table class="tx-table">

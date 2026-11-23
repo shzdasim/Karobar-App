@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 import {
   ArrowPathIcon,
   ArrowTrendingDownIcon,
@@ -179,17 +180,11 @@ export default function CostOfSaleReport() {
         params: { from: fromDate, to: toDate, invoice_type: invoiceType },
         responseType: "blob",
       });
-      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
-      const pdfWindow = window.open(url, "_blank");
-      if (!pdfWindow) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `cost-of-sale-${fromDate || "report"}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openReportPdfSafely({
+        data: response.data,
+        filename: `cost-of-sale-${fromDate || "report"}.pdf`,
+        revokeDelayMs: 60000,
+      });
     } catch (error) {
       console.error(error);
       toast.error("Failed to generate Cost of Sale PDF.");

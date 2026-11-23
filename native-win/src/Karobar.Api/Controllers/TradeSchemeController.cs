@@ -23,24 +23,12 @@ public class TradeSchemeController : ApiControllerBase
     {
         return await CanAsync(
             "trade-scheme.view",
+            "trade-scheme.manage",
             "sale-invoice.view",
             "sale-invoice.create",
             "product.view",
             "barcode-pos.view",
             "barcode-pos.create");
-    }
-
-    private async Task<bool> CanManageSchemesAsync()
-    {
-        return await CanAsync(
-            "trade-scheme.manage",
-            "trade-scheme.create",
-            "trade-scheme.update",
-            "product.create",
-            "product.update",
-            "sale-invoice.create",
-            "sale-invoice.update",
-            "sale-invoice.discount-override");
     }
 
     [HttpGet("active-lookup")]
@@ -162,7 +150,7 @@ public class TradeSchemeController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Store()
     {
-        if (!await CanManageSchemesAsync())
+        if (!await CanAsync("trade-scheme.manage", "trade-scheme.create"))
         {
             return Forbidden("You do not have permission to manage trade schemes.");
         }
@@ -199,7 +187,7 @@ public class TradeSchemeController : ApiControllerBase
     [HttpPut("{id:long}")]
     public async Task<IActionResult> Update(long id)
     {
-        if (!await CanManageSchemesAsync())
+        if (!await CanAsync("trade-scheme.manage", "trade-scheme.update"))
         {
             return Forbidden("You do not have permission to manage trade schemes.");
         }
@@ -241,7 +229,7 @@ public class TradeSchemeController : ApiControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Destroy(long id)
     {
-        if (!await CanManageSchemesAsync())
+        if (!await CanAsync("trade-scheme.manage", "trade-scheme.delete"))
         {
             return Forbidden("You do not have permission to manage trade schemes.");
         }
@@ -269,7 +257,7 @@ public class TradeSchemeController : ApiControllerBase
     [HttpPost("{id:long}/toggle-active")]
     public async Task<IActionResult> ToggleActive(long id)
     {
-        if (!await CanManageSchemesAsync())
+        if (!await CanAsync("trade-scheme.manage", "trade-scheme.update"))
         {
             return Forbidden("You do not have permission to manage trade schemes.");
         }

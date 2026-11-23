@@ -1,8 +1,11 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Text;
 using System.Text.Json;
 using Karobar.Api.Infrastructure;
 using Karobar.Background;
+using Karobar.Core.Security;
 using Karobar.Data;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -66,6 +69,12 @@ public class FbrController : ApiControllerBase
 
         return env == "production" ? DefaultDiProductionUrl : DefaultDiSandboxUrl;
     }
+
+    public static bool IsLoopbackHost(string? host)
+        => FbrEndpointValidator.IsLoopbackHost(host);
+
+    public static bool IsAllowedFbrEndpointUrl(string? rawUrl, string? mode, out Uri? validatedUri, out string? errorMessage)
+        => FbrEndpointValidator.IsAllowedFbrEndpointUrl(rawUrl, mode, out validatedUri, out errorMessage);
 
     [HttpGet("status-summary")]
     public async Task<IActionResult> StatusSummary()
@@ -170,6 +179,35 @@ public class FbrController : ApiControllerBase
             }
         }
 
+        var effectiveMode = GetVal(setting, "fbr_mode", "digital_invoicing");
+        var effectiveEndpoint = ResolveEndpointUrl(setting);
+        if (!IsAllowedFbrEndpointUrl(effectiveEndpoint, effectiveMode, out _, out var endpointError))
+        {
+            return StatusCode(422, new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["status"] = "invalid_url",
+                ["endpoint"] = effectiveEndpoint,
+                ["message"] = endpointError ?? "Invalid FBR endpoint URL."
+            });
+        }
+
+        foreach (var urlOverrideKey in new[] { "fbr_sandbox_url", "fbr_production_url" })
+        {
+            if (overrides.TryGetValue(urlOverrideKey, out var overrideUrl) &&
+                !string.IsNullOrWhiteSpace(overrideUrl) &&
+                !IsAllowedFbrEndpointUrl(overrideUrl, effectiveMode, out _, out var overrideErr))
+            {
+                return StatusCode(422, new Dictionary<string, object?>
+                {
+                    ["ok"] = false,
+                    ["status"] = "invalid_url",
+                    ["endpoint"] = overrideUrl,
+                    ["message"] = overrideErr ?? "Invalid FBR endpoint override URL."
+                });
+            }
+        }
+
         if (_dbContext != null)
         {
             var efSetting = await _dbContext.Settings.AsNoTracking().OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted);
@@ -178,9 +216,9 @@ public class FbrController : ApiControllerBase
             return StatusCode(engineOk ? 200 : 422, engineRes);
         }
 
-        var mode = GetVal(setting, "fbr_mode", "digital_invoicing");
+        var mode = effectiveMode;
         var env = GetVal(setting, "fbr_environment", "sandbox");
-        var endpoint = ResolveEndpointUrl(setting);
+        var endpoint = effectiveEndpoint;
         var token = GetVal(setting, "fbr_bearer_token", "").Trim();
         var sellerNtn = GetVal(setting, "fbr_seller_ntn", "").Trim();
         var posId = GetVal(setting, "fbr_pos_id", "").Trim();
@@ -232,8 +270,13 @@ public class FbrController : ApiControllerBase
         {
             using var handler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+                AllowAutoRedirect = false
             };
+            if (string.Equals(mode, "tier1_pos_ims", StringComparison.OrdinalIgnoreCase))
+            {
+                handler.ServerCertificateCustomValidationCallback = (req, _, _, errors) =>
+                    errors == SslPolicyErrors.None || IsLoopbackHost(req.RequestUri?.Host);
+            }
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
             if (!string.IsNullOrEmpty(token))
             {
@@ -262,7 +305,7 @@ public class FbrController : ApiControllerBase
                 });
             }
 
-            if (status >= 200 && status < 500)
+            if ((status >= 200 && status < 300) || (status >= 400 && status < 500))
             {
                 return Ok(new Dictionary<string, object?>
                 {

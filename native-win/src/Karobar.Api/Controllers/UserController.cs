@@ -42,8 +42,11 @@ public class UserController : ApiControllerBase
                 foreach (var u in items)
                 {
                     var uid = Convert.ToInt64(u["id"]);
+                    var hasPin = !string.IsNullOrWhiteSpace(u.GetValueOrDefault("pin_code")?.ToString());
                     u.Remove("password");
                     u.Remove("remember_token");
+                    u.Remove("pin_code");
+                    u["has_pin"] = hasPin;
                     u["roles"] = await Db.GetUserRolesAsync(uid);
                     u["permissions"] = await Db.GetUserDirectPermissionsAsync(uid);
                 }
@@ -64,12 +67,44 @@ public class UserController : ApiControllerBase
         var password = GetString(body, "password") ?? "";
         var pinCode = GetString(body, "pin_code");
         var status = GetString(body, "status") ?? "active";
-        var roles = GetStringList(body, "roles");
-        var permissions = GetStringList(body, "permissions");
+        var roles = GetStringList(body, "roles")
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var permissions = GetStringList(body, "permissions")
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email) || password.Length < 6)
         {
             return Unprocessable("Invalid user input.");
+        }
+
+        var callerIsAdmin = await IsAdminAsync();
+        if (!callerIsAdmin)
+        {
+            if (roles.Any(KarobarDb.IsAdminRoleName))
+            {
+                return Forbidden("Non-admin users cannot assign the Admin role.");
+            }
+            if (permissions.Count > 0)
+            {
+                return Forbidden("Only an Administrator can directly assign or modify user permissions.");
+            }
+        }
+
+        if (roles.Count > 0 && !await CanManageOrAsync("user.assign.roles"))
+        {
+            return Forbidden("You do not have permission to assign user roles.");
+        }
+
+        if (!callerIsAdmin && roles.Count > 0 && CurrentUserId.HasValue &&
+            !await CallerHoldsAllRolePermissionsAsync(CurrentUserId.Value, roles))
+        {
+            return Forbidden("You cannot assign a role that grants permissions you do not hold.");
         }
 
         var emailExists = await Db.ExecuteScalarAsync<int>(
@@ -93,13 +128,7 @@ public class UserController : ApiControllerBase
             return StatusCode(ex.StatusCode, ex.ResponsePayload);
         }
 
-        if (!await IsAdminAsync())
-        {
-            if (roles.Any(KarobarDb.IsAdminRoleName))
-            {
-                return Forbidden("Non-admin users cannot assign the Admin role.");
-            }
-        }
+        var canonicalRoles = roles.Count > 0 ? await ResolveCanonicalRoleNamesAsync(roles) : roles;
 
         var newId = await Db.InsertAsync("users", new Dictionary<string, object?>
         {
@@ -110,10 +139,11 @@ public class UserController : ApiControllerBase
             ["pin_code"] = validatedPin
         });
 
-        if (roles.Count > 0) await Db.SyncUserRolesAsync(newId, roles);
-        if (permissions.Count > 0) await Db.SyncUserPermissionsAsync(newId, permissions);
+        if (canonicalRoles.Count > 0) await Db.SyncUserRolesAsync(newId, canonicalRoles);
+        if (permissions.Count > 0 && callerIsAdmin) await Db.SyncUserPermissionsAsync(newId, permissions);
 
-        var created = await Db.GetUserWithRolesAndPermissionsAsync(newId, includePinCode: true);
+        var created = await Db.GetUserWithRolesAndPermissionsAsync(newId);
+        await AttachHasPinAsync(created, newId);
         return StatusCode(201, created);
     }
 
@@ -122,8 +152,9 @@ public class UserController : ApiControllerBase
     {
         if (!await CanManageOrAsync("user.view")) return Forbidden();
 
-        var user = await Db.GetUserWithRolesAndPermissionsAsync(id, includePinCode: true);
+        var user = await Db.GetUserWithRolesAndPermissionsAsync(id);
         if (user == null) return NotFound(new { message = "User not found" });
+        await AttachHasPinAsync(user, id);
 
         return Ok(user);
     }
@@ -136,14 +167,87 @@ public class UserController : ApiControllerBase
         var target = await Db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id });
         if (target == null) return NotFound(new { message = "User not found" });
 
+        var callerIsAdmin = await IsAdminAsync();
+        var targetIsAdmin = await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames);
+        if (!callerIsAdmin && targetIsAdmin)
+        {
+            return Forbidden("Non-admin users cannot modify or delete an Administrator account.");
+        }
+
         var body = await ReadJsonBodyAsync();
         var name = (GetString(body, "name") ?? target.GetValueOrDefault("name")?.ToString() ?? "").Trim();
         var email = (GetString(body, "email") ?? target.GetValueOrDefault("email")?.ToString() ?? "").Trim();
         var password = GetString(body, "password");
         var status = GetString(body, "status");
         var hasPinInput = body.ContainsKey("pin_code");
+        var clearPin = GetBool(body, "clear_pin", false);
+        var rawPinInput = !clearPin && hasPinInput ? GetString(body, "pin_code") : null;
+        var hasNonEmptyPin = !clearPin && !string.IsNullOrWhiteSpace(rawPinInput);
+        var shouldUpdatePin = clearPin || hasNonEmptyPin;
         var hasRolesInput = body.ContainsKey("roles");
         var hasPermsInput = body.ContainsKey("permissions");
+
+        var requestedRoles = hasRolesInput
+            ? GetStringList(body, "roles")
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : new List<string>();
+
+        var existingRoles = (await Db.GetUserRoleNamesAsync(id))
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rolesChanged = hasRolesInput &&
+                           !requestedRoles.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(existingRoles);
+
+        if (!callerIsAdmin && hasRolesInput && requestedRoles.Any(KarobarDb.IsAdminRoleName))
+        {
+            return Forbidden("Only an Administrator can assign the Admin role.");
+        }
+
+        if (rolesChanged)
+        {
+            if (!await CanManageOrAsync("user.assign.roles"))
+            {
+                return Forbidden("You do not have permission to assign user roles.");
+            }
+            if (!callerIsAdmin && CurrentUserId == id)
+            {
+                return Forbidden("You cannot modify your own roles.");
+            }
+            if (!callerIsAdmin)
+            {
+                var addedRoles = requestedRoles.Where(r => !existingRoles.Contains(r)).ToList();
+                if (addedRoles.Count > 0 && CurrentUserId.HasValue &&
+                    !await CallerHoldsAllRolePermissionsAsync(CurrentUserId.Value, addedRoles))
+                {
+                    return Forbidden("You cannot assign a role that grants permissions you do not hold.");
+                }
+            }
+        }
+
+        var requestedPermissions = hasPermsInput
+            ? GetStringList(body, "permissions")
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!callerIsAdmin && hasPermsInput)
+        {
+            var existingPermRows = await Db.GetUserDirectPermissionsAsync(id);
+            var existingPermissions = existingPermRows
+                .Select(r => r.GetValueOrDefault("name")?.ToString()?.Trim() ?? "")
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!requestedPermissions.SetEquals(existingPermissions))
+            {
+                return Forbidden("Only an Administrator can directly assign or modify user permissions.");
+            }
+        }
 
         var emailConflict = await Db.ExecuteScalarAsync<int>(
             "SELECT COUNT(1) FROM users WHERE LOWER(email) = LOWER(@email) AND id != @id",
@@ -157,7 +261,7 @@ public class UserController : ApiControllerBase
         }
 
         string? validatedPin = null;
-        if (hasPinInput)
+        if (hasNonEmptyPin)
         {
             try
             {
@@ -166,7 +270,7 @@ public class UserController : ApiControllerBase
                 {
                     linkedEmpId = await Db.ExecuteScalarAsync<long?>("SELECT id FROM employees WHERE user_id = @id", new { id });
                 }
-                validatedPin = await _pinService.ValidateUniquePinAsync(GetString(body, "pin_code"), id, null, null, linkedEmpId);
+                validatedPin = await _pinService.ValidateUniquePinAsync(rawPinInput, id, null, null, linkedEmpId);
             }
             catch (OperatorPinException ex)
             {
@@ -174,23 +278,11 @@ public class UserController : ApiControllerBase
             }
         }
 
-        var targetIsAdmin = await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames);
-        if (!await IsAdminAsync() && targetIsAdmin)
-        {
-            return Forbidden("Non-admin users cannot modify or delete an Administrator account.");
-        }
-
         if (CurrentUserId == id && status != null && !status.Equals("active", StringComparison.OrdinalIgnoreCase))
         {
             return Unprocessable("You cannot deactivate your own account.");
         }
 
-        var requestedRoles = hasRolesInput ? GetStringList(body, "roles") : new List<string>();
-        if (!await IsAdminAsync() && hasRolesInput &&
-            requestedRoles.Any(KarobarDb.IsAdminRoleName))
-        {
-            return Forbidden("Only an Administrator can assign the Admin role.");
-        }
         if (targetIsAdmin)
         {
             var willBeInactive = status != null && !status.Equals("active", StringComparison.OrdinalIgnoreCase);
@@ -217,14 +309,14 @@ public class UserController : ApiControllerBase
         {
             updates["password"] = SanctumAuthenticationHandler.HashLaravelBcryptPassword(password);
         }
-        if (hasPinInput)
+        if (shouldUpdatePin)
         {
             updates["pin_code"] = validatedPin;
         }
 
         await Db.UpdateAsync("users", id, updates);
 
-        if (hasPinInput)
+        if (shouldUpdatePin)
         {
             await _pinService.SyncLinkedPinForUserAsync(id, validatedPin);
         }
@@ -235,10 +327,15 @@ public class UserController : ApiControllerBase
             await Db.ExecuteAsync("DELETE FROM personal_access_tokens WHERE tokenable_id = @id", new { id });
         }
 
-        if (hasRolesInput) await Db.SyncUserRolesAsync(id, requestedRoles);
-        if (hasPermsInput) await Db.SyncUserPermissionsAsync(id, GetStringList(body, "permissions"));
+        if (rolesChanged)
+        {
+            var canonicalRoles = await ResolveCanonicalRoleNamesAsync(requestedRoles);
+            await Db.SyncUserRolesAsync(id, canonicalRoles);
+        }
+        if (hasPermsInput && callerIsAdmin) await Db.SyncUserPermissionsAsync(id, requestedPermissions);
 
-        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id, includePinCode: true);
+        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id);
+        await AttachHasPinAsync(updated, id);
         return Ok(updated);
     }
 
@@ -281,10 +378,14 @@ public class UserController : ApiControllerBase
     [HttpPut("{id:long}/roles")]
     public async Task<IActionResult> SyncRoles(long id)
     {
-        if (!await CanManageOrAsync("user.assign.roles", "user.update")) return Forbidden();
+        if (!await CanManageOrAsync("user.assign.roles")) return Forbidden();
 
         var body = await ReadJsonBodyAsync();
-        var roles = GetStringList(body, "roles");
+        var roles = GetStringList(body, "roles")
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var callerIsAdmin = await IsAdminAsync();
         var targetIsAdmin = await Db.UserHasRoleAsync(id, KarobarDb.AdminRoleNames);
@@ -293,6 +394,25 @@ public class UserController : ApiControllerBase
         if (!callerIsAdmin && (targetIsAdmin || assignsReservedAdmin))
         {
             return Forbidden("Only an Administrator can assign or modify Admin roles.");
+        }
+
+        if (!callerIsAdmin && CurrentUserId == id)
+        {
+            return Forbidden("You cannot modify your own roles.");
+        }
+
+        if (!callerIsAdmin)
+        {
+            var existingRoles = (await Db.GetUserRoleNamesAsync(id))
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var addedRoles = roles.Where(r => !existingRoles.Contains(r)).ToList();
+            if (addedRoles.Count > 0 && CurrentUserId.HasValue &&
+                !await CallerHoldsAllRolePermissionsAsync(CurrentUserId.Value, addedRoles))
+            {
+                return Forbidden("You cannot assign a role that grants permissions you do not hold.");
+            }
         }
 
         if (targetIsAdmin && !roles.Any(KarobarDb.IsAdminRoleName))
@@ -307,8 +427,10 @@ public class UserController : ApiControllerBase
             }
         }
 
-        await Db.SyncUserRolesAsync(id, roles);
-        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id, includePinCode: true);
+        var canonicalRoles = await ResolveCanonicalRoleNamesAsync(roles);
+        await Db.SyncUserRolesAsync(id, canonicalRoles);
+        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id);
+        await AttachHasPinAsync(updated, id);
         return Ok(updated);
     }
 
@@ -326,7 +448,8 @@ public class UserController : ApiControllerBase
         var perms = GetStringList(body, "permissions");
 
         await Db.SyncUserPermissionsAsync(id, perms);
-        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id, includePinCode: true);
+        var updated = await Db.GetUserWithRolesAndPermissionsAsync(id);
+        await AttachHasPinAsync(updated, id);
         return Ok(updated);
     }
 
@@ -356,26 +479,33 @@ public class UserController : ApiControllerBase
         var authorized = action switch
         {
             "delete" => await CanManageOrAsync("user.delete"),
-            "assign_role" => await CanManageOrAsync("user.assign.roles", "user.update"),
+            "assign_role" => await CanManageOrAsync("user.assign.roles"),
             _ => await CanManageOrAsync("user.update")
         };
         if (!authorized) return Forbidden();
 
         var callerIsAdmin = await IsAdminAsync();
+        var canonicalRole = role;
         if (action == "assign_role")
         {
             if (string.IsNullOrWhiteSpace(role))
             {
                 return Unprocessable("Please select a valid role to assign.");
             }
-            var roleExists = await Db.QuerySingleOrDefaultAsync("SELECT id FROM roles WHERE LOWER(name) = LOWER(@role) LIMIT 1", new { role });
-            if (roleExists == null)
+            var roleRow = await Db.QuerySingleOrDefaultAsync("SELECT id, name FROM roles WHERE LOWER(name) = LOWER(@role) LIMIT 1", new { role });
+            if (roleRow == null)
             {
                 return Unprocessable($"Role '{role}' does not exist.");
             }
-            if (!callerIsAdmin && KarobarDb.IsAdminRoleName(role))
+            canonicalRole = roleRow.GetValueOrDefault("name")?.ToString()?.Trim() ?? role;
+            if (!callerIsAdmin && KarobarDb.IsAdminRoleName(canonicalRole))
             {
                 return Forbidden("Only an Administrator can assign the Admin role.");
+            }
+            if (!callerIsAdmin && CurrentUserId.HasValue &&
+                !await CallerHoldsAllRolePermissionsAsync(CurrentUserId.Value, new[] { canonicalRole }))
+            {
+                return Forbidden("You cannot assign a role that grants permissions you do not hold.");
             }
         }
 
@@ -421,7 +551,12 @@ public class UserController : ApiControllerBase
             }
             else if (action == "assign_role")
             {
-                var losesAdmin = targetIsAdmin && !KarobarDb.IsAdminRoleName(role);
+                if (!callerIsAdmin && targetId == actorId)
+                {
+                    skipped.Add($"{targetName} (cannot modify your own roles)");
+                    continue;
+                }
+                var losesAdmin = targetIsAdmin && !KarobarDb.IsAdminRoleName(canonicalRole);
                 if (losesAdmin && targetId == actorId)
                 {
                     skipped.Add($"{targetName} (cannot remove Admin role from your own account)");
@@ -432,7 +567,7 @@ public class UserController : ApiControllerBase
                     skipped.Add($"{targetName} (last active Admin)");
                     continue;
                 }
-                await Db.SyncUserRolesAsync(targetId, new[] { role });
+                await Db.SyncUserRolesAsync(targetId, new[] { canonicalRole });
                 processed++;
             }
             else if (action == "delete")
@@ -459,10 +594,91 @@ public class UserController : ApiControllerBase
         });
     }
 
+    private async Task AttachHasPinAsync(Dictionary<string, object?>? user, long userId)
+    {
+        if (user == null) return;
+        user.Remove("pin_code");
+        var hasPin = false;
+        if (await Db.HasColumnAsync("users", "pin_code"))
+        {
+            var raw = await Db.ExecuteScalarAsync<string?>("SELECT pin_code FROM users WHERE id = @id", new { id = userId });
+            hasPin = !string.IsNullOrWhiteSpace(raw);
+        }
+        user["has_pin"] = hasPin;
+    }
+
     private async Task<bool> CanManageOrAsync(params string[] perms)
     {
         var all = perms.Append("user.manage").ToArray();
         return await CanAsync(all);
+    }
+
+    private async Task<List<string>> ResolveCanonicalRoleNamesAsync(IEnumerable<string> roleNames)
+    {
+        var cleaned = roleNames
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (cleaned.Count == 0 || !await Db.HasTableAsync("roles")) return cleaned;
+
+        var lowerNames = cleaned.Select(r => r.ToLowerInvariant()).Distinct().ToArray();
+        var rows = await Db.QueryListAsync(
+            "SELECT name FROM roles WHERE LOWER(name) IN @lowerNames",
+            new { lowerNames });
+
+        var byLower = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            var dbName = r.GetValueOrDefault("name")?.ToString()?.Trim();
+            if (!string.IsNullOrEmpty(dbName))
+            {
+                byLower[dbName] = dbName;
+            }
+        }
+
+        return cleaned
+            .Select(r => byLower.TryGetValue(r, out var canonical) ? canonical : r)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<bool> CallerHoldsAllRolePermissionsAsync(long callerUserId, IEnumerable<string> roleNames)
+    {
+        var lowerNames = roleNames
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+        if (lowerNames.Length == 0) return true;
+        if (!await Db.HasTableAsync("roles") || !await Db.HasTableAsync("role_has_permissions") || !await Db.HasTableAsync("permissions"))
+        {
+            return true;
+        }
+
+        var rolePerms = await Db.QueryListAsync(@"
+            SELECT DISTINCT p.name
+            FROM role_has_permissions rhp
+            INNER JOIN roles r ON r.id = rhp.role_id
+            INNER JOIN permissions p ON p.id = rhp.permission_id
+            WHERE LOWER(r.name) IN @lowerNames",
+            new { lowerNames });
+
+        if (rolePerms.Count == 0) return true;
+
+        var callerPerms = (await Db.GetUserAllPermissionNamesAsync(callerUserId))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rolePerms)
+        {
+            var permName = row.GetValueOrDefault("name")?.ToString()?.Trim();
+            if (!string.IsNullOrEmpty(permName) && !callerPerms.Contains(permName))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<bool> IsLastActiveAdminAsync(long userId)

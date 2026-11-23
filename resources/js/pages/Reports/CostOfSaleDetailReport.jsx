@@ -8,6 +8,7 @@ import { useTheme } from "@/context/ThemeContext";
 // Search modal
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 
 import {
   ArrowDownOnSquareIcon,
@@ -144,18 +145,11 @@ export default function CostOfSaleDetailReport() {
         },
         responseType: "blob",
       });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `cost-of-sale-detail-${fromDate || "report"}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      openReportPdfSafely({
+        data: res.data,
+        filename: `cost-of-sale-detail-${fromDate || "report"}.pdf`,
+        revokeDelayMs: 10000,
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to generate PDF");

@@ -196,6 +196,22 @@ public class KarobarDb
         return Path.Combine(projectRoot, "database", "database.sqlite");
     }
 
+    private string BuildConnectionString()
+    {
+        return new SqliteConnectionStringBuilder
+        {
+            DataSource = _sqlitePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Default,
+            Pooling = false,
+            DefaultTimeout = 20
+        }.ToString();
+    }
+
+    private static string BuildConnectionPragmaSql(bool needsWal) => needsWal
+        ? "PRAGMA busy_timeout=15000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
+        : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
+
     public SqliteConnection CreateConnection()
     {
         var dir = Path.GetDirectoryName(_sqlitePath);
@@ -204,27 +220,37 @@ public class KarobarDb
             Directory.CreateDirectory(dir);
         }
 
-        var connStr = new SqliteConnectionStringBuilder
+        var conn = new SqliteConnection(BuildConnectionString());
+        try
         {
-            DataSource = _sqlitePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Default,
-            Pooling = true,
-            DefaultTimeout = 20
-        }.ToString();
+            conn.Open();
 
-        var conn = new SqliteConnection(connStr);
-        conn.Open();
+            var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
+            int[] delaysMs = [35, 90, 200, 420];
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = BuildConnectionPragmaSql(needsWal);
+                    cmd.ExecuteNonQuery();
+                    break;
+                }
+                catch (SqliteException ex) when ((ex.SqliteErrorCode is 5 or 6) && attempt < delaysMs.Length)
+                {
+                    Thread.Sleep(delaysMs[attempt] + Random.Shared.Next(5, 30));
+                }
+            }
 
-        var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = needsWal
-            ? "PRAGMA busy_timeout=15000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
-            : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
-        cmd.ExecuteNonQuery();
-        if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
+            if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
 
-        return conn;
+            return conn;
+        }
+        catch
+        {
+            conn.Dispose();
+            throw;
+        }
     }
 
     public async Task<SqliteConnection> OpenConnectionAsync()
@@ -235,27 +261,56 @@ public class KarobarDb
             Directory.CreateDirectory(dir);
         }
 
-        var connStr = new SqliteConnectionStringBuilder
+        var conn = new SqliteConnection(BuildConnectionString());
+        try
         {
-            DataSource = _sqlitePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Default,
-            Pooling = true,
-            DefaultTimeout = 20
-        }.ToString();
+            await conn.OpenAsync();
 
-        var conn = new SqliteConnection(connStr);
-        await conn.OpenAsync();
+            var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
+            await ExecuteWithSqliteRetryAsync(async () =>
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = BuildConnectionPragmaSql(needsWal);
+                await cmd.ExecuteNonQueryAsync();
+                return 0;
+            });
 
-        var needsWal = !WalInitializedDbPaths.ContainsKey(_sqlitePath);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = needsWal
-            ? "PRAGMA busy_timeout=15000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;"
-            : "PRAGMA busy_timeout=15000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;";
-        await cmd.ExecuteNonQueryAsync();
-        if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
+            if (needsWal) WalInitializedDbPaths[_sqlitePath] = true;
 
-        return conn;
+            return conn;
+        }
+        catch
+        {
+            await conn.DisposeAsync();
+            throw;
+        }
+    }
+
+    public static Task<SqliteTransaction> BeginImmediateTransactionAsync(
+        SqliteConnection conn,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        var recoveredDirtyPoolHandle = false;
+        return ExecuteWithSqliteRetryAsync(async () =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return conn.BeginTransaction(deferred: false);
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && !recoveredDirtyPoolHandle)
+            {
+                recoveredDirtyPoolHandle = true;
+                SqliteConnection.ClearPool(conn);
+                await conn.CloseAsync();
+                await conn.OpenAsync(cancellationToken);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = BuildConnectionPragmaSql(needsWal: false);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                return conn.BeginTransaction(deferred: false);
+            }
+        });
     }
 
     private static async Task<T> ExecuteWithSqliteRetryAsync<T>(Func<Task<T>> operation)
@@ -748,28 +803,35 @@ public class KarobarDb
         if (!await HasTableAsync("roles") || !await HasTableAsync("model_has_roles")) return;
 
         await using var conn = await OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        await conn.ExecuteAsync("DELETE FROM model_has_roles WHERE model_id = @userId", new { userId }, tx);
-
-        var distinctNames = roleNames.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct().ToArray();
-        if (distinctNames.Length > 0)
+        await using var tx = await BeginImmediateTransactionAsync(conn);
+        try
         {
-            var roles = await conn.QueryAsync<(long id, string name)>(
-                "SELECT id, name FROM roles WHERE name IN @names",
-                new { names = distinctNames },
-                tx);
+            await conn.ExecuteAsync("DELETE FROM model_has_roles WHERE model_id = @userId", new { userId }, tx);
 
-            foreach (var role in roles)
+            var distinctNames = roleNames.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct().ToArray();
+            if (distinctNames.Length > 0)
             {
-                await conn.ExecuteAsync(
-                    "INSERT INTO model_has_roles (role_id, model_type, model_id) VALUES (@roleId, 'App\\Models\\User', @userId)",
-                    new { roleId = role.id, userId },
+                var roles = await conn.QueryAsync<(long id, string name)>(
+                    "SELECT id, name FROM roles WHERE name IN @names",
+                    new { names = distinctNames },
                     tx);
-            }
-        }
 
-        await tx.CommitAsync();
+                foreach (var role in roles)
+                {
+                    await conn.ExecuteAsync(
+                        "INSERT INTO model_has_roles (role_id, model_type, model_id) VALUES (@roleId, 'App\\Models\\User', @userId)",
+                        new { roleId = role.id, userId },
+                        tx);
+                }
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task SyncUserPermissionsAsync(long userId, IEnumerable<string> permissionNames)
@@ -777,28 +839,35 @@ public class KarobarDb
         if (!await HasTableAsync("permissions") || !await HasTableAsync("model_has_permissions")) return;
 
         await using var conn = await OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        await conn.ExecuteAsync("DELETE FROM model_has_permissions WHERE model_id = @userId", new { userId }, tx);
-
-        var distinctNames = permissionNames.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToArray();
-        if (distinctNames.Length > 0)
+        await using var tx = await BeginImmediateTransactionAsync(conn);
+        try
         {
-            var perms = await conn.QueryAsync<(long id, string name)>(
-                "SELECT id, name FROM permissions WHERE name IN @names",
-                new { names = distinctNames },
-                tx);
+            await conn.ExecuteAsync("DELETE FROM model_has_permissions WHERE model_id = @userId", new { userId }, tx);
 
-            foreach (var perm in perms)
+            var distinctNames = permissionNames.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToArray();
+            if (distinctNames.Length > 0)
             {
-                await conn.ExecuteAsync(
-                    "INSERT INTO model_has_permissions (permission_id, model_type, model_id) VALUES (@permId, 'App\\Models\\User', @userId)",
-                    new { permId = perm.id, userId },
+                var perms = await conn.QueryAsync<(long id, string name)>(
+                    "SELECT id, name FROM permissions WHERE name IN @names",
+                    new { names = distinctNames },
                     tx);
-            }
-        }
 
-        await tx.CommitAsync();
+                foreach (var perm in perms)
+                {
+                    await conn.ExecuteAsync(
+                        "INSERT INTO model_has_permissions (permission_id, model_type, model_id) VALUES (@permId, 'App\\Models\\User', @userId)",
+                        new { permId = perm.id, userId },
+                        tx);
+                }
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<Dictionary<string, object?>?> GetUserWithRolesAndPermissionsAsync(long userId, bool includePinCode = false)

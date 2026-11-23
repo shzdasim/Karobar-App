@@ -1,6 +1,8 @@
+using System.Data;
 using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Services.Infrastructure;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Services;
 
@@ -50,66 +52,73 @@ public class DocumentSequenceService
         try
         {
             await using var conn = await _db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
-
-            var row = await conn.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT * FROM document_sequences WHERE sequence_key = @key",
-                new { key = sequenceKey },
-                tx);
-
-            var existingMax = await ResolveExistingTableMaxAsync(prefix, seedTable, seedColumn, seedFromMaxId);
-
-            if (row == null)
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+            try
             {
-                var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-                await conn.ExecuteAsync(@"
-                    INSERT OR IGNORE INTO document_sequences (sequence_key, prefix, padding, last_number, created_at, updated_at)
-                    VALUES (@key, @prefix, @padding, @lastNum, @now, @now)",
-                    new { key = sequenceKey, prefix, padding, lastNum = existingMax, now = nowStr },
-                    tx);
-
-                row = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                var row = await conn.QueryFirstOrDefaultAsync<dynamic>(
                     "SELECT * FROM document_sequences WHERE sequence_key = @key",
                     new { key = sequenceKey },
                     tx);
-            }
 
-            long storedLast = row != null ? Convert.ToInt64(row.last_number ?? 0) : 0;
-            long baseNumber = Math.Max(storedLast, existingMax);
-            long nextNumber = baseNumber + 1;
+                var existingMax = await ResolveExistingTableMaxAsync(prefix, seedTable, seedColumn, seedFromMaxId, conn, tx);
 
-            if (!string.IsNullOrWhiteSpace(seedTable) && !string.IsNullOrWhiteSpace(seedColumn) && await _db.HasTableAsync(seedTable))
-            {
-                var escapedTable = seedTable.Replace("\"", "\"\"");
-                var escapedCol = seedColumn.Replace("\"", "\"\"");
-                while (true)
+                if (row == null)
                 {
-                    var candidate = prefix + nextNumber.ToString().PadLeft(padding, '0');
-                    var exists = await conn.ExecuteScalarAsync<int>(
-                        $"SELECT COUNT(1) FROM \"{escapedTable}\" WHERE \"{escapedCol}\" = @cand",
-                        new { cand = candidate },
+                    var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                    await conn.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO document_sequences (sequence_key, prefix, padding, last_number, created_at, updated_at)
+                        VALUES (@key, @prefix, @padding, @lastNum, @now, @now)",
+                        new { key = sequenceKey, prefix, padding, lastNum = existingMax, now = nowStr },
                         tx);
-                    if (exists == 0) break;
-                    nextNumber++;
+
+                    row = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                        "SELECT * FROM document_sequences WHERE sequence_key = @key",
+                        new { key = sequenceKey },
+                        tx);
                 }
-            }
 
-            await conn.ExecuteAsync(@"
-                UPDATE document_sequences
-                SET last_number = @nextNum, prefix = @prefix, padding = @padding, updated_at = @now
-                WHERE sequence_key = @key",
-                new
+                long storedLast = row != null ? Convert.ToInt64(row.last_number ?? 0) : 0;
+                long baseNumber = Math.Max(storedLast, existingMax);
+                long nextNumber = baseNumber + 1;
+
+                if (!string.IsNullOrWhiteSpace(seedTable) && !string.IsNullOrWhiteSpace(seedColumn) && await TableExistsAsync(seedTable, conn, tx))
                 {
-                    nextNum = nextNumber,
-                    prefix,
-                    padding,
-                    now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
-                    key = sequenceKey
-                },
-                tx);
+                    var escapedTable = seedTable.Replace("\"", "\"\"");
+                    var escapedCol = seedColumn.Replace("\"", "\"\"");
+                    while (true)
+                    {
+                        var candidate = prefix + nextNumber.ToString().PadLeft(padding, '0');
+                        var exists = await conn.ExecuteScalarAsync<int>(
+                            $"SELECT COUNT(1) FROM \"{escapedTable}\" WHERE \"{escapedCol}\" = @cand",
+                            new { cand = candidate },
+                            tx);
+                        if (exists == 0) break;
+                        nextNumber++;
+                    }
+                }
 
-            await tx.CommitAsync();
-            return prefix + nextNumber.ToString().PadLeft(padding, '0');
+                await conn.ExecuteAsync(@"
+                    UPDATE document_sequences
+                    SET last_number = @nextNum, prefix = @prefix, padding = @padding, updated_at = @now
+                    WHERE sequence_key = @key",
+                    new
+                    {
+                        nextNum = nextNumber,
+                        prefix,
+                        padding,
+                        now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                        key = sequenceKey
+                    },
+                    tx);
+
+                await tx.CommitAsync();
+                return prefix + nextNumber.ToString().PadLeft(padding, '0');
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
         finally
         {
@@ -143,11 +152,27 @@ public class DocumentSequenceService
         return prefix + nextNumber.ToString().PadLeft(padding, '0');
     }
 
+    private async Task<bool> TableExistsAsync(string tableName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                new { name = tableName },
+                tx);
+            return count > 0;
+        }
+
+        return await _db.HasTableAsync(tableName);
+    }
+
     private async Task<long> ResolveExistingTableMaxAsync(
         string prefix,
         string? seedTable,
         string? seedColumn,
-        bool seedFromMaxId = false)
+        bool seedFromMaxId = false,
+        IDbConnection? existingConn = null,
+        IDbTransaction? existingTx = null)
     {
         if (string.IsNullOrWhiteSpace(seedTable) || string.IsNullOrWhiteSpace(seedColumn))
         {
@@ -156,35 +181,57 @@ public class DocumentSequenceService
 
         try
         {
-            if (!await _db.HasTableAsync(seedTable)) return 0;
+            if (!await TableExistsAsync(seedTable, existingConn, existingTx)) return 0;
 
             var escapedTable = seedTable.Replace("\"", "\"\"");
             var escapedCol = seedColumn.Replace("\"", "\"\"");
 
-            await using var conn = await _db.OpenConnectionAsync();
-            var values = await conn.QueryAsync<string?>(
-                $"SELECT \"{escapedCol}\" FROM \"{escapedTable}\" WHERE \"{escapedCol}\" LIKE @like ORDER BY id DESC LIMIT 25",
-                new { like = prefix + "%" });
-
-            long max = 0;
-            var regex = new Regex("^" + Regex.Escape(prefix) + @"(\d+)$", RegexOptions.IgnoreCase);
-            foreach (var val in values)
+            IDbConnection conn;
+            SqliteConnection? ownedConn = null;
+            if (existingConn != null)
             {
-                if (string.IsNullOrEmpty(val)) continue;
-                var m = regex.Match(val);
-                if (m.Success && long.TryParse(m.Groups[1].Value, out var num) && num > max)
+                conn = existingConn;
+            }
+            else
+            {
+                ownedConn = await _db.OpenConnectionAsync();
+                conn = ownedConn;
+            }
+
+            try
+            {
+                var values = await conn.QueryAsync<string?>(
+                    $"SELECT \"{escapedCol}\" FROM \"{escapedTable}\" WHERE \"{escapedCol}\" LIKE @like ORDER BY id DESC LIMIT 25",
+                    new { like = prefix + "%" },
+                    existingTx);
+
+                long max = 0;
+                var regex = new Regex("^" + Regex.Escape(prefix) + @"(\d+)$", RegexOptions.IgnoreCase);
+                foreach (var val in values)
                 {
-                    max = num;
+                    if (string.IsNullOrEmpty(val)) continue;
+                    var m = regex.Match(val);
+                    if (m.Success && long.TryParse(m.Groups[1].Value, out var num) && num > max)
+                    {
+                        max = num;
+                    }
+                }
+
+                if (seedFromMaxId)
+                {
+                    var maxId = await conn.ExecuteScalarAsync<long?>($"SELECT MAX(id) FROM \"{escapedTable}\"", transaction: existingTx) ?? 0;
+                    if (maxId > max) max = maxId;
+                }
+
+                return max;
+            }
+            finally
+            {
+                if (ownedConn != null)
+                {
+                    await ownedConn.DisposeAsync();
                 }
             }
-
-            if (seedFromMaxId)
-            {
-                var maxId = await conn.ExecuteScalarAsync<long?>($"SELECT MAX(id) FROM \"{escapedTable}\"") ?? 0;
-                if (maxId > max) max = maxId;
-            }
-
-            return max;
         }
         catch
         {

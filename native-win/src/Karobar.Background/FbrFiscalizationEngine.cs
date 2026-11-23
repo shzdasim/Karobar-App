@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Karobar.Core.Entities;
+using Karobar.Core.Security;
 using Karobar.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,16 +42,12 @@ public sealed class FbrFiscalizationEngine
         {
             var handler = new HttpClientHandler
             {
+                AllowAutoRedirect = false,
                 // Enforce strict TLS certificate validation on remote HTTPS gateways (FBR PRAL production);
                 // allow self-signed certificates only for local IMS loopback hosts.
                 ServerCertificateCustomValidationCallback = (req, _, _, errors) =>
-                {
-                    if (errors == System.Net.Security.SslPolicyErrors.None) return true;
-                    var host = req.RequestUri?.Host ?? "";
-                    return host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-                           host == "127.0.0.1" ||
-                           host == "::1";
-                }
+                    errors == System.Net.Security.SslPolicyErrors.None ||
+                    FbrEndpointValidator.IsLoopbackHost(req.RequestUri?.Host)
             };
             _httpClient = new HttpClient(handler)
             {
@@ -156,6 +153,23 @@ public sealed class FbrFiscalizationEngine
         var endpoint = ResolveEndpointUrl(setting);
         var token = (setting.FbrBearerToken ?? "").Trim();
 
+        if (!FbrEndpointValidator.IsAllowedFbrEndpointUrl(endpoint, mode, out _, out var endpointError))
+        {
+            var errMsg = endpointError ?? "Invalid FBR endpoint URL.";
+            invoice.FbrUsin = usin;
+            invoice.FbrSyncStatus = "failed";
+            invoice.FbrErrorMessage = errMsg;
+            await db.SaveChangesAsync(cancellationToken);
+
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["status"] = "failed",
+                ["endpoint"] = endpoint,
+                ["message"] = errMsg
+            };
+        }
+
         if (mode != "tier1_pos_ims" && string.IsNullOrEmpty(token))
         {
             invoice.FbrUsin = usin;
@@ -213,7 +227,7 @@ public sealed class FbrFiscalizationEngine
                 };
             }
 
-            if (env == "sandbox" && (int)res.StatusCode != 401)
+            if (env == "sandbox" && (int)res.StatusCode != 401 && ((int)res.StatusCode < 300 || (int)res.StatusCode >= 400))
             {
                 return await SimulateSandboxInvoiceSyncAsync(db, invoice, setting, usin, rawBody, cancellationToken);
             }
@@ -341,6 +355,23 @@ public sealed class FbrFiscalizationEngine
         var endpoint = ResolveEndpointUrl(setting);
         var token = (setting.FbrBearerToken ?? "").Trim();
 
+        if (!FbrEndpointValidator.IsAllowedFbrEndpointUrl(endpoint, mode, out _, out var endpointError))
+        {
+            var errMsg = endpointError ?? "Invalid FBR endpoint URL.";
+            saleReturn.FbrUsin = usin;
+            saleReturn.FbrSyncStatus = "failed";
+            saleReturn.FbrErrorMessage = errMsg;
+            await db.SaveChangesAsync(cancellationToken);
+
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["status"] = "failed",
+                ["endpoint"] = endpoint,
+                ["message"] = errMsg
+            };
+        }
+
         if (mode != "tier1_pos_ims" && string.IsNullOrEmpty(token))
         {
             saleReturn.FbrUsin = usin;
@@ -397,7 +428,7 @@ public sealed class FbrFiscalizationEngine
                 };
             }
 
-            if (env == "sandbox" && (int)res.StatusCode != 401)
+            if (env == "sandbox" && (int)res.StatusCode != 401 && ((int)res.StatusCode < 300 || (int)res.StatusCode >= 400))
             {
                 var posId = string.IsNullOrWhiteSpace(setting.FbrPosId) ? "966130" : setting.FbrPosId.Trim();
                 var sandboxNo = $"{posId}{DateTime.Now:yyMMddHHmmss}{(saleReturn.Id % 100):D2}";
@@ -517,6 +548,36 @@ public sealed class FbrFiscalizationEngine
         var env = (setting.FbrEnvironment ?? "sandbox").Trim().ToLowerInvariant();
         var endpoint = ResolveEndpointUrl(setting);
         var token = (setting.FbrBearerToken ?? "").Trim();
+
+        if (!FbrEndpointValidator.IsAllowedFbrEndpointUrl(endpoint, mode, out _, out var endpointError))
+        {
+            return new Dictionary<string, object?>
+            {
+                ["ok"] = false,
+                ["status"] = "invalid_url",
+                ["endpoint"] = endpoint,
+                ["message"] = endpointError ?? "Invalid FBR endpoint URL."
+            };
+        }
+
+        if (overrides != null)
+        {
+            foreach (var urlOverrideKey in new[] { "fbr_sandbox_url", "fbr_production_url" })
+            {
+                if (overrides.TryGetValue(urlOverrideKey, out var overrideUrl) &&
+                    !string.IsNullOrWhiteSpace(overrideUrl) &&
+                    !FbrEndpointValidator.IsAllowedFbrEndpointUrl(overrideUrl, mode, out _, out var overrideErr))
+                {
+                    return new Dictionary<string, object?>
+                    {
+                        ["ok"] = false,
+                        ["status"] = "invalid_url",
+                        ["endpoint"] = overrideUrl,
+                        ["message"] = overrideErr ?? "Invalid FBR endpoint override URL."
+                    };
+                }
+            }
+        }
 
         if (mode != "tier1_pos_ims" && string.IsNullOrEmpty(token))
         {
@@ -669,7 +730,7 @@ public sealed class FbrFiscalizationEngine
                 };
             }
 
-            if (status is >= 200 and < 500)
+            if (status is (>= 200 and < 300) or (>= 400 and < 500))
             {
                 return new Dictionary<string, object?>
                 {

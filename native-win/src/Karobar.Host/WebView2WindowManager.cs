@@ -743,32 +743,9 @@ public sealed class WebView2WindowManager : IDisposable
         }
 
         // 4. Intercept internal application URLs and spawn a native app window
-        var appBaseUrl = _networkConfig.GetAppBaseUrl();
-        var localIpBase = $"http://127.0.0.1:{_networkConfig.ActivePort}";
-        var localhostBase = $"http://localhost:{_networkConfig.ActivePort}";
-
-        var isInternal = url.StartsWith(appBaseUrl, StringComparison.OrdinalIgnoreCase) ||
-                         url.StartsWith(localIpBase, StringComparison.OrdinalIgnoreCase) ||
-                         url.StartsWith(localhostBase, StringComparison.OrdinalIgnoreCase) ||
-                         (url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal));
-
-        if (isInternal)
+        if (TryExtractInternalAppRoute(url, _networkConfig.GetAppBaseUrl(), _networkConfig.ActivePort, out var route))
         {
-            var route = url;
-            if (route.StartsWith(appBaseUrl, StringComparison.OrdinalIgnoreCase))
-            {
-                route = route[appBaseUrl.Length..];
-            }
-            else if (route.StartsWith(localIpBase, StringComparison.OrdinalIgnoreCase))
-            {
-                route = route[localIpBase.Length..];
-            }
-            else if (route.StartsWith(localhostBase, StringComparison.OrdinalIgnoreCase))
-            {
-                route = route[localhostBase.Length..];
-            }
-
-            CreateAppWindow(string.IsNullOrWhiteSpace(route) ? "/" : route);
+            CreateAppWindow(route);
             return "deny-spawned-internal";
         }
 
@@ -779,6 +756,36 @@ public sealed class WebView2WindowManager : IDisposable
         }
 
         return "deny";
+    }
+
+    public static bool TryExtractInternalAppRoute(string? url, string? appBaseUrl, int activePort, out string route)
+    {
+        route = "/";
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        var trimmed = url.Trim();
+        if (trimmed.StartsWith('/') && !trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            route = trimmed;
+            return true;
+        }
+
+        var isInternal = NetworkConfigManager.IsSameOrigin(trimmed, appBaseUrl) ||
+                         (activePort > 0 &&
+                          (NetworkConfigManager.IsSameOrigin(trimmed, $"http://127.0.0.1:{activePort}") ||
+                           NetworkConfigManager.IsSameOrigin(trimmed, $"http://localhost:{activePort}")));
+
+        if (!isInternal || !Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed))
+        {
+            return false;
+        }
+
+        var extracted = parsed.PathAndQuery + parsed.Fragment;
+        route = string.IsNullOrWhiteSpace(extracted) ? "/" : extracted;
+        return true;
     }
 
     public static bool TryOpenExternalUrl(string? url)

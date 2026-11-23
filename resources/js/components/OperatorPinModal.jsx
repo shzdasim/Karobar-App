@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { KeyIcon, XMarkIcon, BackspaceIcon } from "@heroicons/react/24/outline";
@@ -40,6 +40,19 @@ export default function OperatorPinModal({
     [buttonStyle, themeColors, isDark]
   );
 
+  const triggerConfirm = useCallback(
+    (code) => {
+      try {
+        Promise.resolve(onConfirm?.(code)).catch(() => {
+          // Non-PIN rejections are closed/reset by useOperatorPinPrompt and handled by the action/caller.
+        });
+      } catch {
+        // Non-PIN rejections/errors are closed/reset by hook and handled by caller.
+      }
+    },
+    [onConfirm]
+  );
+
   // Reset and focus whenever opened or whenever an error arrives
   useEffect(() => {
     if (isOpen) {
@@ -57,9 +70,9 @@ export default function OperatorPinModal({
     if (!isOpen || !autoSubmit || submitting) return;
     if (pin.length === 4 && !autoSubmittedRef.current) {
       autoSubmittedRef.current = true;
-      onConfirm(pin);
+      triggerConfirm(pin);
     }
-  }, [isOpen, autoSubmit, submitting, pin, onConfirm]);
+  }, [isOpen, autoSubmit, submitting, pin, triggerConfirm]);
 
   // Global keyboard handler while modal is open
   useEffect(() => {
@@ -76,14 +89,14 @@ export default function OperatorPinModal({
         e.stopPropagation();
         if (pin.length === 4 && !submitting) {
           autoSubmittedRef.current = true;
-          onConfirm(pin);
+          triggerConfirm(pin);
         }
         return;
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [isOpen, pin, submitting, onClose, onConfirm]);
+  }, [isOpen, pin, submitting, onClose, triggerConfirm]);
 
   if (!isOpen) return null;
 
@@ -287,7 +300,7 @@ export default function OperatorPinModal({
             onClick={() => {
               if (pin.length === 4 && !submitting) {
                 autoSubmittedRef.current = true;
-                onConfirm(pin);
+                triggerConfirm(pin);
               }
             }}
             className={`px-4 py-2 text-xs font-semibold theme-btn-primary disabled:opacity-50 ${btnClasses.primary.className}`}

@@ -25,6 +25,17 @@ namespace Karobar.Api.Controllers;
 [Route("api")]
 public class TerminalController : ApiControllerBase
 {
+    private const long MaxQuickImportBytes = 2L * 1024 * 1024 * 1024;
+    private static readonly SemaphoreSlim QuickImportLock = new(1, 1);
+
+    private static bool IsMacOsMetadataZipEntry(string fullName)
+    {
+        var segments = fullName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return true;
+        if (segments.Any(seg => seg.Equals("__MACOSX", StringComparison.OrdinalIgnoreCase))) return true;
+        return segments[^1].StartsWith("._", StringComparison.Ordinal);
+    }
+
     private readonly LicenseService _licenseService;
     private readonly SqliteExportService _sqliteExportService;
     private readonly BackupService _backupService;
@@ -322,7 +333,7 @@ public class TerminalController : ApiControllerBase
         }
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
         try
         {
             await DetachTerminalReferencesAsync(conn, tx, new[] { id });
@@ -394,29 +405,97 @@ public class TerminalController : ApiControllerBase
             return Unprocessable("Please select a valid .sqlite or .zip database file to import.");
         }
 
+        if (file.Length > MaxQuickImportBytes)
+        {
+            return Unprocessable("Uploaded database file exceeds the maximum allowed size limit (2 GB).");
+        }
+
+        var originalFileName = Path.GetFileName(file.FileName ?? "");
+        var ext = Path.GetExtension(originalFileName).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(originalFileName) || ext is not (".zip" or ".sqlite" or ".db"))
+        {
+            return Unprocessable("Please select a valid .sqlite, .db, or .zip database file to import.");
+        }
+
         var mode = (form["mode"].FirstOrDefault() ?? "merge").Trim().ToLowerInvariant();
         var conflictPolicy = (form["conflict_policy"].FirstOrDefault() ?? "upsert").Trim().ToLowerInvariant();
         var includeSettings = string.Equals(form["include_settings"].FirstOrDefault(), "1", StringComparison.OrdinalIgnoreCase) ||
                               string.Equals(form["include_settings"].FirstOrDefault(), "true", StringComparison.OrdinalIgnoreCase);
 
-        var tempDir = Path.Combine(Path.GetTempPath(), $"karobar_qimp_{Guid.NewGuid():N}");
+        var tempDir = Path.GetFullPath(Path.Combine(Path.GetTempPath(), $"karobar_qimp_{Guid.NewGuid():N}"));
+        var tempDirPrefix = tempDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         Directory.CreateDirectory(tempDir);
         try
         {
-            var uploadedPath = Path.Combine(tempDir, Path.GetFileName(file.FileName));
-            await using (var fs = new FileStream(uploadedPath, FileMode.Create, FileAccess.Write))
+            var uploadedPath = Path.GetFullPath(Path.Combine(tempDir, $"upload_{Guid.NewGuid():N}{ext}"));
+            if (!uploadedPath.StartsWith(tempDirPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                await file.CopyToAsync(fs);
+                return Unprocessable("Invalid upload path.");
+            }
+
+            try
+            {
+                await using var uploadStream = file.OpenReadStream();
+                await using var fs = new FileStream(uploadedPath, FileMode.Create, FileAccess.Write);
+                await CopyBoundedAsync(uploadStream, fs, MaxQuickImportBytes, HttpContext?.RequestAborted ?? CancellationToken.None);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Unprocessable(ex.Message);
+            }
+
+            bool isZip = string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase);
+            if (!isZip)
+            {
+                var magic = new byte[4];
+                await using var mfs = new FileStream(uploadedPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (await mfs.ReadAsync(magic, 0, 4) == 4 && magic[0] == 0x50 && magic[1] == 0x4B && magic[2] == 0x03 && magic[3] == 0x04)
+                {
+                    isZip = true;
+                }
             }
 
             string sqliteSourcePath = uploadedPath;
-            if (uploadedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            if (isZip)
             {
-                using var zip = ZipFile.OpenRead(uploadedPath);
-                var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase));
-                if (entry == null) return Unprocessable("No .sqlite database file found inside the uploaded ZIP archive.");
-                sqliteSourcePath = Path.Combine(tempDir, "extracted.sqlite");
-                entry.ExtractToFile(sqliteSourcePath, overwrite: true);
+                try
+                {
+                    using var zip = ZipFile.OpenRead(uploadedPath);
+                    var entry = zip.Entries
+                        .Where(e =>
+                            !string.IsNullOrEmpty(e.Name) &&
+                            !e.FullName.EndsWith('/') &&
+                            !e.FullName.EndsWith('\\') &&
+                            e.Length > 0 &&
+                            !IsMacOsMetadataZipEntry(e.FullName) &&
+                            (e.FullName.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+                             e.FullName.EndsWith(".db", StringComparison.OrdinalIgnoreCase)))
+                        .OrderByDescending(e => e.Length)
+                        .FirstOrDefault();
+                    if (entry == null) return Unprocessable("No .sqlite database file found inside the uploaded ZIP archive.");
+                    if (entry.Length > MaxQuickImportBytes)
+                    {
+                        return Unprocessable("Decompressed database exceeds the maximum allowed size limit (2 GB).");
+                    }
+
+                    sqliteSourcePath = Path.GetFullPath(Path.Combine(tempDir, "extracted.sqlite"));
+                    if (!sqliteSourcePath.StartsWith(tempDirPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Unprocessable("Invalid extraction path.");
+                    }
+
+                    await using var es = entry.Open();
+                    await using var outFs = new FileStream(sqliteSourcePath, FileMode.Create, FileAccess.Write);
+                    await CopyBoundedAsync(es, outFs, MaxQuickImportBytes, HttpContext?.RequestAborted ?? CancellationToken.None);
+                }
+                catch (InvalidDataException)
+                {
+                    return Unprocessable("Uploaded ZIP archive is corrupted or invalid.");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Unprocessable(ex.Message);
+                }
             }
 
             // Validate SQLite header
@@ -428,16 +507,22 @@ public class TerminalController : ApiControllerBase
                     return Unprocessable("Uploaded file is not a valid SQLite 3 database.");
             }
 
-            // Pre-import safety backup
-            if (System.IO.File.Exists(Db.SqlitePath))
+            var srcConnStr = new SqliteConnectionStringBuilder { DataSource = sqliteSourcePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
+            await using var srcConn = new SqliteConnection(srcConnStr);
+            List<string> srcTables;
+            try
             {
-                try
+                await srcConn.OpenAsync();
+                var quickCheck = await srcConn.ExecuteScalarAsync<string>("PRAGMA quick_check(1);");
+                if (!string.Equals(quickCheck, "ok", StringComparison.OrdinalIgnoreCase))
                 {
-                    var bDir = Db.StoragePath("app/backups");
-                    Directory.CreateDirectory(bDir);
-                    System.IO.File.Copy(Db.SqlitePath, Path.Combine(bDir, $"pre-quick-import-{DateTime.UtcNow:yyyyMMdd-HHmmss}.sqlite"), overwrite: true);
+                    return Unprocessable("Uploaded file failed SQLite integrity verification.");
                 }
-                catch { }
+                srcTables = (await srcConn.QueryAsync<string>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).ToList();
+            }
+            catch (SqliteException)
+            {
+                return Unprocessable("Uploaded file is not a valid or intact SQLite 3 database.");
             }
 
             var protectedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -452,63 +537,114 @@ public class TerminalController : ApiControllerBase
                 protectedTables.Add("theme_settings");
             }
 
-            var srcConnStr = new SqliteConnectionStringBuilder { DataSource = sqliteSourcePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
-            await using var srcConn = new SqliteConnection(srcConnStr);
-            await srcConn.OpenAsync();
-            var srcTables = (await srcConn.QueryAsync<string>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).ToList();
-
             int totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
             var isReplace = mode == "replace";
             var useReplaceVerb = isReplace || conflictPolicy == "upsert";
 
-            await using var dstConn = await Db.OpenConnectionAsync();
-            await dstConn.ExecuteAsync("PRAGMA foreign_keys = OFF;");
+            var ct = HttpContext?.RequestAborted ?? CancellationToken.None;
+            await QuickImportLock.WaitAsync(ct);
             try
             {
-                await using var tx = await dstConn.BeginTransactionAsync();
-                foreach (var tbl in srcTables)
+                // Pre-import WAL-safe safety backup
+                if (System.IO.File.Exists(Db.SqlitePath))
                 {
-                    if (protectedTables.Contains(tbl) || !await Db.HasTableAsync(tbl)) continue;
-                    var escaped = tbl.Replace("\"", "\"\"");
-                    var dstCols = (await dstConn.QueryAsync<dynamic>($"PRAGMA table_info(\"{escaped}\");", transaction: tx))
-                        .Select(c => (string)c.name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                    if (isReplace)
+                    string? snapPath = null;
+                    try
                     {
-                        await dstConn.ExecuteAsync($"DELETE FROM \"{escaped}\";", transaction: tx);
+                        var bDir = Db.StoragePath("app/backups");
+                        Directory.CreateDirectory(bDir);
+                        snapPath = Path.Combine(bDir, $"pre-quick-import-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.sqlite");
+                        var snapSrcCs = new SqliteConnectionStringBuilder { DataSource = Db.SqlitePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
+                        var snapDstCs = new SqliteConnectionStringBuilder { DataSource = snapPath, Mode = SqliteOpenMode.ReadWriteCreate, Pooling = false }.ToString();
+                        using (var snapSrc = new SqliteConnection(snapSrcCs))
+                        using (var snapDst = new SqliteConnection(snapDstCs))
+                        {
+                            await snapSrc.OpenAsync();
+                            await snapDst.OpenAsync();
+                            snapSrc.BackupDatabase(snapDst);
+                        }
+
+                        var snapInfo = new FileInfo(snapPath);
+                        if (!snapInfo.Exists || snapInfo.Length == 0)
+                        {
+                            throw new InvalidOperationException("Safety backup file was missing or empty after backup.");
+                        }
                     }
-
-                    var rows = (await srcConn.QueryAsync($"SELECT * FROM \"{escaped}\";")).ToList();
-                    foreach (var r in rows)
+                    catch (Exception bkEx)
                     {
-                        if (r is not IDictionary<string, object?> dict) continue;
-                        var filtered = dict.Where(kv => dstCols.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => KarobarDb.PrepareDbValue(kv.Value));
-                        if (filtered.Count == 0) { totalSkipped++; continue; }
-
-                        var cols = filtered.Keys.ToList();
-                        var colSql = string.Join(", ", cols.Select(c => $"\"{c.Replace("\"", "\"\"")}\""));
-                        var valSql = string.Join(", ", cols.Select((_, i) => $"@p{i}"));
-                        var dp = new DynamicParameters();
-                        for (int i = 0; i < cols.Count; i++) dp.Add($"p{i}", filtered[cols[i]]);
-
-                        var verb = useReplaceVerb ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
-                        try
+                        if (!string.IsNullOrEmpty(snapPath))
                         {
-                            var aff = await dstConn.ExecuteAsync($"{verb} INTO \"{escaped}\" ({colSql}) VALUES ({valSql});", dp, tx);
-                            if (aff > 0) totalInserted++;
-                            else totalSkipped++;
+                            try { if (System.IO.File.Exists(snapPath)) System.IO.File.Delete(snapPath); } catch { }
                         }
-                        catch
+                        return StatusCode(500, new
                         {
-                            totalSkipped++;
-                        }
+                            ok = false,
+                            message = $"Pre-import safety backup failed: {bkEx.Message}. Import aborted to protect your database."
+                        });
                     }
                 }
-                await tx.CommitAsync();
+
+                await using var dstConn = await Db.OpenConnectionAsync();
+                await dstConn.ExecuteAsync("PRAGMA foreign_keys = OFF;");
+                try
+                {
+                    await using var tx = await KarobarDb.BeginImmediateTransactionAsync(dstConn);
+                    try
+                    {
+                        foreach (var tbl in srcTables)
+                        {
+                            if (protectedTables.Contains(tbl) || !await Db.HasTableAsync(tbl)) continue;
+                            var escaped = tbl.Replace("\"", "\"\"");
+                            var dstCols = (await dstConn.QueryAsync<dynamic>($"PRAGMA table_info(\"{escaped}\");", transaction: tx))
+                                .Select(c => (string)c.name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                            if (isReplace)
+                            {
+                                await dstConn.ExecuteAsync($"DELETE FROM \"{escaped}\";", transaction: tx);
+                            }
+
+                            var rows = (await srcConn.QueryAsync($"SELECT * FROM \"{escaped}\";")).ToList();
+                            foreach (var r in rows)
+                            {
+                                if (r is not IDictionary<string, object?> dict) continue;
+                                var filtered = dict.Where(kv => dstCols.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => KarobarDb.PrepareDbValue(kv.Value));
+                                if (filtered.Count == 0) { totalSkipped++; continue; }
+
+                                var cols = filtered.Keys.ToList();
+                                var colSql = string.Join(", ", cols.Select(c => $"\"{c.Replace("\"", "\"\"")}\""));
+                                var valSql = string.Join(", ", cols.Select((_, i) => $"@p{i}"));
+                                var dp = new DynamicParameters();
+                                for (int i = 0; i < cols.Count; i++) dp.Add($"p{i}", filtered[cols[i]]);
+
+                                var verb = useReplaceVerb ? "INSERT OR REPLACE" : "INSERT OR IGNORE";
+                                try
+                                {
+                                    var aff = await dstConn.ExecuteAsync($"{verb} INTO \"{escaped}\" ({colSql}) VALUES ({valSql});", dp, tx);
+                                    if (aff > 0) totalInserted++;
+                                    else totalSkipped++;
+                                }
+                                catch
+                                {
+                                    totalSkipped++;
+                                }
+                            }
+                        }
+                        await tx.CommitAsync();
+                    }
+                    catch
+                    {
+                        await tx.RollbackAsync();
+                        throw;
+                    }
+                }
+                finally
+                {
+                    await dstConn.ExecuteAsync("PRAGMA foreign_keys = ON;");
+                }
             }
             finally
             {
-                await dstConn.ExecuteAsync("PRAGMA foreign_keys = ON;");
+                QuickImportLock.Release();
             }
 
             SyncPulseService.Bump("stock", "drafts", "drawer", "settings");
@@ -783,7 +919,7 @@ public class TerminalController : ApiControllerBase
                     if (offlineIds.Count > 0)
                     {
                         await using var pruneConn = await Db.OpenConnectionAsync();
-                        await using var pruneTx = await pruneConn.BeginTransactionAsync();
+                        await using var pruneTx = await KarobarDb.BeginImmediateTransactionAsync(pruneConn);
                         try
                         {
                             await DetachTerminalReferencesAsync(pruneConn, pruneTx, offlineIds);
@@ -1084,5 +1220,22 @@ public class TerminalController : ApiControllerBase
             .Select(x => x.Ip)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    [NonAction]
+    public static async Task CopyBoundedAsync(Stream src, Stream dst, long maxBytes, CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await src.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidOperationException("Decompressed database exceeds the maximum allowed size limit (2 GB).");
+            }
+            await dst.WriteAsync(buffer, 0, read, ct);
+        }
     }
 }

@@ -407,60 +407,71 @@ public class CustomerLedgerController : ApiControllerBase
             });
         }
 
+        await Db.GetTableColumnsAsync("customer_ledgers");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        foreach (var el in rowsEl.EnumerateArray())
+        try
         {
-            if (el.ValueKind != JsonValueKind.Object) continue;
-            var r = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in el.EnumerateObject()) r[p.Name] = p.Value;
-
-            var id = GetNullableLong(r, "id");
-            if (id == null || id <= 0) continue;
-
-            var row = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customer_ledgers WHERE id = @id", new { id = id.Value }, conn, tx);
-            if (row == null) continue;
-
-            var entryType = row.GetValueOrDefault("entry_type")?.ToString()?.ToLowerInvariant() ?? "";
-            bool isManual = row.GetValueOrDefault("is_manual") is true or 1 or 1L;
-
-            if (entryType == "invoice" && !isManual)
+            foreach (var el in rowsEl.EnumerateArray())
             {
-                await tx.RollbackAsync();
-                return Unprocessable("Cannot update invoice rows");
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                var r = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+                foreach (var p in el.EnumerateObject()) r[p.Name] = p.Value;
+
+                var id = GetNullableLong(r, "id");
+                if (id == null || id <= 0) continue;
+
+                var row = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customer_ledgers WHERE id = @id", new { id = id.Value }, conn, tx);
+                if (row == null) continue;
+
+                var entryType = row.GetValueOrDefault("entry_type")?.ToString()?.ToLowerInvariant() ?? "";
+                bool isManual = row.GetValueOrDefault("is_manual") is true or 1 or 1L;
+
+                if (entryType == "invoice" && !isManual)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot update invoice rows");
+                }
+
+                bool hasPaymentId = row.TryGetValue("payment_id", out var pid) && pid != null && !string.IsNullOrWhiteSpace(pid.ToString());
+                bool hasReturnId = row.TryGetValue("sale_return_id", out var rid) && rid != null && !string.IsNullOrWhiteSpace(rid.ToString());
+                bool isSystemLinked = hasPaymentId || hasReturnId;
+
+                var updates = new Dictionary<string, object?>
+                {
+                    ["entry_date"] = DateStr(GetString(r, "entry_date"), row.GetValueOrDefault("entry_date")?.ToString()),
+                    ["posted_number"] = GetString(r, "posted_number"),
+                    ["description"] = GetString(r, "description")
+                };
+
+                if (entryType == "manual" && !isSystemLinked)
+                {
+                    var invTotal = GetDecimal(r, "invoice_total", 0m);
+                    var totRecv = GetDecimal(r, "total_received", 0m);
+                    updates["invoice_total"] = invTotal;
+                    updates["total_received"] = totRecv;
+                    updates["balance_remaining"] = Math.Max(invTotal - totRecv, 0m);
+                }
+
+                if ((entryType == "payment" || isManual) && !isSystemLinked)
+                {
+                    updates["credited_amount"] = GetDecimal(r, "credited_amount", 0m);
+                    updates["payment_ref"] = GetString(r, "payment_ref");
+                }
+
+                await Db.UpdateAsync("customer_ledgers", id.Value, updates, "id", conn, tx);
             }
 
-            bool hasPaymentId = row.TryGetValue("payment_id", out var pid) && pid != null && !string.IsNullOrWhiteSpace(pid.ToString());
-            bool hasReturnId = row.TryGetValue("sale_return_id", out var rid) && rid != null && !string.IsNullOrWhiteSpace(rid.ToString());
-            bool isSystemLinked = hasPaymentId || hasReturnId;
-
-            var updates = new Dictionary<string, object?>
-            {
-                ["entry_date"] = DateStr(GetString(r, "entry_date"), row.GetValueOrDefault("entry_date")?.ToString()),
-                ["posted_number"] = GetString(r, "posted_number"),
-                ["description"] = GetString(r, "description")
-            };
-
-            if (entryType == "manual" && !isSystemLinked)
-            {
-                var invTotal = GetDecimal(r, "invoice_total", 0m);
-                var totRecv = GetDecimal(r, "total_received", 0m);
-                updates["invoice_total"] = invTotal;
-                updates["total_received"] = totRecv;
-                updates["balance_remaining"] = Math.Max(invTotal - totRecv, 0m);
-            }
-
-            if ((entryType == "payment" || isManual) && !isSystemLinked)
-            {
-                updates["credited_amount"] = GetDecimal(r, "credited_amount", 0m);
-                updates["payment_ref"] = GetString(r, "payment_ref");
-            }
-
-            await Db.UpdateAsync("customer_ledgers", id.Value, updates, "id", conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await tx.CommitAsync();
         return Ok(new { status = "ok" });
     }
 
@@ -497,8 +508,22 @@ public class CustomerLedgerController : ApiControllerBase
             var payment = await Db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId });
             if (payment != null && !string.Equals(payment.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
             {
-                await ReverseCustomerPaymentAsync(payment);
-                return Ok(new { status = "ok" });
+                try
+                {
+                    await ReverseCustomerPaymentAsync(payment);
+                    return Ok(new { status = "ok" });
+                }
+                catch (KeyNotFoundException ex)
+                {
+                    return NotFound(new { message = ex.Message });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Unprocessable(ex.Message, new Dictionary<string, string[]>
+                    {
+                        ["payment"] = new[] { ex.Message }
+                    });
+                }
             }
         }
 
@@ -539,126 +564,140 @@ public class CustomerLedgerController : ApiControllerBase
             return Ok(new { status = "ok" });
         }
 
-        await Db.ExecuteAsync(@"
-            DELETE FROM customer_ledgers
-            WHERE customer_id = @customerId
-              AND sale_invoice_id IN (
-                  SELECT id FROM sale_invoices WHERE customer_id = @customerId AND status = 'reversed'
-              )",
-            new { customerId = customerId.Value });
-
-        var invoices = await Db.QueryListAsync(@"
-            SELECT *
-            FROM sale_invoices
-            WHERE customer_id = @customerId
-              AND invoice_type = 'credit'
-              AND (status IS NULL OR status != 'reversed')",
-            new { customerId = customerId.Value });
-
-        var invIds = invoices.Select(i => Convert.ToInt64(i["id"])).ToList();
-        var allocatedByInvoice = await SupplierLedgerController.SumAllocatedByInvoiceIdsAsync(Db, "sale_invoice", invIds);
+        await Db.HasTableAsync("sale_invoices");
+        await Db.HasTableAsync("payment_allocations");
+        await Db.HasTableAsync("payments");
+        await Db.GetTableColumnsAsync("customer_ledgers");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        foreach (var inv in invoices)
+        try
         {
-            var invId = Convert.ToInt64(inv["id"]);
-            var invTotal = ReadInvoiceTotal(inv);
-            var rawRecv = ReadInvoiceReceived(inv);
-            var allocated = allocatedByInvoice.TryGetValue(invId, out var al) ? al : 0m;
-            var recv = Math.Max(0m, rawRecv - allocated);
-            var recvOnInv = Math.Min(recv, invTotal);
-            var excess = Math.Max(0m, recv - invTotal);
-
-            var entryDate = DateStr(inv.GetValueOrDefault("date")?.ToString(), DateTime.UtcNow.ToString("yyyy-MM-dd"));
-            var postedNo = FirstNonEmpty(inv.GetValueOrDefault("posted_number")?.ToString(), inv.GetValueOrDefault("invoice_no")?.ToString());
-            var invoiceNo = inv.GetValueOrDefault("invoice_no")?.ToString();
-
-            var existing = await Db.QuerySingleOrDefaultAsync(@"
-                SELECT id FROM customer_ledgers
+            await Db.ExecuteAsync(@"
+                DELETE FROM customer_ledgers
                 WHERE customer_id = @customerId
-                  AND sale_invoice_id = @invId
-                  AND entry_type = 'invoice'
-                  AND is_manual = 0
-                LIMIT 1",
-                new { customerId = customerId.Value, invId }, conn, tx);
+                  AND sale_invoice_id IN (
+                      SELECT id FROM sale_invoices WHERE customer_id = @customerId AND status = 'reversed'
+                  )",
+                new { customerId = customerId.Value }, conn, tx);
 
-            var rowData = new Dictionary<string, object?>
-            {
-                ["customer_id"] = customerId.Value,
-                ["sale_invoice_id"] = invId,
-                ["entry_type"] = "invoice",
-                ["is_manual"] = 0,
-                ["entry_date"] = entryDate,
-                ["posted_number"] = postedNo,
-                ["invoice_total"] = invTotal,
-                ["total_received"] = recvOnInv,
-                ["balance_remaining"] = Math.Max(invTotal - recvOnInv, 0m),
-                ["credited_amount"] = 0m,
-                ["payment_ref"] = null,
-                ["description"] = !string.IsNullOrWhiteSpace(invoiceNo) ? $"Invoice #{invoiceNo}" : null
-            };
+            var invoices = await Db.QueryListAsync(@"
+                SELECT *
+                FROM sale_invoices
+                WHERE customer_id = @customerId
+                  AND invoice_type = 'credit'
+                  AND (status IS NULL OR status != 'reversed')",
+                new { customerId = customerId.Value }, conn, tx);
 
-            if (existing != null)
-            {
-                await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(existing["id"]), rowData, "id", conn, tx);
-            }
-            else
-            {
-                await Db.InsertAsync("customer_ledgers", rowData, conn, tx);
-            }
+            var invIds = invoices.Select(i => Convert.ToInt64(i["id"])).ToList();
+            var allocatedByInvoice = await SupplierLedgerController.SumAllocatedByInvoiceIdsAsync(Db, "sale_invoice", invIds, conn, tx);
 
-            var payRef = $"Inv #{postedNo}";
-            if (excess > 0m && !string.IsNullOrWhiteSpace(postedNo))
+            foreach (var inv in invoices)
             {
-                var existingPay = await Db.QuerySingleOrDefaultAsync(@"
+                var invId = Convert.ToInt64(inv["id"]);
+                var invTotal = ReadInvoiceTotal(inv);
+                var rawRecv = ReadInvoiceReceived(inv);
+                var allocated = allocatedByInvoice.TryGetValue(invId, out var al) ? al : 0m;
+                var recv = Math.Max(0m, rawRecv - allocated);
+                var recvOnInv = Math.Min(recv, invTotal);
+                var excess = Math.Max(0m, recv - invTotal);
+
+                var entryDate = DateStr(inv.GetValueOrDefault("date")?.ToString(), DateTime.UtcNow.ToString("yyyy-MM-dd"));
+                var postedNo = FirstNonEmpty(inv.GetValueOrDefault("posted_number")?.ToString(), inv.GetValueOrDefault("invoice_no")?.ToString());
+                var invoiceNo = inv.GetValueOrDefault("invoice_no")?.ToString();
+
+                var existing = await Db.QuerySingleOrDefaultAsync(@"
                     SELECT id FROM customer_ledgers
                     WHERE customer_id = @customerId
-                      AND payment_ref = @payRef
-                      AND entry_type = 'payment'
+                      AND sale_invoice_id = @invId
+                      AND entry_type = 'invoice'
                       AND is_manual = 0
                     LIMIT 1",
-                    new { customerId = customerId.Value, payRef }, conn, tx);
+                    new { customerId = customerId.Value, invId }, conn, tx);
 
-                var payData = new Dictionary<string, object?>
+                var rowData = new Dictionary<string, object?>
                 {
                     ["customer_id"] = customerId.Value,
-                    ["sale_invoice_id"] = null,
-                    ["entry_type"] = "payment",
+                    ["sale_invoice_id"] = invId,
+                    ["entry_type"] = "invoice",
                     ["is_manual"] = 0,
                     ["entry_date"] = entryDate,
                     ["posted_number"] = postedNo,
-                    ["invoice_total"] = 0m,
-                    ["total_received"] = 0m,
-                    ["balance_remaining"] = 0m,
-                    ["credited_amount"] = excess,
-                    ["payment_ref"] = payRef,
-                    ["description"] = $"Payment received on invoice {postedNo}"
+                    ["invoice_total"] = invTotal,
+                    ["total_received"] = recvOnInv,
+                    ["balance_remaining"] = Math.Max(invTotal - recvOnInv, 0m),
+                    ["credited_amount"] = 0m,
+                    ["payment_ref"] = null,
+                    ["description"] = !string.IsNullOrWhiteSpace(invoiceNo) ? $"Invoice #{invoiceNo}" : null
                 };
 
-                if (existingPay != null)
+                if (existing != null)
                 {
-                    await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(existingPay["id"]), payData, "id", conn, tx);
+                    await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(existing["id"]), rowData, "id", conn, tx);
                 }
                 else
                 {
-                    await Db.InsertAsync("customer_ledgers", payData, conn, tx);
+                    await Db.InsertAsync("customer_ledgers", rowData, conn, tx);
+                }
+
+                var payRef = $"Inv #{postedNo}";
+                if (excess > 0m && !string.IsNullOrWhiteSpace(postedNo))
+                {
+                    var existingPay = await Db.QuerySingleOrDefaultAsync(@"
+                        SELECT id FROM customer_ledgers
+                        WHERE customer_id = @customerId
+                          AND payment_ref = @payRef
+                          AND entry_type = 'payment'
+                          AND is_manual = 0
+                        LIMIT 1",
+                        new { customerId = customerId.Value, payRef }, conn, tx);
+
+                    var payData = new Dictionary<string, object?>
+                    {
+                        ["customer_id"] = customerId.Value,
+                        ["sale_invoice_id"] = null,
+                        ["entry_type"] = "payment",
+                        ["is_manual"] = 0,
+                        ["entry_date"] = entryDate,
+                        ["posted_number"] = postedNo,
+                        ["invoice_total"] = 0m,
+                        ["total_received"] = 0m,
+                        ["balance_remaining"] = 0m,
+                        ["credited_amount"] = excess,
+                        ["payment_ref"] = payRef,
+                        ["description"] = $"Payment received on invoice {postedNo}"
+                    };
+
+                    if (existingPay != null)
+                    {
+                        await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(existingPay["id"]), payData, "id", conn, tx);
+                    }
+                    else
+                    {
+                        await Db.InsertAsync("customer_ledgers", payData, conn, tx);
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(postedNo))
+                {
+                    await conn.ExecuteAsync(@"
+                        DELETE FROM customer_ledgers
+                        WHERE customer_id = @customerId
+                          AND payment_ref = @payRef
+                          AND entry_type = 'payment'
+                          AND is_manual = 0",
+                        new { customerId = customerId.Value, payRef }, tx);
                 }
             }
-            else if (!string.IsNullOrWhiteSpace(postedNo))
-            {
-                await conn.ExecuteAsync(@"
-                    DELETE FROM customer_ledgers
-                    WHERE customer_id = @customerId
-                      AND payment_ref = @payRef
-                      AND entry_type = 'payment'
-                      AND is_manual = 0",
-                    new { customerId = customerId.Value, payRef }, tx);
-            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await tx.CommitAsync();
         return Ok(new { status = "ok", message = "Rebuilt from sale invoices" });
     }
 
@@ -689,6 +728,14 @@ public class CustomerLedgerController : ApiControllerBase
             });
         }
 
+        if (string.Equals(invoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+        {
+            return Unprocessable("Cannot settle a reversed invoice.", new Dictionary<string, string[]>
+            {
+                ["sale_invoice_id"] = new[] { "Cannot settle a reversed invoice." }
+            });
+        }
+
         var invoiceTotal = ReadInvoiceTotal(invoice);
         var received = ReadInvoiceReceived(invoice);
         var balance = Math.Round(Math.Max(invoiceTotal - received, 0m), 2);
@@ -703,148 +750,223 @@ public class CustomerLedgerController : ApiControllerBase
             });
         }
 
-        var customerId = Convert.ToInt64(invoice["customer_id"]);
         var payMethod = GetString(body, "payment_method") ?? "cash";
         var entryDate = DateStr(GetString(body, "entry_date"), DateTime.UtcNow.ToString("yyyy-MM-dd"))!;
         var accountId = GetNullableLong(body, "account_id");
-        var postedNumber = FirstNonEmpty(invoice.GetValueOrDefault("posted_number")?.ToString(), invoice.GetValueOrDefault("invoice_no")?.ToString());
-        var refLabel = !string.IsNullOrWhiteSpace(postedNumber) ? postedNumber : $"#{saleInvoiceId.Value}";
+
+        var hasPayments = await Db.HasTableAsync("payments") && await Db.HasTableAsync("payment_allocations");
+        var hasAccounts = await Db.HasTableAsync("accounts");
+
+        await Db.GetTableColumnsAsync("sale_invoices");
+        await Db.GetTableColumnsAsync("customer_ledgers");
+        if (hasPayments)
+        {
+            await Db.GetTableColumnsAsync("payments");
+            await Db.GetTableColumnsAsync("payment_allocations");
+            await Db.GetTableColumnsAsync("accounts");
+            await Db.GetTableColumnsAsync("account_transactions");
+            await Db.GetTableColumnsAsync("cash_drawer_sessions");
+            await Db.GetTableColumnsAsync("cash_drawer_transactions");
+        }
+
+        string? payNo = hasPayments
+            ? await new DocumentSequenceService(Db).NextAsync("payment", "PAY-", 5, "payments", "payment_number")
+            : null;
 
         long? paymentId = null;
+        Dictionary<string, object?>? paymentRowForAudit = null;
+        var touchedDrawer = false;
+        string? postedNumber;
+        string refLabel;
 
-        if (await Db.HasTableAsync("payments") && await Db.HasTableAsync("payment_allocations"))
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+
+        try
         {
-            var payNo = await new DocumentSequenceService(Db).NextAsync("payment", "PAY-", 5, "payments", "payment_number");
-
-            Dictionary<string, object?>? account = null;
-            if (await Db.HasTableAsync("accounts"))
+            var lockedInvoice = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = saleInvoiceId.Value }, conn, tx);
+            if (lockedInvoice == null)
             {
-                if (accountId.HasValue)
+                await tx.RollbackAsync();
+                return Unprocessable("The selected sale_invoice_id is invalid.", new Dictionary<string, string[]>
                 {
-                    account = await Db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId.Value });
-                }
-                if (account == null)
-                {
-                    var accType = (string.Equals(payMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
-                                   string.Equals(payMethod, "cheque", StringComparison.OrdinalIgnoreCase)) ? "bank" : payMethod;
-                    account = await Db.QuerySingleOrDefaultAsync(
-                        "SELECT * FROM accounts WHERE is_active = 1 AND (type = @t OR is_default = 1) ORDER BY CASE WHEN type = @t AND is_default = 1 THEN 0 WHEN type = @t THEN 1 ELSE 2 END, id ASC LIMIT 1",
-                        new { t = accType });
-                    if (account != null) accountId = Convert.ToInt64(account["id"]);
-                }
-            }
-
-            paymentId = await Db.InsertAsync("payments", new Dictionary<string, object?>
-            {
-                ["payment_number"] = payNo,
-                ["party_type"] = "customer",
-                ["party_id"] = customerId,
-                ["payment_date"] = entryDate,
-                ["amount"] = balance,
-                ["allocated_amount"] = balance,
-                ["unapplied_amount"] = 0m,
-                ["payment_method"] = payMethod,
-                ["account_id"] = accountId,
-                ["reference"] = $"Inv #{postedNumber ?? saleInvoiceId.Value.ToString()}",
-                ["notes"] = $"Settled Sale Invoice {refLabel}",
-                ["status"] = "posted",
-                ["created_by_id"] = CurrentUserId
-            });
-
-            await Db.InsertAsync("payment_allocations", new Dictionary<string, object?>
-            {
-                ["payment_id"] = paymentId.Value,
-                ["invoice_type"] = "sale_invoice",
-                ["invoice_id"] = saleInvoiceId.Value,
-                ["amount"] = balance
-            });
-
-            await Db.UpdateAsync("sale_invoices", saleInvoiceId.Value, new Dictionary<string, object?>
-            {
-                ["total_receive"] = invoiceTotal
-            });
-
-            await Db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
-            {
-                ["customer_id"] = customerId,
-                ["sale_invoice_id"] = null,
-                ["payment_id"] = paymentId.Value,
-                ["entry_type"] = "payment",
-                ["entry_date"] = entryDate,
-                ["posted_number"] = payNo,
-                ["invoice_total"] = 0m,
-                ["total_received"] = 0m,
-                ["balance_remaining"] = 0m,
-                ["credited_amount"] = balance,
-                ["payment_ref"] = $"Inv #{postedNumber ?? saleInvoiceId.Value.ToString()}",
-                ["description"] = $"Settled Sale Invoice {refLabel} ({payNo})",
-                ["is_manual"] = 0,
-                ["created_by"] = CurrentUserId
-            });
-
-            var accountSvc = new AccountService(Db);
-            if (account != null && accountId.HasValue)
-            {
-                await accountSvc.DepositAsync(
-                    account,
-                    balance,
-                    "customer_payment",
-                    paymentId.Value,
-                    $"Settled Sale Invoice {refLabel} ({payNo})",
-                    CurrentUserId);
-            }
-
-            if (accountSvc.IsDefaultCashDrawerAccount(account, payMethod))
-            {
-                var cashDrawerSvc = new CashDrawerService(Db);
-                await cashDrawerSvc.RecordTransactionAsync(
-                    null,
-                    "customer_payment",
-                    balance,
-                    "payment",
-                    paymentId.Value,
-                    $"Settled Sale Invoice {refLabel} ({payNo})",
-                    CurrentUserId,
-                    CurrentTerminalId);
-            }
-        }
-        else
-        {
-            await Db.UpdateAsync("sale_invoices", saleInvoiceId.Value, new Dictionary<string, object?>
-            {
-                ["total_receive"] = invoiceTotal
-            });
-
-            var ledgerRow = await Db.QuerySingleOrDefaultAsync(
-                "SELECT * FROM customer_ledgers WHERE sale_invoice_id = @invId AND entry_type = 'invoice' LIMIT 1",
-                new { invId = saleInvoiceId.Value });
-
-            if (ledgerRow != null)
-            {
-                await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(ledgerRow["id"]), new Dictionary<string, object?>
-                {
-                    ["total_received"] = invoiceTotal,
-                    ["balance_remaining"] = 0m
+                    ["sale_invoice_id"] = new[] { "The selected sale_invoice_id is invalid." }
                 });
             }
-            else
+
+            if (string.Equals(lockedInvoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
             {
+                await tx.RollbackAsync();
+                return Unprocessable("Cannot settle a reversed invoice.", new Dictionary<string, string[]>
+                {
+                    ["sale_invoice_id"] = new[] { "Cannot settle a reversed invoice." }
+                });
+            }
+
+            invoiceTotal = ReadInvoiceTotal(lockedInvoice);
+            received = ReadInvoiceReceived(lockedInvoice);
+            balance = Math.Round(Math.Max(invoiceTotal - received, 0m), 2);
+            if (balance <= 0m)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Invoice is already fully paid.", new Dictionary<string, string[]>
+                {
+                    ["sale_invoice_id"] = new[] { "Invoice is already fully paid." }
+                });
+            }
+
+            var customerId = Convert.ToInt64(lockedInvoice["customer_id"]);
+            postedNumber = FirstNonEmpty(lockedInvoice.GetValueOrDefault("posted_number")?.ToString(), lockedInvoice.GetValueOrDefault("invoice_no")?.ToString());
+            refLabel = !string.IsNullOrWhiteSpace(postedNumber) ? postedNumber : $"#{saleInvoiceId.Value}";
+
+            if (hasPayments)
+            {
+                var accountSvc = new AccountService(Db);
+                Dictionary<string, object?>? account = hasAccounts
+                    ? await accountSvc.ResolveAccountInTxAsync(accountId, payMethod, conn, tx)
+                    : null;
+                if (account != null) accountId = AccountService.ToLong(account["id"]);
+
+                paymentId = await Db.InsertAsync("payments", new Dictionary<string, object?>
+                {
+                    ["payment_number"] = payNo,
+                    ["party_type"] = "customer",
+                    ["party_id"] = customerId,
+                    ["payment_date"] = entryDate,
+                    ["amount"] = balance,
+                    ["allocated_amount"] = balance,
+                    ["unapplied_amount"] = 0m,
+                    ["payment_method"] = payMethod,
+                    ["account_id"] = accountId,
+                    ["reference"] = $"Inv #{postedNumber ?? saleInvoiceId.Value.ToString()}",
+                    ["notes"] = $"Settled Sale Invoice {refLabel}",
+                    ["status"] = "posted",
+                    ["created_by_id"] = CurrentUserId
+                }, conn, tx);
+
+                await Db.InsertAsync("payment_allocations", new Dictionary<string, object?>
+                {
+                    ["payment_id"] = paymentId.Value,
+                    ["invoice_type"] = "sale_invoice",
+                    ["invoice_id"] = saleInvoiceId.Value,
+                    ["amount"] = balance
+                }, conn, tx);
+
+                await Db.UpdateAsync("sale_invoices", saleInvoiceId.Value, new Dictionary<string, object?>
+                {
+                    ["total_receive"] = invoiceTotal
+                }, "id", conn, tx);
+
                 await Db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
                 {
                     ["customer_id"] = customerId,
-                    ["sale_invoice_id"] = saleInvoiceId.Value,
-                    ["entry_type"] = "invoice",
-                    ["is_manual"] = 0,
+                    ["sale_invoice_id"] = null,
+                    ["payment_id"] = paymentId.Value,
+                    ["entry_type"] = "payment",
                     ["entry_date"] = entryDate,
-                    ["posted_number"] = postedNumber,
-                    ["invoice_total"] = invoiceTotal,
-                    ["total_received"] = invoiceTotal,
+                    ["posted_number"] = payNo,
+                    ["invoice_total"] = 0m,
+                    ["total_received"] = 0m,
                     ["balance_remaining"] = 0m,
-                    ["credited_amount"] = 0m,
-                    ["description"] = $"Sale invoice {refLabel} (marked paid)",
+                    ["credited_amount"] = balance,
+                    ["payment_ref"] = $"Inv #{postedNumber ?? saleInvoiceId.Value.ToString()}",
+                    ["description"] = $"Settled Sale Invoice {refLabel} ({payNo})",
+                    ["is_manual"] = 0,
                     ["created_by"] = CurrentUserId
-                });
+                }, conn, tx);
+
+                if (account != null && accountId.HasValue)
+                {
+                    await accountSvc.DepositInTxAsync(
+                        account,
+                        balance,
+                        "customer_payment",
+                        paymentId.Value,
+                        $"Settled Sale Invoice {refLabel} ({payNo})",
+                        CurrentUserId,
+                        conn,
+                        tx);
+                }
+
+                if (accountSvc.IsDefaultCashDrawerAccount(account, payMethod))
+                {
+                    var cashDrawerSvc = new CashDrawerService(Db);
+                    var drawerTxn = await cashDrawerSvc.RecordTransactionInTxAsync(
+                        null,
+                        "customer_payment",
+                        balance,
+                        "payment",
+                        paymentId.Value,
+                        $"Settled Sale Invoice {refLabel} ({payNo})",
+                        CurrentUserId,
+                        CurrentTerminalId,
+                        conn,
+                        tx);
+                    touchedDrawer = drawerTxn != null;
+                }
+
+                paymentRowForAudit = await Db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId.Value }, conn, tx);
             }
+            else
+            {
+                await Db.UpdateAsync("sale_invoices", saleInvoiceId.Value, new Dictionary<string, object?>
+                {
+                    ["total_receive"] = invoiceTotal
+                }, "id", conn, tx);
+
+                var ledgerRow = await Db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM customer_ledgers WHERE sale_invoice_id = @invId AND entry_type = 'invoice' LIMIT 1",
+                    new { invId = saleInvoiceId.Value }, conn, tx);
+
+                if (ledgerRow != null)
+                {
+                    await Db.UpdateAsync("customer_ledgers", Convert.ToInt64(ledgerRow["id"]), new Dictionary<string, object?>
+                    {
+                        ["total_received"] = invoiceTotal,
+                        ["balance_remaining"] = 0m
+                    }, "id", conn, tx);
+                }
+                else
+                {
+                    await Db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
+                    {
+                        ["customer_id"] = customerId,
+                        ["sale_invoice_id"] = saleInvoiceId.Value,
+                        ["entry_type"] = "invoice",
+                        ["is_manual"] = 0,
+                        ["entry_date"] = entryDate,
+                        ["posted_number"] = postedNumber,
+                        ["invoice_total"] = invoiceTotal,
+                        ["total_received"] = invoiceTotal,
+                        ["balance_remaining"] = 0m,
+                        ["credited_amount"] = 0m,
+                        ["description"] = $"Sale invoice {refLabel} (marked paid)",
+                        ["created_by"] = CurrentUserId
+                    }, conn, tx);
+                }
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+
+        if (touchedDrawer)
+        {
+            SyncPulseService.Bump("drawer");
+        }
+
+        if (paymentId.HasValue && paymentRowForAudit != null)
+        {
+            await new DocumentAuditService(Db).RecordCreateAsync(
+                "payment",
+                paymentId.Value,
+                paymentRowForAudit,
+                CurrentUserId,
+                $"Settled Sale Invoice {refLabel}");
         }
 
         return Ok(new

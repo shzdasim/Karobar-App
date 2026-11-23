@@ -76,6 +76,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "installrootcert"; Description: "Trust self-signed developer certificate in Windows certificate stores (optional; only for self-signed builds)"; GroupDescription: "Security:"; Flags: unchecked
 
 [Dirs]
 Name: "{app}\database"; Permissions: users-modify
@@ -106,14 +107,16 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; IconFilename
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Run]
-; Install Developer Authenticode Certificate into local Trusted Root & Trusted Publishers store so Karobar-App.exe is trusted on this PC
+; Optional opt-in: Install Developer Authenticode Certificate into local Trusted Root & Trusted Publishers store only when explicitly selected by user
 Filename: "{sys}\certutil.exe"; \
   Parameters: "-addstore -f ""Root"" ""{app}\assets\MalikAsimShahzad-KarobarERP.cer"""; \
+  Tasks: installrootcert; \
   Flags: runhidden waituntilterminated; \
   Check: FileExists(ExpandConstant('{app}\assets\MalikAsimShahzad-KarobarERP.cer'))
 
 Filename: "{sys}\certutil.exe"; \
   Parameters: "-addstore -f ""TrustedPublisher"" ""{app}\assets\MalikAsimShahzad-KarobarERP.cer"""; \
+  Tasks: installrootcert; \
   Flags: runhidden waituntilterminated; \
   Check: FileExists(ExpandConstant('{app}\assets\MalikAsimShahzad-KarobarERP.cer'))
 

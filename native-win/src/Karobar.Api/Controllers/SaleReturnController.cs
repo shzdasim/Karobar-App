@@ -158,8 +158,10 @@ public class SaleReturnController : ApiControllerBase
                 "posted_number",
                 true);
 
+            await PrewarmWriteSchemaAsync();
+
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
@@ -269,11 +271,21 @@ public class SaleReturnController : ApiControllerBase
             var calculated = await _calculationService.CalculateAndValidateSaleReturnAsync(rawData, rawItems);
             var calcItems = (List<Dictionary<string, object?>>)calculated["items"]!;
 
+            await PrewarmWriteSchemaAsync();
+
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
+                var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id }, conn, tx);
+                if (lockedExisting == null)
+                {
+                    await tx.RollbackAsync();
+                    return NotFound(new { message = "Sale return not found." });
+                }
+                existing = lockedExisting;
+
                 var oldSnapshot = new Dictionary<string, object?>
                 {
                     ["total"] = ToDouble(existing.GetValueOrDefault("total")),
@@ -370,11 +382,21 @@ public class SaleReturnController : ApiControllerBase
         var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id });
         if (existing == null) return NotFound(new { message = "Sale return not found." });
 
+        await PrewarmWriteSchemaAsync();
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_returns WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Sale return not found." });
+            }
+            existing = lockedExisting;
+
             await _settlementService.RevertSaleReturnSettlementAsync(existing, CurrentUserId, conn, tx, CurrentTerminalId);
 
             var oldItems = await Db.QueryListAsync("SELECT * FROM sale_return_items WHERE sale_return_id = @id", new { id }, conn, tx);
@@ -398,6 +420,22 @@ public class SaleReturnController : ApiControllerBase
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task PrewarmWriteSchemaAsync()
+    {
+        await Db.GetTableColumnsAsync("sale_returns");
+        await Db.GetTableColumnsAsync("sale_return_items");
+        await Db.GetTableColumnsAsync("sale_invoices");
+        await Db.GetTableColumnsAsync("batches");
+        await Db.GetTableColumnsAsync("products");
+        await Db.GetTableColumnsAsync("accounts");
+        await Db.GetTableColumnsAsync("account_transactions");
+        await Db.GetTableColumnsAsync("cash_drawer_sessions");
+        await Db.GetTableColumnsAsync("cash_drawer_transactions");
+        await Db.GetTableColumnsAsync("customer_ledgers");
+        await Db.GetTableColumnsAsync("payments");
+        await Db.GetTableColumnsAsync("payment_allocations");
     }
 
     private async Task CreateItemsAndIncreaseAsync(

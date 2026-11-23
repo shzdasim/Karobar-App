@@ -67,59 +67,72 @@ public class StorageLocationController : ApiControllerBase
             });
         }
 
-        var code = GetString(body, "code")?.Trim() ?? "";
-        if (string.IsNullOrEmpty(code))
-        {
-            var slug = Regex.Replace(name.ToUpperInvariant(), @"[^A-Z0-9]+", "-").Trim('-');
-            if (string.IsNullOrEmpty(slug)) slug = "LOC";
-            var baseCode = slug.Length > 20 ? slug[..20] : slug;
-            code = baseCode;
-            int counter = 1;
-            while (await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code", new { code }) > 0)
-            {
-                counter++;
-                code = $"{baseCode}-{counter}";
-            }
-        }
-        else
-        {
-            code = code.ToUpperInvariant();
-            var exists = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code", new { code });
-            if (exists > 0)
-            {
-                return Unprocessable("The code has already been taken.", new Dictionary<string, string[]>
-                {
-                    ["code"] = ["The code has already been taken."]
-                });
-            }
-        }
-
+        var rawCode = GetString(body, "code")?.Trim() ?? "";
         var type = GetString(body, "type", "shop") ?? "shop";
         var defaultRack = GetString(body, "default_rack")?.Trim();
         var isDefault = GetBool(body, "is_default", false);
         var isActive = GetBool(body, "is_active", true);
         var notes = GetString(body, "notes")?.Trim();
 
+        await Db.GetTableColumnsAsync("storage_locations");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        if (isDefault)
+        long id;
+        try
         {
-            await conn.ExecuteAsync("UPDATE storage_locations SET is_default = 0 WHERE is_default = 1", transaction: tx);
+            string code;
+            if (string.IsNullOrEmpty(rawCode))
+            {
+                var slug = Regex.Replace(name.ToUpperInvariant(), @"[^A-Z0-9]+", "-").Trim('-');
+                if (string.IsNullOrEmpty(slug)) slug = "LOC";
+                var baseCode = slug.Length > 20 ? slug[..20] : slug;
+                code = baseCode;
+                int counter = 1;
+                while (await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code", new { code }, conn, tx) > 0)
+                {
+                    counter++;
+                    code = $"{baseCode}-{counter}";
+                }
+            }
+            else
+            {
+                code = rawCode.ToUpperInvariant();
+                var exists = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code", new { code }, conn, tx);
+                if (exists > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("The code has already been taken.", new Dictionary<string, string[]>
+                    {
+                        ["code"] = ["The code has already been taken."]
+                    });
+                }
+            }
+
+            if (isDefault)
+            {
+                await conn.ExecuteAsync("UPDATE storage_locations SET is_default = 0 WHERE is_default = 1", transaction: tx);
+            }
+
+            id = await Db.InsertAsync("storage_locations", new Dictionary<string, object?>
+            {
+                ["name"] = name,
+                ["code"] = code,
+                ["type"] = type,
+                ["default_rack"] = string.IsNullOrEmpty(defaultRack) ? null : defaultRack,
+                ["is_default"] = isDefault,
+                ["is_active"] = isActive,
+                ["notes"] = string.IsNullOrEmpty(notes) ? null : notes
+            }, conn, tx);
+
+            await tx.CommitAsync();
         }
-
-        var id = await Db.InsertAsync("storage_locations", new Dictionary<string, object?>
+        catch
         {
-            ["name"] = name,
-            ["code"] = code,
-            ["type"] = type,
-            ["default_rack"] = string.IsNullOrEmpty(defaultRack) ? null : defaultRack,
-            ["is_default"] = isDefault,
-            ["is_active"] = isActive,
-            ["notes"] = string.IsNullOrEmpty(notes) ? null : notes
-        }, conn, tx);
-
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var location = await Db.QuerySingleOrDefaultAsync(@"
             SELECT sl.*,
@@ -159,41 +172,59 @@ public class StorageLocationController : ApiControllerBase
             });
         }
 
-        var dup = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code AND id != @id", new { code, id });
-        if (dup > 0)
-        {
-            return Unprocessable("The code has already been taken.", new Dictionary<string, string[]>
-            {
-                ["code"] = ["The code has already been taken."]
-            });
-        }
-
-        var isDefault = body.ContainsKey("is_default") ? GetBool(body, "is_default") : (existing["is_default"] is true);
-        var isActive = body.ContainsKey("is_active") ? GetBool(body, "is_active", true) : (existing["is_active"] is true);
-        var type = GetString(body, "type") ?? existing["type"]?.ToString() ?? "shop";
-        var defaultRack = body.ContainsKey("default_rack") ? (GetString(body, "default_rack")?.Trim() is { Length: > 0 } dr ? dr : null) : existing["default_rack"]?.ToString();
-        var notes = body.ContainsKey("notes") ? (GetString(body, "notes")?.Trim() is { Length: > 0 } nt ? nt : null) : existing["notes"]?.ToString();
+        await Db.GetTableColumnsAsync("storage_locations");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        if (isDefault)
+        try
         {
-            await conn.ExecuteAsync("UPDATE storage_locations SET is_default = 0 WHERE id != @id", new { id }, tx);
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM storage_locations WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Storage location not found." });
+            }
+
+            var dup = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM storage_locations WHERE code = @code AND id != @id", new { code, id }, conn, tx);
+            if (dup > 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("The code has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["code"] = ["The code has already been taken."]
+                });
+            }
+
+            var isDefault = body.ContainsKey("is_default") ? GetBool(body, "is_default") : (lockedExisting["is_default"] is true or 1 or 1L);
+            var isActive = body.ContainsKey("is_active") ? GetBool(body, "is_active", true) : (lockedExisting["is_active"] is true or 1 or 1L);
+            var type = GetString(body, "type") ?? lockedExisting["type"]?.ToString() ?? "shop";
+            var defaultRack = body.ContainsKey("default_rack") ? (GetString(body, "default_rack")?.Trim() is { Length: > 0 } dr ? dr : null) : lockedExisting["default_rack"]?.ToString();
+            var notes = body.ContainsKey("notes") ? (GetString(body, "notes")?.Trim() is { Length: > 0 } nt ? nt : null) : lockedExisting["notes"]?.ToString();
+
+            if (isDefault)
+            {
+                await conn.ExecuteAsync("UPDATE storage_locations SET is_default = 0 WHERE id != @id", new { id }, tx);
+            }
+
+            await Db.UpdateAsync("storage_locations", id, new Dictionary<string, object?>
+            {
+                ["name"] = name,
+                ["code"] = code,
+                ["type"] = type,
+                ["default_rack"] = defaultRack,
+                ["is_default"] = isDefault,
+                ["is_active"] = isActive,
+                ["notes"] = notes
+            }, "id", conn, tx);
+
+            await tx.CommitAsync();
         }
-
-        await Db.UpdateAsync("storage_locations", id, new Dictionary<string, object?>
+        catch
         {
-            ["name"] = name,
-            ["code"] = code,
-            ["type"] = type,
-            ["default_rack"] = defaultRack,
-            ["is_default"] = isDefault,
-            ["is_active"] = isActive,
-            ["notes"] = notes
-        }, "id", conn, tx);
-
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var location = await Db.QuerySingleOrDefaultAsync(@"
             SELECT sl.*,
@@ -210,36 +241,52 @@ public class StorageLocationController : ApiControllerBase
     {
         if (!await CanAsync(ManagePermissions)) return Forbidden();
 
-        var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM storage_locations WHERE id = @id", new { id });
-        if (existing == null) return NotFound(new { message = "Storage location not found." });
-
-        if (existing["is_default"] is true)
-        {
-            return Unprocessable("Cannot delete the default storage location. Mark another location as default first.", new Dictionary<string, string[]>
-            {
-                ["storage_location"] = ["Cannot delete the default storage location. Mark another location as default first."]
-            });
-        }
+        var hasProdLocCol = await Db.HasColumnAsync("products", "storage_location_id");
+        var hasBatchLocCol = await Db.HasTableAsync("batches") && await Db.HasColumnAsync("batches", "storage_location_id");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        var fallbackId = await conn.ExecuteScalarAsync<long?>(
-            "SELECT id FROM storage_locations WHERE is_default = 1 AND id != @id LIMIT 1", new { id }, tx)
-            ?? await conn.ExecuteScalarAsync<long?>(
-            "SELECT id FROM storage_locations WHERE id != @id ORDER BY id ASC LIMIT 1", new { id }, tx);
-
-        if (await Db.HasColumnAsync("products", "storage_location_id"))
+        try
         {
-            await conn.ExecuteAsync("UPDATE products SET storage_location_id = @fallbackId WHERE storage_location_id = @id", new { fallbackId, id }, tx);
-        }
-        if (await Db.HasTableAsync("batches") && await Db.HasColumnAsync("batches", "storage_location_id"))
-        {
-            await conn.ExecuteAsync("UPDATE batches SET storage_location_id = @fallbackId WHERE storage_location_id = @id", new { fallbackId, id }, tx);
-        }
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM storage_locations WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Storage location not found." });
+            }
 
-        await conn.ExecuteAsync("DELETE FROM storage_locations WHERE id = @id", new { id }, tx);
-        await tx.CommitAsync();
+            if (lockedExisting["is_default"] is true or 1 or 1L)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Cannot delete the default storage location. Mark another location as default first.", new Dictionary<string, string[]>
+                {
+                    ["storage_location"] = ["Cannot delete the default storage location. Mark another location as default first."]
+                });
+            }
+
+            var fallbackId = await conn.ExecuteScalarAsync<long?>(
+                "SELECT id FROM storage_locations WHERE is_default = 1 AND id != @id LIMIT 1", new { id }, tx)
+                ?? await conn.ExecuteScalarAsync<long?>(
+                "SELECT id FROM storage_locations WHERE id != @id ORDER BY id ASC LIMIT 1", new { id }, tx);
+
+            if (hasProdLocCol)
+            {
+                await conn.ExecuteAsync("UPDATE products SET storage_location_id = @fallbackId WHERE storage_location_id = @id", new { fallbackId, id }, tx);
+            }
+            if (hasBatchLocCol)
+            {
+                await conn.ExecuteAsync("UPDATE batches SET storage_location_id = @fallbackId WHERE storage_location_id = @id", new { fallbackId, id }, tx);
+            }
+
+            await conn.ExecuteAsync("DELETE FROM storage_locations WHERE id = @id", new { id }, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new { message = "Storage location deleted successfully." });
     }

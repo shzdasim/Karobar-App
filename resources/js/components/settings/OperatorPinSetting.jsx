@@ -3,6 +3,13 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import SettingSwitch from "@/components/settings/SettingSwitch.jsx";
 import {
+  extractApiErrorMessage,
+  getDirectoryAssignedCount,
+  hasStaffPin,
+  isValidFourDigitPin,
+  normalizePinDigits,
+} from "@/utils/operatorPinHelpers.js";
+import {
   KeyIcon,
   ShieldCheckIcon,
   UserGroupIcon,
@@ -56,15 +63,7 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
       const users = Array.isArray(data?.users) ? data.users : [];
       const employees = Array.isArray(data?.employees) ? data.employees : [];
       setDirectory({ users, employees });
-
-      const nextDrafts = {};
-      users.forEach((u) => {
-        nextDrafts[`user:${u.id}`] = u.pin_code || "";
-      });
-      employees.forEach((e) => {
-        nextDrafts[`employee:${e.id}`] = e.pin_code || "";
-      });
-      setPinDrafts(nextDrafts);
+      setPinDrafts({});
     } catch (err) {
       console.error("Failed to load operator PIN directory:", err);
     } finally {
@@ -93,18 +92,18 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
     try {
       const { data } = await axios.get("/api/operator-pins/generate");
       if (data?.pin_code) {
-        setPinDrafts((prev) => ({ ...prev, [key]: data.pin_code }));
+        setPinDrafts((prev) => ({ ...prev, [key]: normalizePinDigits(data.pin_code) }));
         setRevealedKeys((prev) => ({ ...prev, [key]: true }));
       }
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to generate 4-digit code.");
+      toast.error(extractApiErrorMessage(err, "Failed to generate 4-digit code."));
     }
   };
 
   const handleAssign = async (type, id) => {
     const key = `${type}:${id}`;
-    const raw = String(pinDrafts[key] ?? "").trim();
-    if (raw !== "" && !/^\d{4}$/.test(raw)) {
+    const raw = normalizePinDigits(pinDrafts[key] ?? "");
+    if (!isValidFourDigitPin(raw)) {
       toast.error("Operator code must be exactly 4 numeric digits (0000-9999).");
       return;
     }
@@ -114,30 +113,42 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
       const { data } = await axios.put("/api/operator-pins/assign", {
         type,
         id,
-        pin_code: raw === "" ? null : raw,
+        pin_code: raw,
       });
       toast.success(data?.message || "4-digit code updated.");
       await fetchDirectory();
     } catch (err) {
-      toast.error(
-        err?.response?.data?.errors?.pin_code?.[0] ||
-          err?.response?.data?.message ||
-          "Failed to assign 4-digit code."
-      );
+      toast.error(extractApiErrorMessage(err, "Failed to assign 4-digit code."));
     } finally {
       setSavingKey(null);
     }
   };
 
-  const assignedCount =
-    directory.users.filter((u) => Boolean(u.pin_code) && u.status === "active").length +
-    directory.employees.filter((e) => !e.user_id && Boolean(e.pin_code) && e.status === "active").length;
+  const handleClearPin = async (type, id) => {
+    const key = `${type}:${id}`;
+    setSavingKey(key);
+    try {
+      const { data } = await axios.put("/api/operator-pins/assign", {
+        type,
+        id,
+        pin_code: null,
+      });
+      toast.success(data?.message || "4-digit code cleared.");
+      await fetchDirectory();
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err, "Failed to clear 4-digit code."));
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const assignedCount = getDirectoryAssignedCount(directory.users, directory.employees);
 
   const renderStaffRow = (type, item) => {
     const key = `${type}:${item.id}`;
     const draft = pinDrafts[key] ?? "";
-    const saved = item.pin_code || "";
-    const isDirty = draft !== saved;
+    const hasPin = hasStaffPin(item);
+    const canSave = isValidFourDigitPin(draft);
     const isRevealed = Boolean(revealedKeys[key]);
     const isInactive = item.status !== "active";
 
@@ -159,7 +170,7 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
           </div>
         </td>
         <td className="py-2.5 px-3">
-          {saved ? (
+          {hasPin ? (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full">
               <CheckCircleIcon className="w-3.5 h-3.5" />
               Assigned
@@ -180,11 +191,11 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
                 disabled={disableInputs || savingKey === key}
                 value={draft}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  const val = normalizePinDigits(e.target.value);
                   setPinDrafts((prev) => ({ ...prev, [key]: val }));
                 }}
-                placeholder="4 digits"
-                className="w-24 px-2.5 py-1 pr-7 text-xs font-mono tracking-widest rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={hasPin ? "•••• (set)" : "4 digits"}
+                className="w-28 px-2.5 py-1 pr-7 text-xs font-mono tracking-widest rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
                 type="button"
@@ -207,12 +218,23 @@ export default function OperatorPinSetting({ form, setForm, disableInputs = fals
             </button>
             <button
               type="button"
-              disabled={disableInputs || savingKey === key || !isDirty}
+              disabled={disableInputs || savingKey === key || !canSave}
               onClick={() => handleAssign(type, item.id)}
               className="px-2.5 py-1 text-[11px] font-semibold rounded-lg theme-btn-primary disabled:opacity-40 cursor-pointer"
             >
               {savingKey === key ? "Saving…" : "Save"}
             </button>
+            {hasPin && (
+              <button
+                type="button"
+                disabled={disableInputs || savingKey === key}
+                onClick={() => handleClearPin(type, item.id)}
+                className="px-2 py-1 text-[11px] font-medium rounded-lg border border-rose-300 dark:border-rose-700/70 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-40 cursor-pointer"
+                title="Clear 4-digit code"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </td>
       </tr>

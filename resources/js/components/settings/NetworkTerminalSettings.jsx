@@ -26,6 +26,7 @@ import {
   CommandLineIcon,
 } from "@heroicons/react/24/solid";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
+import { persistDesktopTerminalPreferences } from "../../utils/uiResilienceHelpers";
 
 export default function NetworkTerminalSettings() {
   const navigate = useNavigate();
@@ -316,13 +317,11 @@ export default function NetworkTerminalSettings() {
     }
     setSavingDesktopCfg(true);
     try {
-      localStorage.setItem("karobar_terminal_name", desktopNetCfg.terminalName);
-      localStorage.setItem("karobar_terminal_mode", desktopNetCfg.mode);
-      if (desktopNetCfg.pairingToken?.trim()) {
-        localStorage.setItem("karobar_pairing_token", desktopNetCfg.pairingToken.trim());
-      } else {
-        localStorage.removeItem("karobar_pairing_token");
-      }
+      persistDesktopTerminalPreferences({
+        storage: typeof localStorage !== "undefined" ? localStorage : null,
+        terminalName: desktopNetCfg.terminalName,
+        mode: desktopNetCfg.mode,
+      });
       await window.karobarDesktop.saveNetworkConfig({
         mode: desktopNetCfg.mode,
         serverUrl: desktopNetCfg.serverUrl,

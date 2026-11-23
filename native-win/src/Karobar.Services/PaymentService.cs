@@ -1,6 +1,8 @@
+using System.Data;
 using System.Globalization;
 using Dapper;
 using Karobar.Services.Infrastructure;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Services;
 
@@ -31,6 +33,54 @@ public class PaymentService
             "payment_number");
     }
 
+    private async Task<bool> HasTableInTxAsync(string tableName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                new { name = tableName },
+                tx);
+            return count > 0;
+        }
+        return await _db.HasTableAsync(tableName);
+    }
+
+    private async Task<bool> HasColumnInTxAsync(string tableName, string columnName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var escaped = tableName.Replace("\"", "\"\"");
+            var rows = await conn.QueryAsync($"PRAGMA table_info(\"{escaped}\")", transaction: tx);
+            foreach (var r in rows)
+            {
+                var dict = (IDictionary<string, object>)r;
+                if (dict.TryGetValue("name", out var nameObj) &&
+                    nameObj != null &&
+                    string.Equals(nameObj.ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return await _db.HasColumnAsync(tableName, columnName);
+    }
+
+    private async Task PrewarmPaymentSchemaCacheAsync()
+    {
+        await _db.GetTableColumnsAsync("payments");
+        await _db.GetTableColumnsAsync("payment_allocations");
+        await _db.GetTableColumnsAsync("sale_invoices");
+        await _db.GetTableColumnsAsync("purchase_invoices");
+        await _db.GetTableColumnsAsync("customer_ledgers");
+        await _db.GetTableColumnsAsync("supplier_ledgers");
+        await _db.GetTableColumnsAsync("accounts");
+        await _db.GetTableColumnsAsync("account_transactions");
+        await _db.GetTableColumnsAsync("cash_drawer_sessions");
+        await _db.GetTableColumnsAsync("cash_drawer_transactions");
+    }
+
     public async Task<Dictionary<string, object?>> RecordCustomerPaymentAsync(
         long customerId,
         Dictionary<string, object?> data,
@@ -59,8 +109,8 @@ public class PaymentService
         }
 
         var allocationsInput = ExtractAllocationsList(data.GetValueOrDefault("allocations"));
-        decimal totalAllocated = 0m;
-        var allocationsToCreate = new List<(Dictionary<string, object?> Invoice, decimal Amount)>();
+        decimal preTotalAllocated = 0m;
+        var preCumulative = new Dictionary<long, decimal>();
 
         foreach (var alloc in allocationsInput)
         {
@@ -84,23 +134,25 @@ public class PaymentService
 
             var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total"));
             var invReceived = AccountService.ToDecimal(invoice.GetValueOrDefault("total_receive") ?? invoice.GetValueOrDefault("total_recieve"));
-            var remainingDue = Math.Max(invTotal - invReceived, 0m);
+            var prevHere = preCumulative.GetValueOrDefault(invoiceId, 0m);
+            var remainingDue = Math.Max(invTotal - (invReceived + prevHere), 0m);
 
             if (allocAmount > remainingDue + 0.001m)
             {
                 throw new InvalidOperationException($"Allocated amount ({allocAmount}) exceeds invoice {invoice.GetValueOrDefault("posted_number")} due balance ({remainingDue}).");
             }
 
-            totalAllocated += allocAmount;
-            allocationsToCreate.Add((invoice, allocAmount));
+            preCumulative[invoiceId] = Math.Round(prevHere + allocAmount, 2);
+            preTotalAllocated = Math.Round(preTotalAllocated + allocAmount, 2);
         }
 
-        if (totalAllocated > amount + 0.001m)
+        if (preTotalAllocated > amount + 0.001m)
         {
-            throw new InvalidOperationException($"Total allocated ({totalAllocated}) exceeds payment amount ({amount}).");
+            throw new InvalidOperationException($"Total allocated ({preTotalAllocated}) exceeds payment amount ({amount}).");
         }
 
-        var unapplied = Math.Round(Math.Max(amount - totalAllocated, 0m), 2);
+        await PrewarmPaymentSchemaCacheAsync();
+        var hasChequeStatusCol = await _db.HasColumnAsync("payments", "cheque_status");
         var paymentNumber = await GeneratePaymentNumberAsync("customer");
         var payMethod = data.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
         var isCheque = payMethod.Equals("cheque", StringComparison.OrdinalIgnoreCase);
@@ -127,114 +179,217 @@ public class PaymentService
         var reference = data.GetValueOrDefault("reference")?.ToString() ?? data.GetValueOrDefault("cheque_number")?.ToString();
         var notes = data.GetValueOrDefault("notes")?.ToString();
 
-        var createPayload = new Dictionary<string, object?>
-        {
-            ["payment_number"] = paymentNumber,
-            ["party_type"] = "customer",
-            ["party_id"] = customerId,
-            ["payment_date"] = paymentDate,
-            ["amount"] = amount,
-            ["allocated_amount"] = totalAllocated,
-            ["unapplied_amount"] = unapplied,
-            ["payment_method"] = payMethod,
-            ["reference"] = reference,
-            ["status"] = "posted",
-            ["notes"] = notes,
-            ["idempotency_key"] = idempotencyKey,
-            ["created_by_id"] = userId
-        };
+        long paymentId = 0;
+        Dictionary<string, object?>? existingInTx = null;
+        Dictionary<string, object?>? paymentRowForAudit = null;
+        bool touchedDrawer = false;
 
-        if (isCheque && await _db.HasColumnAsync("payments", "cheque_status"))
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            createPayload["cheque_number"] = data.GetValueOrDefault("cheque_number")?.ToString() ?? reference;
-            createPayload["bank_name"] = data.GetValueOrDefault("bank_name")?.ToString();
-            createPayload["cheque_date"] = !string.IsNullOrWhiteSpace(chequeDate) ? chequeDate : paymentDate;
-            createPayload["cheque_status"] = chequeStatus;
-            createPayload["cleared_at"] = chequeStatus == "cleared" ? DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") : null;
-        }
-
-        var paymentId = await _db.InsertAsync("payments", createPayload);
-
-        foreach (var item in allocationsToCreate)
-        {
-            var invId = AccountService.ToLong(item.Invoice["id"]);
-            await _db.InsertAsync("payment_allocations", new Dictionary<string, object?>
+            try
             {
-                ["payment_id"] = paymentId,
-                ["invoice_type"] = "sale_invoice",
-                ["invoice_id"] = invId,
-                ["amount"] = item.Amount
-            });
+                if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    existingInTx = await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM payments WHERE idempotency_key = @key LIMIT 1",
+                        new { key = idempotencyKey },
+                        conn,
+                        tx);
+                    if (existingInTx != null)
+                    {
+                        await tx.RollbackAsync();
+                    }
+                }
 
-            var curReceived = AccountService.ToDecimal(item.Invoice.GetValueOrDefault("total_receive"));
-            await _db.UpdateAsync("sale_invoices", invId, new Dictionary<string, object?>
-            {
-                ["total_receive"] = Math.Round(curReceived + item.Amount, 2)
-            });
-        }
+                if (existingInTx == null)
+                {
+                    var liveInvoices = new Dictionary<long, Dictionary<string, object?>>();
+                    var cumulativeAllocByInvoice = new Dictionary<long, decimal>();
+                    var allocationsToCreate = new List<(long InvoiceId, decimal Amount)>();
+                    decimal totalAllocated = 0m;
 
-        if (await _db.HasTableAsync("customer_ledgers"))
-        {
-            var methodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(payMethod.Replace('_', ' '));
-            if (isCheque && !string.IsNullOrWhiteSpace(chequeStatus) && chequeStatus != "cleared")
-            {
-                methodLabel += $" ({chequeStatus.ToUpperInvariant()})";
+                    foreach (var alloc in allocationsInput)
+                    {
+                        var allocAmount = Math.Round(AccountService.ToDecimal(alloc.GetValueOrDefault("amount")), 2);
+                        if (allocAmount <= 0m) continue;
+
+                        var invoiceId = AccountService.ToLong(alloc.GetValueOrDefault("invoice_id"));
+                        if (!liveInvoices.TryGetValue(invoiceId, out var invoice))
+                        {
+                            invoice = await _db.QuerySingleOrDefaultAsync(
+                                "SELECT * FROM sale_invoices WHERE id = @invoiceId AND customer_id = @customerId",
+                                new { invoiceId, customerId },
+                                conn,
+                                tx);
+                            if (invoice == null)
+                            {
+                                throw new InvalidOperationException($"Sale invoice #{invoiceId} not found for this customer.");
+                            }
+                            liveInvoices[invoiceId] = invoice;
+                        }
+
+                        if (string.Equals(invoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException($"Invoice {invoice.GetValueOrDefault("posted_number")} is reversed and cannot receive payments.");
+                        }
+
+                        var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total"));
+                        var invReceived = AccountService.ToDecimal(invoice.GetValueOrDefault("total_receive") ?? invoice.GetValueOrDefault("total_recieve"));
+                        var alreadyAllocatedHere = cumulativeAllocByInvoice.GetValueOrDefault(invoiceId, 0m);
+                        var remainingDue = Math.Max(invTotal - (invReceived + alreadyAllocatedHere), 0m);
+
+                        if (allocAmount > remainingDue + 0.001m)
+                        {
+                            throw new InvalidOperationException($"Allocated amount ({allocAmount}) exceeds invoice {invoice.GetValueOrDefault("posted_number")} due balance ({remainingDue}).");
+                        }
+
+                        cumulativeAllocByInvoice[invoiceId] = Math.Round(alreadyAllocatedHere + allocAmount, 2);
+                        totalAllocated = Math.Round(totalAllocated + allocAmount, 2);
+                        allocationsToCreate.Add((invoiceId, allocAmount));
+                    }
+
+                    if (totalAllocated > amount + 0.001m)
+                    {
+                        throw new InvalidOperationException($"Total allocated ({totalAllocated}) exceeds payment amount ({amount}).");
+                    }
+
+                    var unapplied = Math.Round(Math.Max(amount - totalAllocated, 0m), 2);
+                    var createPayload = new Dictionary<string, object?>
+                    {
+                        ["payment_number"] = paymentNumber,
+                        ["party_type"] = "customer",
+                        ["party_id"] = customerId,
+                        ["payment_date"] = paymentDate,
+                        ["amount"] = amount,
+                        ["allocated_amount"] = totalAllocated,
+                        ["unapplied_amount"] = unapplied,
+                        ["payment_method"] = payMethod,
+                        ["reference"] = reference,
+                        ["status"] = "posted",
+                        ["notes"] = notes,
+                        ["idempotency_key"] = idempotencyKey,
+                        ["created_by_id"] = userId
+                    };
+
+                    if (isCheque && hasChequeStatusCol)
+                    {
+                        createPayload["cheque_number"] = data.GetValueOrDefault("cheque_number")?.ToString() ?? reference;
+                        createPayload["bank_name"] = data.GetValueOrDefault("bank_name")?.ToString();
+                        createPayload["cheque_date"] = !string.IsNullOrWhiteSpace(chequeDate) ? chequeDate : paymentDate;
+                        createPayload["cheque_status"] = chequeStatus;
+                        createPayload["cleared_at"] = chequeStatus == "cleared" ? DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") : null;
+                    }
+
+                    paymentId = await _db.InsertAsync("payments", createPayload, conn, tx);
+
+                    foreach (var item in allocationsToCreate)
+                    {
+                        await _db.InsertAsync("payment_allocations", new Dictionary<string, object?>
+                        {
+                            ["payment_id"] = paymentId,
+                            ["invoice_type"] = "sale_invoice",
+                            ["invoice_id"] = item.InvoiceId,
+                            ["amount"] = item.Amount
+                        }, conn, tx);
+
+                        var invDict = liveInvoices[item.InvoiceId];
+                        var curReceived = AccountService.ToDecimal(invDict.GetValueOrDefault("total_receive"));
+                        var updatedReceived = Math.Round(curReceived + item.Amount, 2);
+                        invDict["total_receive"] = updatedReceived;
+
+                        await _db.UpdateAsync("sale_invoices", item.InvoiceId, new Dictionary<string, object?>
+                        {
+                            ["total_receive"] = updatedReceived
+                        }, "id", conn, tx);
+                    }
+
+                    if (await HasTableInTxAsync("customer_ledgers", conn, tx))
+                    {
+                        var methodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(payMethod.Replace('_', ' '));
+                        if (isCheque && !string.IsNullOrWhiteSpace(chequeStatus) && chequeStatus != "cleared")
+                        {
+                            methodLabel += $" ({chequeStatus.ToUpperInvariant()})";
+                        }
+                        var notesText = !string.IsNullOrWhiteSpace(notes) ? $": {notes}" : "";
+
+                        await _db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
+                        {
+                            ["customer_id"] = customerId,
+                            ["entry_date"] = paymentDate,
+                            ["entry_type"] = "payment",
+                            ["is_manual"] = false,
+                            ["credited_amount"] = amount,
+                            ["payment_ref"] = paymentNumber + (!string.IsNullOrWhiteSpace(reference) ? $" ({reference})" : ""),
+                            ["payment_id"] = paymentId,
+                            ["description"] = $"Payment via {methodLabel}{notesText}",
+                            ["created_by"] = userId
+                        }, conn, tx);
+                    }
+
+                    var accountService = new AccountService(_db);
+                    var reqAccountId = AccountService.ToLong(data.GetValueOrDefault("account_id"));
+                    var account = await accountService.ResolveAccountInTxAsync(reqAccountId > 0 ? reqAccountId : null, payMethod, conn, tx);
+                    if (account != null)
+                    {
+                        var accId = AccountService.ToLong(account["id"]);
+                        await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?> { ["account_id"] = accId }, "id", conn, tx);
+
+                        if (!isCheque || chequeStatus == "cleared")
+                        {
+                            var custName = customer.GetValueOrDefault("name")?.ToString() ?? "Customer";
+                            await accountService.DepositInTxAsync(
+                                account,
+                                amount,
+                                "customer_payment",
+                                paymentId,
+                                $"Customer payment {paymentNumber} ({custName})",
+                                userId,
+                                conn,
+                                tx);
+                        }
+                    }
+
+                    if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared"))
+                    {
+                        var cashDrawerService = new CashDrawerService(_db);
+                        var drawerTxn = await cashDrawerService.RecordTransactionInTxAsync(
+                            null,
+                            "customer_payment",
+                            amount,
+                            "payment",
+                            paymentId,
+                            $"Customer payment {paymentNumber}",
+                            userId,
+                            terminalId,
+                            conn,
+                            tx);
+                        touchedDrawer = drawerTxn != null;
+                    }
+
+                    paymentRowForAudit = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }, conn, tx) ?? createPayload;
+                    await tx.CommitAsync();
+                }
             }
-            var notesText = !string.IsNullOrWhiteSpace(notes) ? $": {notes}" : "";
-
-            await _db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
+            catch
             {
-                ["customer_id"] = customerId,
-                ["entry_date"] = paymentDate,
-                ["entry_type"] = "payment",
-                ["is_manual"] = false,
-                ["credited_amount"] = amount,
-                ["payment_ref"] = paymentNumber + (!string.IsNullOrWhiteSpace(reference) ? $" ({reference})" : ""),
-                ["payment_id"] = paymentId,
-                ["description"] = $"Payment via {methodLabel}{notesText}",
-                ["created_by"] = userId
-            });
-        }
-
-        var paymentRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }) ?? createPayload;
-        await _auditService.RecordCreateAsync("payment", paymentId, paymentRow, userId, $"Customer payment {paymentNumber} recorded");
-
-        var accountService = new AccountService(_db);
-        var reqAccountId = AccountService.ToLong(data.GetValueOrDefault("account_id"));
-        var account = await accountService.ResolveAccountAsync(reqAccountId > 0 ? reqAccountId : null, payMethod);
-        if (account != null)
-        {
-            var accId = AccountService.ToLong(account["id"]);
-            await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?> { ["account_id"] = accId });
-
-            if (!isCheque || chequeStatus == "cleared")
-            {
-                var custName = customer.GetValueOrDefault("name")?.ToString() ?? "Customer";
-                await accountService.DepositAsync(
-                    account,
-                    amount,
-                    "customer_payment",
-                    paymentId,
-                    $"Customer payment {paymentNumber} ({custName})",
-                    userId);
+                await tx.RollbackAsync();
+                throw;
             }
         }
 
-        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared"))
+        if (existingInTx != null)
         {
-            var cashDrawerService = new CashDrawerService(_db);
-            await cashDrawerService.RecordTransactionAsync(
-                null,
-                "customer_payment",
-                amount,
-                "payment",
-                paymentId,
-                $"Customer payment {paymentNumber}",
-                userId,
-                terminalId);
+            return await EnrichPaymentAsync(existingInTx);
         }
 
-        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
+        if (touchedDrawer)
+        {
+            SyncPulseService.Bump("drawer");
+        }
+
+        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })) ?? paymentRowForAudit!;
+        await _auditService.RecordCreateAsync("payment", paymentId, paymentRowForAudit ?? finalPayment, userId, $"Customer payment {paymentNumber} recorded");
         return await EnrichPaymentAsync(finalPayment);
     }
 
@@ -266,8 +421,8 @@ public class PaymentService
         }
 
         var allocationsInput = ExtractAllocationsList(data.GetValueOrDefault("allocations"));
-        decimal totalAllocated = 0m;
-        var allocationsToCreate = new List<(Dictionary<string, object?> Invoice, decimal Amount)>();
+        decimal preTotalAllocated = 0m;
+        var preCumulative = new Dictionary<long, decimal>();
 
         foreach (var alloc in allocationsInput)
         {
@@ -291,23 +446,28 @@ public class PaymentService
 
             var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total_amount"));
             var invPaid = AccountService.ToDecimal(invoice.GetValueOrDefault("total_paid"));
-            var remainingDue = Math.Max(invTotal - invPaid, 0m);
+            var prevHere = preCumulative.GetValueOrDefault(invoiceId, 0m);
+            var remainingDue = Math.Max(invTotal - (invPaid + prevHere), 0m);
 
             if (allocAmount > remainingDue + 0.001m)
             {
                 throw new InvalidOperationException($"Allocated amount ({allocAmount}) exceeds purchase invoice {invoice.GetValueOrDefault("posted_number")} payable ({remainingDue}).");
             }
 
-            totalAllocated += allocAmount;
-            allocationsToCreate.Add((invoice, allocAmount));
+            preCumulative[invoiceId] = Math.Round(prevHere + allocAmount, 2);
+            preTotalAllocated = Math.Round(preTotalAllocated + allocAmount, 2);
         }
 
-        if (totalAllocated > amount + 0.001m)
+        if (preTotalAllocated > amount + 0.001m)
         {
-            throw new InvalidOperationException($"Total allocated ({totalAllocated}) exceeds payment amount ({amount}).");
+            throw new InvalidOperationException($"Total allocated ({preTotalAllocated}) exceeds payment amount ({amount}).");
         }
 
-        var unapplied = Math.Round(Math.Max(amount - totalAllocated, 0m), 2);
+        await PrewarmPaymentSchemaCacheAsync();
+        var hasWhtAmountCol = await _db.HasColumnAsync("payments", "wht_amount");
+        var hasNetCashCol = await _db.HasColumnAsync("payments", "net_cash_disbursed");
+        var hasChequeStatusCol = await _db.HasColumnAsync("payments", "cheque_status");
+
         var paymentNumber = await GeneratePaymentNumberAsync("supplier");
         var payMethod = data.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
         var isCheque = payMethod.Equals("cheque", StringComparison.OrdinalIgnoreCase);
@@ -342,134 +502,247 @@ public class PaymentService
         var reference = data.GetValueOrDefault("reference")?.ToString() ?? data.GetValueOrDefault("cheque_number")?.ToString();
         var notes = data.GetValueOrDefault("notes")?.ToString();
 
-        var createPayload = new Dictionary<string, object?>
-        {
-            ["payment_number"] = paymentNumber,
-            ["party_type"] = "supplier",
-            ["party_id"] = supplierId,
-            ["payment_date"] = paymentDate,
-            ["amount"] = amount,
-            ["allocated_amount"] = totalAllocated,
-            ["unapplied_amount"] = unapplied,
-            ["payment_method"] = payMethod,
-            ["reference"] = reference,
-            ["status"] = "posted",
-            ["notes"] = notes,
-            ["idempotency_key"] = idempotencyKey,
-            ["created_by_id"] = userId
-        };
+        long paymentId = 0;
+        Dictionary<string, object?>? existingInTx = null;
+        Dictionary<string, object?>? paymentRowForAudit = null;
+        bool touchedDrawer = false;
 
-        if (await _db.HasColumnAsync("payments", "wht_amount"))
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            var whtRateId = AccountService.ToLong(data.GetValueOrDefault("wht_tax_rate_id"));
-            createPayload["wht_tax_rate_id"] = whtRateId > 0 ? whtRateId : null;
-            createPayload["wht_percentage"] = whtPercentage;
-            createPayload["wht_amount"] = whtAmount;
-        }
-        if (await _db.HasColumnAsync("payments", "net_cash_disbursed"))
-        {
-            createPayload["net_cash_disbursed"] = netCashDisbursed;
-        }
-
-        if (isCheque && await _db.HasColumnAsync("payments", "cheque_status"))
-        {
-            createPayload["cheque_number"] = data.GetValueOrDefault("cheque_number")?.ToString() ?? reference;
-            createPayload["bank_name"] = data.GetValueOrDefault("bank_name")?.ToString();
-            createPayload["cheque_date"] = !string.IsNullOrWhiteSpace(chequeDate) ? chequeDate : paymentDate;
-            createPayload["cheque_status"] = chequeStatus;
-            createPayload["cleared_at"] = chequeStatus == "cleared" ? DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") : null;
-        }
-
-        var paymentId = await _db.InsertAsync("payments", createPayload);
-
-        foreach (var item in allocationsToCreate)
-        {
-            var invId = AccountService.ToLong(item.Invoice["id"]);
-            await _db.InsertAsync("payment_allocations", new Dictionary<string, object?>
+            try
             {
-                ["payment_id"] = paymentId,
-                ["invoice_type"] = "purchase_invoice",
-                ["invoice_id"] = invId,
-                ["amount"] = item.Amount
-            });
+                if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    existingInTx = await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM payments WHERE idempotency_key = @key LIMIT 1",
+                        new { key = idempotencyKey },
+                        conn,
+                        tx);
+                    if (existingInTx != null)
+                    {
+                        await tx.RollbackAsync();
+                    }
+                }
 
-            var curPaid = AccountService.ToDecimal(item.Invoice.GetValueOrDefault("total_paid"));
-            await _db.UpdateAsync("purchase_invoices", invId, new Dictionary<string, object?>
-            {
-                ["total_paid"] = Math.Round(curPaid + item.Amount, 2)
-            });
-        }
+                if (existingInTx == null)
+                {
+                    var liveInvoices = new Dictionary<long, Dictionary<string, object?>>();
+                    var cumulativeAllocByInvoice = new Dictionary<long, decimal>();
+                    var allocationsToCreate = new List<(long InvoiceId, decimal Amount)>();
+                    decimal totalAllocated = 0m;
 
-        if (await _db.HasTableAsync("supplier_ledgers"))
-        {
-            var methodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(payMethod.Replace('_', ' '));
-            if (isCheque && !string.IsNullOrWhiteSpace(chequeStatus) && chequeStatus != "cleared")
-            {
-                methodLabel += $" ({chequeStatus.ToUpperInvariant()})";
+                    foreach (var alloc in allocationsInput)
+                    {
+                        var allocAmount = Math.Round(AccountService.ToDecimal(alloc.GetValueOrDefault("amount")), 2);
+                        if (allocAmount <= 0m) continue;
+
+                        var invoiceId = AccountService.ToLong(alloc.GetValueOrDefault("invoice_id"));
+                        if (!liveInvoices.TryGetValue(invoiceId, out var invoice))
+                        {
+                            invoice = await _db.QuerySingleOrDefaultAsync(
+                                "SELECT * FROM purchase_invoices WHERE id = @invoiceId AND supplier_id = @supplierId",
+                                new { invoiceId, supplierId },
+                                conn,
+                                tx);
+                            if (invoice == null)
+                            {
+                                throw new InvalidOperationException($"Purchase invoice #{invoiceId} not found for this supplier.");
+                            }
+                            liveInvoices[invoiceId] = invoice;
+                        }
+
+                        if (string.Equals(invoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException($"Invoice {invoice.GetValueOrDefault("posted_number")} is reversed and cannot receive payments.");
+                        }
+
+                        var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total_amount"));
+                        var invPaid = AccountService.ToDecimal(invoice.GetValueOrDefault("total_paid"));
+                        var alreadyAllocatedHere = cumulativeAllocByInvoice.GetValueOrDefault(invoiceId, 0m);
+                        var remainingDue = Math.Max(invTotal - (invPaid + alreadyAllocatedHere), 0m);
+
+                        if (allocAmount > remainingDue + 0.001m)
+                        {
+                            throw new InvalidOperationException($"Allocated amount ({allocAmount}) exceeds purchase invoice {invoice.GetValueOrDefault("posted_number")} payable ({remainingDue}).");
+                        }
+
+                        cumulativeAllocByInvoice[invoiceId] = Math.Round(alreadyAllocatedHere + allocAmount, 2);
+                        totalAllocated = Math.Round(totalAllocated + allocAmount, 2);
+                        allocationsToCreate.Add((invoiceId, allocAmount));
+                    }
+
+                    if (totalAllocated > amount + 0.001m)
+                    {
+                        throw new InvalidOperationException($"Total allocated ({totalAllocated}) exceeds payment amount ({amount}).");
+                    }
+
+                    var unapplied = Math.Round(Math.Max(amount - totalAllocated, 0m), 2);
+                    var createPayload = new Dictionary<string, object?>
+                    {
+                        ["payment_number"] = paymentNumber,
+                        ["party_type"] = "supplier",
+                        ["party_id"] = supplierId,
+                        ["payment_date"] = paymentDate,
+                        ["amount"] = amount,
+                        ["allocated_amount"] = totalAllocated,
+                        ["unapplied_amount"] = unapplied,
+                        ["payment_method"] = payMethod,
+                        ["reference"] = reference,
+                        ["status"] = "posted",
+                        ["notes"] = notes,
+                        ["idempotency_key"] = idempotencyKey,
+                        ["created_by_id"] = userId
+                    };
+
+                    if (hasWhtAmountCol)
+                    {
+                        var whtRateId = AccountService.ToLong(data.GetValueOrDefault("wht_tax_rate_id"));
+                        createPayload["wht_tax_rate_id"] = whtRateId > 0 ? whtRateId : null;
+                        createPayload["wht_percentage"] = whtPercentage;
+                        createPayload["wht_amount"] = whtAmount;
+                    }
+                    if (hasNetCashCol)
+                    {
+                        createPayload["net_cash_disbursed"] = netCashDisbursed;
+                    }
+
+                    if (isCheque && hasChequeStatusCol)
+                    {
+                        createPayload["cheque_number"] = data.GetValueOrDefault("cheque_number")?.ToString() ?? reference;
+                        createPayload["bank_name"] = data.GetValueOrDefault("bank_name")?.ToString();
+                        createPayload["cheque_date"] = !string.IsNullOrWhiteSpace(chequeDate) ? chequeDate : paymentDate;
+                        createPayload["cheque_status"] = chequeStatus;
+                        createPayload["cleared_at"] = chequeStatus == "cleared" ? DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") : null;
+                    }
+
+                    paymentId = await _db.InsertAsync("payments", createPayload, conn, tx);
+
+                    foreach (var item in allocationsToCreate)
+                    {
+                        await _db.InsertAsync("payment_allocations", new Dictionary<string, object?>
+                        {
+                            ["payment_id"] = paymentId,
+                            ["invoice_type"] = "purchase_invoice",
+                            ["invoice_id"] = item.InvoiceId,
+                            ["amount"] = item.Amount
+                        }, conn, tx);
+
+                        var invDict = liveInvoices[item.InvoiceId];
+                        var curPaid = AccountService.ToDecimal(invDict.GetValueOrDefault("total_paid"));
+                        var updatedPaid = Math.Round(curPaid + item.Amount, 2);
+                        invDict["total_paid"] = updatedPaid;
+
+                        await _db.UpdateAsync("purchase_invoices", item.InvoiceId, new Dictionary<string, object?>
+                        {
+                            ["total_paid"] = updatedPaid
+                        }, "id", conn, tx);
+                    }
+
+                    if (await HasTableInTxAsync("supplier_ledgers", conn, tx))
+                    {
+                        var methodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(payMethod.Replace('_', ' '));
+                        if (isCheque && !string.IsNullOrWhiteSpace(chequeStatus) && chequeStatus != "cleared")
+                        {
+                            methodLabel += $" ({chequeStatus.ToUpperInvariant()})";
+                        }
+                        var notesText = !string.IsNullOrWhiteSpace(notes) ? $": {notes}" : "";
+
+                        await _db.InsertAsync("supplier_ledgers", new Dictionary<string, object?>
+                        {
+                            ["supplier_id"] = supplierId,
+                            ["entry_date"] = paymentDate,
+                            ["entry_type"] = "payment",
+                            ["is_manual"] = false,
+                            ["debited_amount"] = amount,
+                            ["payment_ref"] = paymentNumber + (!string.IsNullOrWhiteSpace(reference) ? $" ({reference})" : ""),
+                            ["payment_id"] = paymentId,
+                            ["description"] = $"Payment via {methodLabel}{notesText}",
+                            ["created_by"] = userId
+                        }, conn, tx);
+                    }
+
+                    var accountService = new AccountService(_db);
+                    var reqAccountId = AccountService.ToLong(data.GetValueOrDefault("account_id"));
+                    var account = await accountService.ResolveAccountInTxAsync(reqAccountId > 0 ? reqAccountId : null, payMethod, conn, tx);
+                    if (account != null)
+                    {
+                        var accId = AccountService.ToLong(account["id"]);
+                        await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?> { ["account_id"] = accId }, "id", conn, tx);
+
+                        if ((!isCheque || chequeStatus == "cleared") && netCashDisbursed > 0m)
+                        {
+                            var supName = supplier.GetValueOrDefault("name")?.ToString() ?? "Supplier";
+                            var whtNote = whtAmount > 0m ? $" [Net of WHT: {whtAmount}]" : "";
+                            await accountService.WithdrawInTxAsync(
+                                account,
+                                netCashDisbursed,
+                                "supplier_payment",
+                                paymentId,
+                                $"Supplier payment {paymentNumber} ({supName}){whtNote}",
+                                userId,
+                                conn,
+                                tx);
+                        }
+                    }
+
+                    if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared") && netCashDisbursed > 0m)
+                    {
+                        var whtNote = whtAmount > 0m ? $" [Net of WHT: {whtAmount}]" : "";
+                        var cashDrawerService = new CashDrawerService(_db);
+                        var drawerTxn = await cashDrawerService.RecordTransactionInTxAsync(
+                            null,
+                            "supplier_payment",
+                            netCashDisbursed,
+                            "payment",
+                            paymentId,
+                            $"Supplier payment {paymentNumber}{whtNote}",
+                            userId,
+                            terminalId,
+                            conn,
+                            tx);
+                        touchedDrawer = drawerTxn != null;
+                    }
+
+                    paymentRowForAudit = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }, conn, tx) ?? createPayload;
+                    await tx.CommitAsync();
+                }
             }
-            var notesText = !string.IsNullOrWhiteSpace(notes) ? $": {notes}" : "";
-
-            await _db.InsertAsync("supplier_ledgers", new Dictionary<string, object?>
+            catch
             {
-                ["supplier_id"] = supplierId,
-                ["entry_date"] = paymentDate,
-                ["entry_type"] = "payment",
-                ["is_manual"] = false,
-                ["debited_amount"] = amount,
-                ["payment_ref"] = paymentNumber + (!string.IsNullOrWhiteSpace(reference) ? $" ({reference})" : ""),
-                ["payment_id"] = paymentId,
-                ["description"] = $"Payment via {methodLabel}{notesText}",
-                ["created_by"] = userId
-            });
-        }
-
-        var paymentRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }) ?? createPayload;
-        await _auditService.RecordCreateAsync("payment", paymentId, paymentRow, userId, $"Supplier payment {paymentNumber} recorded");
-
-        var accountService = new AccountService(_db);
-        var reqAccountId = AccountService.ToLong(data.GetValueOrDefault("account_id"));
-        var account = await accountService.ResolveAccountAsync(reqAccountId > 0 ? reqAccountId : null, payMethod);
-        if (account != null)
-        {
-            var accId = AccountService.ToLong(account["id"]);
-            await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?> { ["account_id"] = accId });
-
-            if ((!isCheque || chequeStatus == "cleared") && netCashDisbursed > 0m)
-            {
-                var supName = supplier.GetValueOrDefault("name")?.ToString() ?? "Supplier";
-                var whtNote = whtAmount > 0m ? $" [Net of WHT: {whtAmount}]" : "";
-                await accountService.WithdrawAsync(
-                    account,
-                    netCashDisbursed,
-                    "supplier_payment",
-                    paymentId,
-                    $"Supplier payment {paymentNumber} ({supName}){whtNote}",
-                    userId);
+                await tx.RollbackAsync();
+                throw;
             }
         }
 
-        if (accountService.IsDefaultCashDrawerAccount(account, payMethod) && (!isCheque || chequeStatus == "cleared") && netCashDisbursed > 0m)
+        if (existingInTx != null)
         {
-            var whtNote = whtAmount > 0m ? $" [Net of WHT: {whtAmount}]" : "";
-            var cashDrawerService = new CashDrawerService(_db);
-            await cashDrawerService.RecordTransactionAsync(
-                null,
-                "supplier_payment",
-                netCashDisbursed,
-                "payment",
-                paymentId,
-                $"Supplier payment {paymentNumber}{whtNote}",
-                userId,
-                terminalId);
+            return await EnrichPaymentAsync(existingInTx);
         }
 
-        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
+        if (touchedDrawer)
+        {
+            SyncPulseService.Bump("drawer");
+        }
+
+        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })) ?? paymentRowForAudit!;
+        await _auditService.RecordCreateAsync("payment", paymentId, paymentRowForAudit ?? finalPayment, userId, $"Supplier payment {paymentNumber} recorded");
         return await EnrichPaymentAsync(finalPayment);
     }
 
-    public async Task<Dictionary<string, object?>> ReversePaymentAsync(long paymentId, string reason, long? userId = null, long? terminalId = null)
+    private async Task<(Dictionary<string, object?> BeforeSnapshot, bool TouchedDrawer)> ReversePaymentInTxAsync(
+        long paymentId,
+        string reason,
+        long? userId,
+        long? terminalId,
+        SqliteConnection conn,
+        SqliteTransaction tx)
     {
-        var payment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })
+        var payment = await _db.QuerySingleOrDefaultAsync(
+                          "SELECT * FROM payments WHERE id = @id",
+                          new { id = paymentId },
+                          conn,
+                          tx)
                       ?? throw new KeyNotFoundException("Payment not found.");
 
         if (string.Equals(payment.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
@@ -477,8 +750,12 @@ public class PaymentService
             throw new InvalidOperationException("This payment has already been reversed.");
         }
 
-        var allocations = await _db.HasTableAsync("payment_allocations")
-            ? await _db.QueryListAsync("SELECT * FROM payment_allocations WHERE payment_id = @paymentId", new { paymentId })
+        var allocations = await HasTableInTxAsync("payment_allocations", conn, tx)
+            ? await _db.QueryListAsync(
+                "SELECT * FROM payment_allocations WHERE payment_id = @paymentId",
+                new { paymentId },
+                conn,
+                tx)
             : new List<Dictionary<string, object?>>();
 
         foreach (var alloc in allocations)
@@ -489,26 +766,34 @@ public class PaymentService
 
             if (invType.Equals("sale_invoice", StringComparison.OrdinalIgnoreCase))
             {
-                var invoice = await _db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @invId", new { invId });
+                var invoice = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM sale_invoices WHERE id = @invId",
+                    new { invId },
+                    conn,
+                    tx);
                 if (invoice != null)
                 {
                     var curReceived = AccountService.ToDecimal(invoice.GetValueOrDefault("total_receive"));
                     await _db.UpdateAsync("sale_invoices", invId, new Dictionary<string, object?>
                     {
                         ["total_receive"] = Math.Round(Math.Max(curReceived - allocAmt, 0m), 2)
-                    });
+                    }, "id", conn, tx);
                 }
             }
             else if (invType.Equals("purchase_invoice", StringComparison.OrdinalIgnoreCase))
             {
-                var invoice = await _db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @invId", new { invId });
+                var invoice = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM purchase_invoices WHERE id = @invId",
+                    new { invId },
+                    conn,
+                    tx);
                 if (invoice != null)
                 {
                     var curPaid = AccountService.ToDecimal(invoice.GetValueOrDefault("total_paid"));
                     await _db.UpdateAsync("purchase_invoices", invId, new Dictionary<string, object?>
                     {
                         ["total_paid"] = Math.Round(Math.Max(curPaid - allocAmt, 0m), 2)
-                    });
+                    }, "id", conn, tx);
                 }
             }
         }
@@ -517,26 +802,42 @@ public class PaymentService
         var partyType = payment.GetValueOrDefault("party_type")?.ToString() ?? "customer";
         var isCreditNote = payMethod.Equals("credit_note", StringComparison.OrdinalIgnoreCase);
 
-        if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) && await _db.HasTableAsync("customer_ledgers"))
+        if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) && await HasTableInTxAsync("customer_ledgers", conn, tx))
         {
-            if (isCreditNote && await _db.HasColumnAsync("customer_ledgers", "sale_return_id"))
+            if (isCreditNote && await HasColumnInTxAsync("customer_ledgers", "sale_return_id", conn, tx))
             {
-                await _db.ExecuteAsync("DELETE FROM customer_ledgers WHERE payment_id = @paymentId AND sale_return_id IS NULL", new { paymentId });
+                await _db.ExecuteAsync(
+                    "DELETE FROM customer_ledgers WHERE payment_id = @paymentId AND sale_return_id IS NULL",
+                    new { paymentId },
+                    conn,
+                    tx);
             }
             else
             {
-                await _db.ExecuteAsync("DELETE FROM customer_ledgers WHERE payment_id = @paymentId", new { paymentId });
+                await _db.ExecuteAsync(
+                    "DELETE FROM customer_ledgers WHERE payment_id = @paymentId",
+                    new { paymentId },
+                    conn,
+                    tx);
             }
         }
-        else if (partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase) && await _db.HasTableAsync("supplier_ledgers"))
+        else if (partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase) && await HasTableInTxAsync("supplier_ledgers", conn, tx))
         {
-            if (isCreditNote && await _db.HasColumnAsync("supplier_ledgers", "purchase_return_id"))
+            if (isCreditNote && await HasColumnInTxAsync("supplier_ledgers", "purchase_return_id", conn, tx))
             {
-                await _db.ExecuteAsync("DELETE FROM supplier_ledgers WHERE payment_id = @paymentId AND purchase_return_id IS NULL", new { paymentId });
+                await _db.ExecuteAsync(
+                    "DELETE FROM supplier_ledgers WHERE payment_id = @paymentId AND purchase_return_id IS NULL",
+                    new { paymentId },
+                    conn,
+                    tx);
             }
             else
             {
-                await _db.ExecuteAsync("DELETE FROM supplier_ledgers WHERE payment_id = @paymentId", new { paymentId });
+                await _db.ExecuteAsync(
+                    "DELETE FROM supplier_ledgers WHERE payment_id = @paymentId",
+                    new { paymentId },
+                    conn,
+                    tx);
             }
         }
 
@@ -546,7 +847,7 @@ public class PaymentService
             ["reversed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
             ["reversed_by_id"] = userId,
             ["reversal_reason"] = reason
-        });
+        }, "id", conn, tx);
 
         var chequeStatus = payment.GetValueOrDefault("cheque_status")?.ToString() ?? "";
         var clearedAt = payment.GetValueOrDefault("cleared_at")?.ToString();
@@ -554,11 +855,12 @@ public class PaymentService
                                  (chequeStatus is "pending" or "deposited" or "bounced") &&
                                  string.IsNullOrWhiteSpace(clearedAt);
 
+        bool touchedDrawer = false;
         if (!isCreditNote && !wasUnclearedCheque)
         {
             var accountService = new AccountService(_db);
             var accId = AccountService.ToLong(payment.GetValueOrDefault("account_id"));
-            var account = await accountService.ResolveAccountAsync(accId > 0 ? accId : null, payMethod);
+            var account = await accountService.ResolveAccountInTxAsync(accId > 0 ? accId : null, payMethod, conn, tx);
             var grossAmt = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
             var whtAmt = AccountService.ToDecimal(payment.GetValueOrDefault("wht_amount"));
             var netDisbursed = AccountService.ToDecimal(payment.GetValueOrDefault("net_cash_disbursed"));
@@ -571,35 +873,68 @@ public class PaymentService
             {
                 if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase))
                 {
-                    await accountService.WithdrawAsync(
+                    await accountService.WithdrawInTxAsync(
                         account,
                         amt,
                         "payment_reversal",
                         paymentId,
                         $"Reversal of Customer Payment {payNo}: {reason}",
-                        userId);
+                        userId,
+                        conn,
+                        tx);
                 }
                 else
                 {
-                    await accountService.DepositAsync(
+                    await accountService.DepositInTxAsync(
                         account,
                         amt,
                         "payment_reversal",
                         paymentId,
                         $"Reversal of Supplier Payment {payNo}: {reason}",
-                        userId);
+                        userId,
+                        conn,
+                        tx);
                 }
             }
 
             if (accountService.IsDefaultCashDrawerAccount(account, payMethod))
             {
                 var cashDrawerService = new CashDrawerService(_db);
-                await cashDrawerService.HandlePaymentReversalAsync(payment, reason, userId, null, terminalId);
+                await cashDrawerService.HandlePaymentReversalInTxAsync(payment, reason, userId, null, terminalId, conn, tx);
+                touchedDrawer = await HasTableInTxAsync("cash_drawer_sessions", conn, tx);
             }
         }
 
-        await _auditService.RecordReversalAsync("payment", paymentId, payment, userId, reason);
+        return (payment, touchedDrawer);
+    }
 
+    public async Task<Dictionary<string, object?>> ReversePaymentAsync(long paymentId, string reason, long? userId = null, long? terminalId = null)
+    {
+        await PrewarmPaymentSchemaCacheAsync();
+
+        Dictionary<string, object?> beforeSnapshot;
+        bool touchedDrawer;
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
+        {
+            try
+            {
+                (beforeSnapshot, touchedDrawer) = await ReversePaymentInTxAsync(paymentId, reason, userId, terminalId, conn, tx);
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+        if (touchedDrawer)
+        {
+            SyncPulseService.Bump("drawer");
+        }
+
+        await _auditService.RecordReversalAsync("payment", paymentId, beforeSnapshot, userId, reason);
         var updated = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(updated);
     }
@@ -612,136 +947,186 @@ public class PaymentService
         long? userId = null,
         long? terminalId = null)
     {
-        var locked = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })
-                     ?? throw new KeyNotFoundException("Payment not found.");
+        await PrewarmPaymentSchemaCacheAsync();
 
-        var payMethod = locked.GetValueOrDefault("payment_method")?.ToString() ?? "";
-        if (!payMethod.Equals("cheque", StringComparison.OrdinalIgnoreCase))
+        Dictionary<string, object?>? idempotentClearedRow = null;
+        Dictionary<string, object?>? bounceBeforeSnapshot = null;
+        string? bounceAuditReason = null;
+        bool touchedDrawer = false;
+
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            throw new InvalidOperationException("Cheque lifecycle transitions are only valid for cheque payments.");
-        }
-
-        var status = locked.GetValueOrDefault("status")?.ToString() ?? "posted";
-        if (status.Equals("reversed", StringComparison.OrdinalIgnoreCase) && !newStatus.Equals("bounced", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Cannot update cheque status on a reversed payment.");
-        }
-
-        var normalizedStatus = newStatus.ToLowerInvariant();
-        if (normalizedStatus is not ("deposited" or "cleared" or "bounced"))
-        {
-            throw new InvalidOperationException("Invalid cheque status. Allowed: deposited, cleared, bounced.");
-        }
-
-        var currentChequeStatus = (locked.GetValueOrDefault("cheque_status")?.ToString() ?? "").ToLowerInvariant();
-
-        if (normalizedStatus == "deposited")
-        {
-            if (currentChequeStatus is "cleared" or "bounced")
+            try
             {
-                throw new InvalidOperationException($"Cannot mark a {currentChequeStatus} cheque as deposited.");
-            }
-            var upd = new Dictionary<string, object?> { ["cheque_status"] = "deposited" };
-            if (accountId.HasValue && accountId.Value > 0)
-            {
-                upd["account_id"] = accountId.Value;
-            }
-            await _db.UpdateAsync("payments", paymentId, upd);
-            var depRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
-            return await EnrichPaymentAsync(depRow);
-        }
+                var locked = await _db.QuerySingleOrDefaultAsync(
+                                 "SELECT * FROM payments WHERE id = @id",
+                                 new { id = paymentId },
+                                 conn,
+                                 tx)
+                             ?? throw new KeyNotFoundException("Payment not found.");
 
-        if (normalizedStatus == "cleared")
-        {
-            if (currentChequeStatus == "bounced")
-            {
-                throw new InvalidOperationException("Cannot clear a bounced cheque.");
-            }
-            if (currentChequeStatus == "cleared" && !string.IsNullOrWhiteSpace(locked.GetValueOrDefault("cleared_at")?.ToString()))
-            {
-                return await EnrichPaymentAsync(locked);
-            }
-
-            var accountService = new AccountService(_db);
-            var resolvedAccId = accountId ?? AccountService.ToLong(locked.GetValueOrDefault("account_id"));
-            var account = await accountService.ResolveAccountAsync(resolvedAccId > 0 ? resolvedAccId : null, "cheque");
-            var grossAmount = AccountService.ToDecimal(locked.GetValueOrDefault("amount"));
-            var whtAmount = AccountService.ToDecimal(locked.GetValueOrDefault("wht_amount"));
-            var netDisbursed = AccountService.ToDecimal(locked.GetValueOrDefault("net_cash_disbursed"));
-            var partyType = locked.GetValueOrDefault("party_type")?.ToString() ?? "customer";
-            var amount = partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase)
-                ? (netDisbursed > 0m ? netDisbursed : Math.Max(0m, grossAmount - whtAmount))
-                : grossAmount;
-            var partyId = AccountService.ToLong(locked.GetValueOrDefault("party_id"));
-            var payNo = locked.GetValueOrDefault("payment_number")?.ToString() ?? $"#{paymentId}";
-
-            var upd = new Dictionary<string, object?>
-            {
-                ["cheque_status"] = "cleared",
-                ["cleared_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-
-            if (account != null)
-            {
-                upd["account_id"] = AccountService.ToLong(account["id"]);
-                if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase))
+                var payMethod = locked.GetValueOrDefault("payment_method")?.ToString() ?? "";
+                if (!payMethod.Equals("cheque", StringComparison.OrdinalIgnoreCase))
                 {
-                    var cust = await _db.QuerySingleOrDefaultAsync("SELECT name FROM customers WHERE id = @partyId", new { partyId });
-                    var pName = cust?.GetValueOrDefault("name")?.ToString() ?? "Customer";
-                    await accountService.DepositAsync(account, amount, "customer_payment", paymentId, $"Cheque cleared {payNo} ({pName})", userId);
+                    throw new InvalidOperationException("Cheque lifecycle transitions are only valid for cheque payments.");
+                }
+
+                var status = locked.GetValueOrDefault("status")?.ToString() ?? "posted";
+                if (status.Equals("reversed", StringComparison.OrdinalIgnoreCase) && !newStatus.Equals("bounced", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Cannot update cheque status on a reversed payment.");
+                }
+
+                var normalizedStatus = newStatus.ToLowerInvariant();
+                if (normalizedStatus is not ("deposited" or "cleared" or "bounced"))
+                {
+                    throw new InvalidOperationException("Invalid cheque status. Allowed: deposited, cleared, bounced.");
+                }
+
+                var currentChequeStatus = (locked.GetValueOrDefault("cheque_status")?.ToString() ?? "").ToLowerInvariant();
+
+                if (normalizedStatus == "deposited")
+                {
+                    if (currentChequeStatus is "cleared" or "bounced")
+                    {
+                        throw new InvalidOperationException($"Cannot mark a {currentChequeStatus} cheque as deposited.");
+                    }
+                    var upd = new Dictionary<string, object?> { ["cheque_status"] = "deposited" };
+                    if (accountId.HasValue && accountId.Value > 0)
+                    {
+                        upd["account_id"] = accountId.Value;
+                    }
+                    await _db.UpdateAsync("payments", paymentId, upd, "id", conn, tx);
+                    await tx.CommitAsync();
+                }
+                else if (normalizedStatus == "cleared")
+                {
+                    if (currentChequeStatus == "bounced")
+                    {
+                        throw new InvalidOperationException("Cannot clear a bounced cheque.");
+                    }
+                    if (currentChequeStatus == "cleared" && !string.IsNullOrWhiteSpace(locked.GetValueOrDefault("cleared_at")?.ToString()))
+                    {
+                        idempotentClearedRow = locked;
+                        await tx.RollbackAsync();
+                    }
+                    else
+                    {
+                        var accountService = new AccountService(_db);
+                        var resolvedAccId = accountId ?? AccountService.ToLong(locked.GetValueOrDefault("account_id"));
+                        var account = await accountService.ResolveAccountInTxAsync(resolvedAccId > 0 ? resolvedAccId : null, "cheque", conn, tx);
+                        var grossAmount = AccountService.ToDecimal(locked.GetValueOrDefault("amount"));
+                        var whtAmount = AccountService.ToDecimal(locked.GetValueOrDefault("wht_amount"));
+                        var netDisbursed = AccountService.ToDecimal(locked.GetValueOrDefault("net_cash_disbursed"));
+                        var partyType = locked.GetValueOrDefault("party_type")?.ToString() ?? "customer";
+                        var amount = partyType.Equals("supplier", StringComparison.OrdinalIgnoreCase)
+                            ? (netDisbursed > 0m ? netDisbursed : Math.Max(0m, grossAmount - whtAmount))
+                            : grossAmount;
+                        var partyId = AccountService.ToLong(locked.GetValueOrDefault("party_id"));
+                        var payNo = locked.GetValueOrDefault("payment_number")?.ToString() ?? $"#{paymentId}";
+
+                        var upd = new Dictionary<string, object?>
+                        {
+                            ["cheque_status"] = "cleared",
+                            ["cleared_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                        };
+
+                        if (account != null)
+                        {
+                            upd["account_id"] = AccountService.ToLong(account["id"]);
+                            if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var cust = await _db.QuerySingleOrDefaultAsync("SELECT name FROM customers WHERE id = @partyId", new { partyId }, conn, tx);
+                                var pName = cust?.GetValueOrDefault("name")?.ToString() ?? "Customer";
+                                await accountService.DepositInTxAsync(account, amount, "customer_payment", paymentId, $"Cheque cleared {payNo} ({pName})", userId, conn, tx);
+                            }
+                            else
+                            {
+                                var sup = await _db.QuerySingleOrDefaultAsync("SELECT name FROM suppliers WHERE id = @partyId", new { partyId }, conn, tx);
+                                var pName = sup?.GetValueOrDefault("name")?.ToString() ?? "Supplier";
+                                await accountService.WithdrawInTxAsync(account, amount, "supplier_payment", paymentId, $"Cheque cleared {payNo} ({pName})", userId, conn, tx);
+                            }
+
+                            if (accountService.IsDefaultCashDrawerAccount(account, "cheque") && amount > 0m)
+                            {
+                                var cashDrawerService = new CashDrawerService(_db);
+                                var drawerType = partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) ? "customer_payment" : "supplier_payment";
+                                var drawerTxn = await cashDrawerService.RecordTransactionInTxAsync(
+                                    null,
+                                    drawerType,
+                                    amount,
+                                    "payment",
+                                    paymentId,
+                                    $"Cheque cleared {payNo}",
+                                    userId,
+                                    terminalId,
+                                    conn,
+                                    tx);
+                                touchedDrawer = drawerTxn != null;
+                            }
+                        }
+
+                        await _db.UpdateAsync("payments", paymentId, upd, "id", conn, tx);
+                        await tx.CommitAsync();
+                    }
                 }
                 else
                 {
-                    var sup = await _db.QuerySingleOrDefaultAsync("SELECT name FROM suppliers WHERE id = @partyId", new { partyId });
-                    var pName = sup?.GetValueOrDefault("name")?.ToString() ?? "Supplier";
-                    await accountService.WithdrawAsync(account, amount, "supplier_payment", paymentId, $"Cheque cleared {payNo} ({pName})", userId);
-                }
+                    var bounceReason = !string.IsNullOrWhiteSpace(reason) ? reason : "Cheque Dishonoured / Bounced";
+                    if (!status.Equals("reversed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        (bounceBeforeSnapshot, touchedDrawer) = await ReversePaymentInTxAsync(paymentId, bounceReason, userId, terminalId, conn, tx);
+                        bounceAuditReason = bounceReason;
+                    }
 
-                // If the cheque resolved to the default Cash Drawer account (e.g., no active bank account exists), mirror in Cash Drawer
-                if (accountService.IsDefaultCashDrawerAccount(account, "cheque") && amount > 0m)
-                {
-                    var cashDrawerService = new CashDrawerService(_db);
-                    var drawerType = partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) ? "customer_payment" : "supplier_payment";
-                    await cashDrawerService.RecordTransactionAsync(
-                        null,
-                        drawerType,
-                        amount,
-                        "payment",
-                        paymentId,
-                        $"Cheque cleared {payNo}",
-                        userId,
-                        terminalId);
+                    await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?>
+                    {
+                        ["cheque_status"] = "bounced",
+                        ["bounced_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                    }, "id", conn, tx);
+
+                    await tx.CommitAsync();
                 }
             }
-
-            await _db.UpdateAsync("payments", paymentId, upd);
-            var clrRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
-            return await EnrichPaymentAsync(clrRow);
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
 
-        // bounced
-        var bounceReason = !string.IsNullOrWhiteSpace(reason) ? reason : "Cheque Dishonoured / Bounced";
-        if (!status.Equals("reversed", StringComparison.OrdinalIgnoreCase))
+        if (idempotentClearedRow != null)
         {
-            await ReversePaymentAsync(paymentId, bounceReason, userId, terminalId);
+            return await EnrichPaymentAsync(idempotentClearedRow);
         }
 
-        await _db.UpdateAsync("payments", paymentId, new Dictionary<string, object?>
+        if (touchedDrawer)
         {
-            ["cheque_status"] = "bounced",
-            ["bounced_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        });
+            SyncPulseService.Bump("drawer");
+        }
 
-        var bouncedRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
-        return await EnrichPaymentAsync(bouncedRow);
+        if (bounceBeforeSnapshot != null && bounceAuditReason != null)
+        {
+            await _auditService.RecordReversalAsync("payment", paymentId, bounceBeforeSnapshot, userId, bounceAuditReason);
+        }
+
+        var row = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
+        return await EnrichPaymentAsync(row);
     }
 
-    public async Task<Dictionary<string, object?>> AllocatePaymentAsync(
+    private async Task<(Dictionary<string, object?> Before, Dictionary<string, object?> After, decimal AllocatedTotal)> AllocatePaymentInTxAsync(
         long paymentId,
         IEnumerable<Dictionary<string, object?>> allocationsInput,
-        long? userId = null)
+        long? userId,
+        SqliteConnection conn,
+        SqliteTransaction tx)
     {
-        var lockedPayment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })
+        var lockedPayment = await _db.QuerySingleOrDefaultAsync(
+                                "SELECT * FROM payments WHERE id = @id",
+                                new { id = paymentId },
+                                conn,
+                                tx)
                             ?? throw new KeyNotFoundException("Payment not found.");
 
         if (!string.Equals(lockedPayment.GetValueOrDefault("status")?.ToString(), "posted", StringComparison.OrdinalIgnoreCase))
@@ -759,7 +1144,9 @@ public class PaymentService
         var partyId = AccountService.ToLong(lockedPayment.GetValueOrDefault("party_id"));
 
         decimal totalNewAllocated = 0m;
-        var allocationsToApply = new List<(Dictionary<string, object?> Invoice, string InvoiceType, decimal Amount)>();
+        var liveInvoices = new Dictionary<long, Dictionary<string, object?>>();
+        var cumulativeAllocByInvoice = new Dictionary<long, decimal>();
+        var allocationsToApply = new List<(long InvoiceId, string InvoiceType, decimal Amount)>();
 
         foreach (var alloc in allocationsInput)
         {
@@ -769,10 +1156,16 @@ public class PaymentService
 
             if (partyType.Equals("customer", StringComparison.OrdinalIgnoreCase))
             {
-                var invoice = await _db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM sale_invoices WHERE id = @invoiceId AND customer_id = @partyId",
-                    new { invoiceId, partyId })
-                    ?? throw new InvalidOperationException($"Sale invoice #{invoiceId} not found for this customer.");
+                if (!liveInvoices.TryGetValue(invoiceId, out var invoice))
+                {
+                    invoice = await _db.QuerySingleOrDefaultAsync(
+                                  "SELECT * FROM sale_invoices WHERE id = @invoiceId AND customer_id = @partyId",
+                                  new { invoiceId, partyId },
+                                  conn,
+                                  tx)
+                              ?? throw new InvalidOperationException($"Sale invoice #{invoiceId} not found for this customer.");
+                    liveInvoices[invoiceId] = invoice;
+                }
 
                 if (string.Equals(invoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
                 {
@@ -781,21 +1174,29 @@ public class PaymentService
 
                 var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total"));
                 var invReceived = AccountService.ToDecimal(invoice.GetValueOrDefault("total_receive") ?? invoice.GetValueOrDefault("total_recieve"));
-                var remainingDue = Math.Max(invTotal - invReceived, 0m);
+                var alreadyHere = cumulativeAllocByInvoice.GetValueOrDefault(invoiceId, 0m);
+                var remainingDue = Math.Max(invTotal - (invReceived + alreadyHere), 0m);
 
                 if (allocAmount > remainingDue + 0.001m)
                 {
                     throw new InvalidOperationException($"Allocation of {allocAmount} exceeds remaining balance ({remainingDue}) on invoice {invoice.GetValueOrDefault("posted_number")}.");
                 }
 
-                allocationsToApply.Add((invoice, "sale_invoice", allocAmount));
+                cumulativeAllocByInvoice[invoiceId] = Math.Round(alreadyHere + allocAmount, 2);
+                allocationsToApply.Add((invoiceId, "sale_invoice", allocAmount));
             }
             else
             {
-                var invoice = await _db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM purchase_invoices WHERE id = @invoiceId AND supplier_id = @partyId",
-                    new { invoiceId, partyId })
-                    ?? throw new InvalidOperationException($"Purchase invoice #{invoiceId} not found for this supplier.");
+                if (!liveInvoices.TryGetValue(invoiceId, out var invoice))
+                {
+                    invoice = await _db.QuerySingleOrDefaultAsync(
+                                  "SELECT * FROM purchase_invoices WHERE id = @invoiceId AND supplier_id = @partyId",
+                                  new { invoiceId, partyId },
+                                  conn,
+                                  tx)
+                              ?? throw new InvalidOperationException($"Purchase invoice #{invoiceId} not found for this supplier.");
+                    liveInvoices[invoiceId] = invoice;
+                }
 
                 if (string.Equals(invoice.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
                 {
@@ -804,14 +1205,16 @@ public class PaymentService
 
                 var invTotal = AccountService.ToDecimal(invoice.GetValueOrDefault("total_amount"));
                 var invPaid = AccountService.ToDecimal(invoice.GetValueOrDefault("total_paid"));
-                var remainingDue = Math.Max(invTotal - invPaid, 0m);
+                var alreadyHere = cumulativeAllocByInvoice.GetValueOrDefault(invoiceId, 0m);
+                var remainingDue = Math.Max(invTotal - (invPaid + alreadyHere), 0m);
 
                 if (allocAmount > remainingDue + 0.001m)
                 {
                     throw new InvalidOperationException($"Allocation of {allocAmount} exceeds remaining balance ({remainingDue}) on invoice {invoice.GetValueOrDefault("posted_number")}.");
                 }
 
-                allocationsToApply.Add((invoice, "purchase_invoice", allocAmount));
+                cumulativeAllocByInvoice[invoiceId] = Math.Round(alreadyHere + allocAmount, 2);
+                allocationsToApply.Add((invoiceId, "purchase_invoice", allocAmount));
             }
 
             totalNewAllocated = Math.Round(totalNewAllocated + allocAmount, 2);
@@ -829,10 +1232,11 @@ public class PaymentService
 
         foreach (var item in allocationsToApply)
         {
-            var invId = AccountService.ToLong(item.Invoice["id"]);
             var existingAlloc = await _db.QuerySingleOrDefaultAsync(
                 "SELECT * FROM payment_allocations WHERE payment_id = @paymentId AND invoice_type = @invType AND invoice_id = @invId LIMIT 1",
-                new { paymentId, invType = item.InvoiceType, invId });
+                new { paymentId, invType = item.InvoiceType, invId = item.InvoiceId },
+                conn,
+                tx);
 
             if (existingAlloc != null)
             {
@@ -840,7 +1244,7 @@ public class PaymentService
                 await _db.UpdateAsync("payment_allocations", AccountService.ToLong(existingAlloc["id"]), new Dictionary<string, object?>
                 {
                     ["amount"] = Math.Round(prevAmt + item.Amount, 2)
-                });
+                }, "id", conn, tx);
             }
             else
             {
@@ -848,26 +1252,31 @@ public class PaymentService
                 {
                     ["payment_id"] = paymentId,
                     ["invoice_type"] = item.InvoiceType,
-                    ["invoice_id"] = invId,
+                    ["invoice_id"] = item.InvoiceId,
                     ["amount"] = item.Amount
-                });
+                }, conn, tx);
             }
 
+            var invDict = liveInvoices[item.InvoiceId];
             if (item.InvoiceType == "sale_invoice")
             {
-                var curRec = AccountService.ToDecimal(item.Invoice.GetValueOrDefault("total_receive"));
-                await _db.UpdateAsync("sale_invoices", invId, new Dictionary<string, object?>
+                var curRec = AccountService.ToDecimal(invDict.GetValueOrDefault("total_receive"));
+                var newRec = Math.Round(curRec + item.Amount, 2);
+                invDict["total_receive"] = newRec;
+                await _db.UpdateAsync("sale_invoices", item.InvoiceId, new Dictionary<string, object?>
                 {
-                    ["total_receive"] = Math.Round(curRec + item.Amount, 2)
-                });
+                    ["total_receive"] = newRec
+                }, "id", conn, tx);
             }
             else
             {
-                var curPaid = AccountService.ToDecimal(item.Invoice.GetValueOrDefault("total_paid"));
-                await _db.UpdateAsync("purchase_invoices", invId, new Dictionary<string, object?>
+                var curPaid = AccountService.ToDecimal(invDict.GetValueOrDefault("total_paid"));
+                var newPaid = Math.Round(curPaid + item.Amount, 2);
+                invDict["total_paid"] = newPaid;
+                await _db.UpdateAsync("purchase_invoices", item.InvoiceId, new Dictionary<string, object?>
                 {
-                    ["total_paid"] = Math.Round(curPaid + item.Amount, 2)
-                });
+                    ["total_paid"] = newPaid
+                }, "id", conn, tx);
             }
         }
 
@@ -879,11 +1288,44 @@ public class PaymentService
         {
             ["allocated_amount"] = newAllocatedTotal,
             ["unapplied_amount"] = newUnapplied
-        });
+        }, "id", conn, tx);
 
-        var updatedPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
-        await _auditService.RecordUpdateAsync("payment", paymentId, lockedPayment, updatedPayment, userId, $"Allocated {totalNewAllocated} of unapplied credit to invoices");
-        return await EnrichPaymentAsync(updatedPayment);
+        var updatedPayment = (await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM payments WHERE id = @id",
+            new { id = paymentId },
+            conn,
+            tx))!;
+
+        return (lockedPayment, updatedPayment, totalNewAllocated);
+    }
+
+    public async Task<Dictionary<string, object?>> AllocatePaymentAsync(
+        long paymentId,
+        IEnumerable<Dictionary<string, object?>> allocationsInput,
+        long? userId = null)
+    {
+        await PrewarmPaymentSchemaCacheAsync();
+
+        Dictionary<string, object?> before;
+        Dictionary<string, object?> after;
+        decimal allocatedTotal;
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
+        {
+            try
+            {
+                (before, after, allocatedTotal) = await AllocatePaymentInTxAsync(paymentId, allocationsInput, userId, conn, tx);
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+        await _auditService.RecordUpdateAsync("payment", paymentId, before, after, userId, $"Allocated {allocatedTotal} of unapplied credit to invoices");
+        return await EnrichPaymentAsync(after);
     }
 
     public async Task SyncMissingReturnCreditPaymentsAsync(string? partyType = null, long? partyId = null)
@@ -1013,18 +1455,6 @@ public class PaymentService
     {
         await SyncMissingReturnCreditPaymentsAsync(partyType, partyId);
 
-        var credits = await _db.QueryListAsync(
-            @"SELECT * FROM payments
-              WHERE party_type = @partyType AND party_id = @partyId AND status = 'posted' AND unapplied_amount > 0
-              ORDER BY payment_date ASC, id ASC",
-            new { partyType, partyId });
-
-        var totalAvailable = Math.Round(credits.Sum(c => AccountService.ToDecimal(c.GetValueOrDefault("unapplied_amount"))), 2);
-        if (totalAvailable <= 0.001m)
-        {
-            throw new InvalidOperationException("No unapplied payments or credit notes are available for this party.");
-        }
-
         var invoiceBuckets = new Dictionary<long, decimal>();
         decimal totalRequested = 0m;
         foreach (var alloc in allocationsInput)
@@ -1041,45 +1471,83 @@ public class PaymentService
             throw new InvalidOperationException("Please specify at least one invoice allocation amount greater than zero.");
         }
 
-        if (totalRequested > totalAvailable + 0.001m)
+        await PrewarmPaymentSchemaCacheAsync();
+
+        decimal totalAllocatedAcrossAll = 0m;
+        var invKeys = invoiceBuckets.Keys.ToList();
+        var pendingAudits = new List<(long PaymentId, Dictionary<string, object?> Before, Dictionary<string, object?> After, decimal SliceTotal)>();
+
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            throw new InvalidOperationException($"Requested credit application ({totalRequested}) exceeds total available unapplied credit ({totalAvailable}).");
+            try
+            {
+                var credits = await _db.QueryListAsync(
+                    @"SELECT * FROM payments
+                      WHERE party_type = @partyType AND party_id = @partyId AND status = 'posted' AND unapplied_amount > 0
+                      ORDER BY payment_date ASC, id ASC",
+                    new { partyType, partyId },
+                    conn,
+                    tx);
+
+                var totalAvailable = Math.Round(credits.Sum(c => AccountService.ToDecimal(c.GetValueOrDefault("unapplied_amount"))), 2);
+                if (totalAvailable <= 0.001m)
+                {
+                    throw new InvalidOperationException("No unapplied payments or credit notes are available for this party.");
+                }
+
+                if (totalRequested > totalAvailable + 0.001m)
+                {
+                    throw new InvalidOperationException($"Requested credit application ({totalRequested}) exceeds total available unapplied credit ({totalAvailable}).");
+                }
+
+                foreach (var creditPayment in credits)
+                {
+                    var creditRemaining = Math.Round(AccountService.ToDecimal(creditPayment.GetValueOrDefault("unapplied_amount")), 2);
+                    if (creditRemaining <= 0.001m) continue;
+
+                    var perPaymentAllocations = new List<Dictionary<string, object?>>();
+                    foreach (var invId in invKeys)
+                    {
+                        var neededAmt = invoiceBuckets[invId];
+                        if (neededAmt <= 0.001m || creditRemaining <= 0.001m) continue;
+
+                        var slice = Math.Round(Math.Min(creditRemaining, neededAmt), 2);
+                        if (slice > 0m)
+                        {
+                            perPaymentAllocations.Add(new Dictionary<string, object?>
+                            {
+                                ["invoice_id"] = invId,
+                                ["amount"] = slice
+                            });
+                            invoiceBuckets[invId] = Math.Round(neededAmt - slice, 2);
+                            creditRemaining = Math.Round(creditRemaining - slice, 2);
+                            totalAllocatedAcrossAll = Math.Round(totalAllocatedAcrossAll + slice, 2);
+                        }
+                    }
+
+                    if (perPaymentAllocations.Count > 0)
+                    {
+                        var payId = AccountService.ToLong(creditPayment["id"]);
+                        var (before, after, sliceTotal) = await AllocatePaymentInTxAsync(payId, perPaymentAllocations, userId, conn, tx);
+                        pendingAudits.Add((payId, before, after, sliceTotal));
+                    }
+                }
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
 
         var updatedPayments = new List<Dictionary<string, object?>>();
-        decimal totalAllocatedAcrossAll = 0m;
-        var invKeys = invoiceBuckets.Keys.ToList();
-
-        foreach (var creditPayment in credits)
+        foreach (var audit in pendingAudits)
         {
-            var creditRemaining = Math.Round(AccountService.ToDecimal(creditPayment.GetValueOrDefault("unapplied_amount")), 2);
-            if (creditRemaining <= 0.001m) continue;
-
-            var perPaymentAllocations = new List<Dictionary<string, object?>>();
-            foreach (var invId in invKeys)
-            {
-                var neededAmt = invoiceBuckets[invId];
-                if (neededAmt <= 0.001m || creditRemaining <= 0.001m) continue;
-
-                var slice = Math.Round(Math.Min(creditRemaining, neededAmt), 2);
-                if (slice > 0m)
-                {
-                    perPaymentAllocations.Add(new Dictionary<string, object?>
-                    {
-                        ["invoice_id"] = invId,
-                        ["amount"] = slice
-                    });
-                    invoiceBuckets[invId] = Math.Round(neededAmt - slice, 2);
-                    creditRemaining = Math.Round(creditRemaining - slice, 2);
-                    totalAllocatedAcrossAll = Math.Round(totalAllocatedAcrossAll + slice, 2);
-                }
-            }
-
-            if (perPaymentAllocations.Count > 0)
-            {
-                var updated = await AllocatePaymentAsync(AccountService.ToLong(creditPayment["id"]), perPaymentAllocations, userId);
-                updatedPayments.Add(updated);
-            }
+            await _auditService.RecordUpdateAsync("payment", audit.PaymentId, audit.Before, audit.After, userId, $"Allocated {audit.SliceTotal} of unapplied credit to invoices");
+            updatedPayments.Add(await EnrichPaymentAsync(audit.After));
         }
 
         return new Dictionary<string, object?>

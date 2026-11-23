@@ -12,6 +12,19 @@ const agentScript = process.argv[2] || path.join(__dirname, "whatsapp-agent.mjs"
 const logFile =
   process.argv[3] || path.join(__dirname, "..", "storage", "logs", "whatsapp-agent.log");
 const rootDir = path.resolve(__dirname, "..");
+const apiKey = (process.env.WHATSAPP_AGENT_API_KEY || "").trim();
+
+if (!apiKey) {
+  const errMsg = "[WhatsApp Agent Spawner] Refusing to start without non-empty WHATSAPP_AGENT_API_KEY.";
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${errMsg}\n`);
+  } catch {
+    // ignore
+  }
+  console.error(errMsg);
+  process.exit(1);
+}
 
 try {
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
@@ -24,6 +37,7 @@ try {
     stdio: ["ignore", logFd, logFd],
     env: {
       ...process.env,
+      WHATSAPP_AGENT_API_KEY: apiKey,
       NODE_NO_WARNINGS: "1",
     },
   });

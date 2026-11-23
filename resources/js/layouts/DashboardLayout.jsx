@@ -7,6 +7,7 @@ import Topbar from "../components/Topbar.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import SessionExpiryModal from "../components/SessionExpiryModal.jsx";
+import { openUrlInNewTabSafely } from "../utils/uiResilienceHelpers";
 
 const SIDEBAR_PIN_STORAGE_KEY = "karobar_sidebar_pinned";
 
@@ -20,7 +21,7 @@ export function openInNewWindow(path, title = "Karobar-App") {
   if (window.karobarDesktop?.openWindow) {
     window.karobarDesktop.openWindow(targetPath, title);
   } else {
-    window.open(targetPath, "_blank");
+    openUrlInNewTabSafely(window, targetPath);
   }
 }
 

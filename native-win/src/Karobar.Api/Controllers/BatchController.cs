@@ -220,104 +220,131 @@ public class BatchController : ApiControllerBase
             });
         }
 
-        var currentTotal = Math.Max(0, Convert.ToInt32(prodRow["quantity"] ?? 0));
-        var alreadyBatched = await Db.ExecuteScalarAsync<int?>(
-            "SELECT COALESCE(SUM(quantity), 0) FROM batches WHERE product_id = @product", new { product }) ?? 0;
+        await PrewarmWriteSchemaAsync();
+        var hasStorageLocations = await Db.HasTableAsync("storage_locations");
 
-        long? defaultLocationId = null;
-        if (await Db.HasTableAsync("storage_locations"))
-        {
-            defaultLocationId = await Db.ExecuteScalarAsync<long?>("SELECT id FROM storage_locations WHERE is_default = 1 LIMIT 1")
-                                ?? await Db.ExecuteScalarAsync<long?>("SELECT id FROM storage_locations ORDER BY id ASC LIMIT 1");
-        }
-
-        long? locationId = body.ContainsKey("storage_location_id") && GetNullableLong(body, "storage_location_id").HasValue
-            ? GetNullableLong(body, "storage_location_id")
-            : (prodRow["storage_location_id"] != null ? Convert.ToInt64(prodRow["storage_location_id"]) : defaultLocationId);
-
-        var rack = body.ContainsKey("rack")
-            ? (GetString(body, "rack")?.Trim() is { Length: > 0 } rStr ? rStr : null)
-            : prodRow["rack"]?.ToString();
-
-        var existingSql = locationId.HasValue
-            ? "SELECT * FROM batches WHERE product_id = @product AND batch_number = @batchNumber AND storage_location_id = @locationId LIMIT 1"
-            : "SELECT * FROM batches WHERE product_id = @product AND batch_number = @batchNumber LIMIT 1";
-        var existing = await Db.QuerySingleOrDefaultAsync(existingSql, new { product, batchNumber, locationId });
-
-        var existingBatchQty = existing != null ? Convert.ToInt32(existing["quantity"] ?? 0) : 0;
-        var otherBatched = Math.Max(0, alreadyBatched - existingBatchQty);
-        var availableUnassigned = Math.Max(0, currentTotal - otherBatched);
-
-        if (existing == null)
-        {
-            if (availableUnassigned <= 0)
-            {
-                var msg = $"Cannot add a new batch because this product has 0 unassigned stock available (Total on-hand: {currentTotal}, already batched: {otherBatched}).";
-                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
-            }
-            if (qty <= 0)
-            {
-                var msg = $"Batch quantity must be at least 1 unit from unassigned stock (Available unassigned: {availableUnassigned}).";
-                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
-            }
-        }
-
-        if (qty > availableUnassigned)
-        {
-            var msg = $"Cannot assign {qty} units to batch. Only {availableUnassigned} unassigned units are available for this batch (Total on-hand: {currentTotal}, other batches: {otherBatched}).";
-            return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
-        }
-
-        string[] priceFields = ["unit_sale_price", "pack_sale_price", "unit_purchase_price", "pack_purchase_price", "whole_sale_unit_price", "whole_sale_pack_price"];
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         long batchId;
-        if (existing != null)
+        Dictionary<string, object?>? lockedProdRow;
+        try
         {
-            batchId = Convert.ToInt64(existing["id"]);
-            var updatePayload = new Dictionary<string, object?>
+            lockedProdRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @product", new { product }, conn, tx);
+            if (lockedProdRow == null)
             {
-                ["expiry_date"] = expiryDate,
-                ["quantity"] = qty,
-                ["storage_location_id"] = locationId,
-                ["rack"] = rack
-            };
-            foreach (var f in priceFields)
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Product not found." });
+            }
+
+            var currentTotal = Math.Max(0, Convert.ToInt32(lockedProdRow["quantity"] ?? 0));
+            var alreadyBatched = await Db.ExecuteScalarAsync<int?>(
+                "SELECT COALESCE(SUM(quantity), 0) FROM batches WHERE product_id = @product", new { product }, conn, tx) ?? 0;
+
+            long? defaultLocationId = null;
+            if (hasStorageLocations)
             {
-                var raw = GetString(body, f);
-                if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                defaultLocationId = await Db.ExecuteScalarAsync<long?>("SELECT id FROM storage_locations WHERE is_default = 1 LIMIT 1", null, conn, tx)
+                                    ?? await Db.ExecuteScalarAsync<long?>("SELECT id FROM storage_locations ORDER BY id ASC LIMIT 1", null, conn, tx);
+            }
+
+            long? locationId = body.ContainsKey("storage_location_id") && GetNullableLong(body, "storage_location_id").HasValue
+                ? GetNullableLong(body, "storage_location_id")
+                : (lockedProdRow["storage_location_id"] != null ? Convert.ToInt64(lockedProdRow["storage_location_id"]) : defaultLocationId);
+
+            var rack = body.ContainsKey("rack")
+                ? (GetString(body, "rack")?.Trim() is { Length: > 0 } rStr ? rStr : null)
+                : lockedProdRow["rack"]?.ToString();
+
+            var existingSql = locationId.HasValue
+                ? "SELECT * FROM batches WHERE product_id = @product AND batch_number = @batchNumber AND storage_location_id = @locationId LIMIT 1"
+                : "SELECT * FROM batches WHERE product_id = @product AND batch_number = @batchNumber LIMIT 1";
+            var existing = await Db.QuerySingleOrDefaultAsync(existingSql, new { product, batchNumber, locationId }, conn, tx);
+
+            var existingBatchQty = existing != null ? Convert.ToInt32(existing["quantity"] ?? 0) : 0;
+            var otherBatched = Math.Max(0, alreadyBatched - existingBatchQty);
+            var availableUnassigned = Math.Max(0, currentTotal - otherBatched);
+
+            if (existing == null)
+            {
+                if (availableUnassigned <= 0)
                 {
-                    updatePayload[f] = d;
+                    await tx.RollbackAsync();
+                    var msg = $"Cannot add a new batch because this product has 0 unassigned stock available (Total on-hand: {currentTotal}, already batched: {otherBatched}).";
+                    return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
+                }
+                if (qty <= 0)
+                {
+                    await tx.RollbackAsync();
+                    var msg = $"Batch quantity must be at least 1 unit from unassigned stock (Available unassigned: {availableUnassigned}).";
+                    return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
                 }
             }
-            await Db.UpdateAsync("batches", batchId, updatePayload);
+
+            if (qty > availableUnassigned)
+            {
+                await tx.RollbackAsync();
+                var msg = $"Cannot assign {qty} units to batch. Only {availableUnassigned} unassigned units are available for this batch (Total on-hand: {currentTotal}, other batches: {otherBatched}).";
+                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
+            }
+
+            string[] priceFields = ["unit_sale_price", "pack_sale_price", "unit_purchase_price", "pack_purchase_price", "whole_sale_unit_price", "whole_sale_pack_price"];
+
+            if (existing != null)
+            {
+                batchId = Convert.ToInt64(existing["id"]);
+                var updatePayload = new Dictionary<string, object?>
+                {
+                    ["expiry_date"] = expiryDate,
+                    ["quantity"] = qty,
+                    ["storage_location_id"] = locationId,
+                    ["rack"] = rack
+                };
+                foreach (var f in priceFields)
+                {
+                    var raw = GetString(body, f);
+                    if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                    {
+                        updatePayload[f] = d;
+                    }
+                }
+                await Db.UpdateAsync("batches", batchId, updatePayload, "id", conn, tx);
+            }
+            else
+            {
+                var createPayload = new Dictionary<string, object?>
+                {
+                    ["product_id"] = product,
+                    ["batch_number"] = batchNumber,
+                    ["expiry_date"] = expiryDate,
+                    ["quantity"] = qty,
+                    ["storage_location_id"] = locationId,
+                    ["rack"] = rack
+                };
+                foreach (var f in priceFields)
+                {
+                    var raw = GetString(body, f);
+                    if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                    {
+                        createPayload[f] = d;
+                    }
+                    else
+                    {
+                        createPayload[f] = lockedProdRow[f];
+                    }
+                }
+                batchId = await Db.InsertAsync("batches", createPayload, conn, tx);
+            }
+
+            await tx.CommitAsync();
         }
-        else
+        catch
         {
-            var createPayload = new Dictionary<string, object?>
-            {
-                ["product_id"] = product,
-                ["batch_number"] = batchNumber,
-                ["expiry_date"] = expiryDate,
-                ["quantity"] = qty,
-                ["storage_location_id"] = locationId,
-                ["rack"] = rack
-            };
-            foreach (var f in priceFields)
-            {
-                var raw = GetString(body, f);
-                if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
-                {
-                    createPayload[f] = d;
-                }
-                else
-                {
-                    createPayload[f] = prodRow[f];
-                }
-            }
-            batchId = await Db.InsertAsync("batches", createPayload);
+            await tx.RollbackAsync();
+            throw;
         }
 
-        var fresh = await GetBatchWithLocationAsync(batchId, prodRow);
+        var fresh = await GetBatchWithLocationAsync(batchId, lockedProdRow);
         return StatusCode(201, fresh);
     }
 
@@ -351,61 +378,94 @@ public class BatchController : ApiControllerBase
             return Unprocessable("The quantity field must be at least 0.", new Dictionary<string, string[]> { ["quantity"] = ["The quantity field must be at least 0."] });
         }
 
-        long? targetLocationId = body.ContainsKey("storage_location_id")
-            ? GetNullableLong(body, "storage_location_id")
-            : (existing["storage_location_id"] != null ? Convert.ToInt64(existing["storage_location_id"]) : null);
+        await PrewarmWriteSchemaAsync();
 
-        var dupSql = targetLocationId.HasValue
-            ? "SELECT COUNT(1) FROM batches WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id = @targetLocationId AND id != @batch"
-            : "SELECT COUNT(1) FROM batches WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id IS NULL AND id != @batch";
-        var dupCount = await Db.ExecuteScalarAsync<int>(dupSql, new { productId, batchNumber, targetLocationId, batch });
-        if (dupCount > 0)
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+
+        Dictionary<string, object?>? lockedProdRow;
+        try
         {
-            return Unprocessable("The batch number has already been taken.", new Dictionary<string, string[]>
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM batches WHERE id = @batch", new { batch }, conn, tx);
+            if (lockedExisting == null)
             {
-                ["batch_number"] = ["The batch number has already been taken."]
-            });
-        }
-
-        var currentTotal = Math.Max(0, Convert.ToInt32(prodRow["quantity"] ?? 0));
-        var otherBatched = await Db.ExecuteScalarAsync<int?>(
-            "SELECT COALESCE(SUM(quantity), 0) FROM batches WHERE product_id = @productId AND id != @batch",
-            new { productId, batch }) ?? 0;
-        var availableUnassigned = Math.Max(0, currentTotal - otherBatched);
-
-        if (newQty > availableUnassigned)
-        {
-            var curBatchQty = Convert.ToInt32(existing["quantity"] ?? 0);
-            var unbatchedPool = Math.Max(0, currentTotal - (otherBatched + curBatchQty));
-            var msg = $"Cannot assign {newQty} units to batch. Maximum assignable quantity is {availableUnassigned} units (Current batch: {curBatchQty}, unassigned stock: {unbatchedPool}).";
-            return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
-        }
-
-        var updatePayload = new Dictionary<string, object?>
-        {
-            ["batch_number"] = batchNumber,
-            ["expiry_date"] = expiryDate,
-            ["quantity"] = newQty,
-            ["storage_location_id"] = targetLocationId
-        };
-
-        if (body.ContainsKey("rack"))
-        {
-            var r = GetString(body, "rack")?.Trim();
-            updatePayload["rack"] = string.IsNullOrEmpty(r) ? null : r;
-        }
-
-        foreach (var f in new[] { "unit_sale_price", "pack_sale_price", "unit_purchase_price", "pack_purchase_price", "whole_sale_unit_price", "whole_sale_pack_price" })
-        {
-            var raw = GetString(body, f);
-            if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
-            {
-                updatePayload[f] = d;
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Batch not found." });
             }
+
+            productId = Convert.ToInt64(lockedExisting["product_id"]);
+            lockedProdRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @productId", new { productId }, conn, tx);
+            if (lockedProdRow == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Product not found." });
+            }
+
+            long? targetLocationId = body.ContainsKey("storage_location_id")
+                ? GetNullableLong(body, "storage_location_id")
+                : (lockedExisting["storage_location_id"] != null ? Convert.ToInt64(lockedExisting["storage_location_id"]) : null);
+
+            var dupSql = targetLocationId.HasValue
+                ? "SELECT COUNT(1) FROM batches WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id = @targetLocationId AND id != @batch"
+                : "SELECT COUNT(1) FROM batches WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id IS NULL AND id != @batch";
+            var dupCount = await Db.ExecuteScalarAsync<int>(dupSql, new { productId, batchNumber, targetLocationId, batch }, conn, tx);
+            if (dupCount > 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("The batch number has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["batch_number"] = ["The batch number has already been taken."]
+                });
+            }
+
+            var currentTotal = Math.Max(0, Convert.ToInt32(lockedProdRow["quantity"] ?? 0));
+            var otherBatched = await Db.ExecuteScalarAsync<int?>(
+                "SELECT COALESCE(SUM(quantity), 0) FROM batches WHERE product_id = @productId AND id != @batch",
+                new { productId, batch }, conn, tx) ?? 0;
+            var availableUnassigned = Math.Max(0, currentTotal - otherBatched);
+
+            if (newQty > availableUnassigned)
+            {
+                await tx.RollbackAsync();
+                var curBatchQty = Convert.ToInt32(lockedExisting["quantity"] ?? 0);
+                var unbatchedPool = Math.Max(0, currentTotal - (otherBatched + curBatchQty));
+                var msg = $"Cannot assign {newQty} units to batch. Maximum assignable quantity is {availableUnassigned} units (Current batch: {curBatchQty}, unassigned stock: {unbatchedPool}).";
+                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
+            }
+
+            var updatePayload = new Dictionary<string, object?>
+            {
+                ["batch_number"] = batchNumber,
+                ["expiry_date"] = expiryDate,
+                ["quantity"] = newQty,
+                ["storage_location_id"] = targetLocationId
+            };
+
+            if (body.ContainsKey("rack"))
+            {
+                var r = GetString(body, "rack")?.Trim();
+                updatePayload["rack"] = string.IsNullOrEmpty(r) ? null : r;
+            }
+
+            foreach (var f in new[] { "unit_sale_price", "pack_sale_price", "unit_purchase_price", "pack_purchase_price", "whole_sale_unit_price", "whole_sale_pack_price" })
+            {
+                var raw = GetString(body, f);
+                if (body.ContainsKey(f) && !string.IsNullOrWhiteSpace(raw) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                {
+                    updatePayload[f] = d;
+                }
+            }
+
+            await Db.UpdateAsync("batches", batch, updatePayload, "id", conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await Db.UpdateAsync("batches", batch, updatePayload);
-        var fresh = await GetBatchWithLocationAsync(batch, prodRow);
+        var fresh = await GetBatchWithLocationAsync(batch, lockedProdRow);
         return Ok(fresh);
     }
 
@@ -436,123 +496,145 @@ public class BatchController : ApiControllerBase
             });
         }
 
-        var toLocation = await Db.QuerySingleOrDefaultAsync("SELECT * FROM storage_locations WHERE id = @id", new { id = toLocationId.Value });
-        if (toLocation == null)
-        {
-            return Unprocessable("The selected to_storage_location_id is invalid.", new Dictionary<string, string[]>
-            {
-                ["to_storage_location_id"] = ["The selected to_storage_location_id is invalid."]
-            });
-        }
+        await PrewarmWriteSchemaAsync();
 
-        var sourceQty = Convert.ToInt32(sourceBatch["quantity"] ?? 0);
-        if (moveQty > sourceQty)
-        {
-            var msg = $"Cannot move {moveQty} units. Only {sourceQty} units are available in this batch location.";
-            return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
-        }
+        await using var moveConn = await Db.OpenConnectionAsync();
+        await using var moveTx = await KarobarDb.BeginImmediateTransactionAsync(moveConn);
 
         var reqRack = GetString(body, "rack")?.Trim();
-        var targetRack = !string.IsNullOrEmpty(reqRack)
-            ? reqRack
-            : (toLocation["default_rack"]?.ToString() ?? sourceBatch["rack"]?.ToString());
 
-        var curLocId = sourceBatch["storage_location_id"] != null ? Convert.ToInt64(sourceBatch["storage_location_id"]) : 0;
-        var productId = Convert.ToInt64(sourceBatch["product_id"]);
-        var prodRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @productId", new { productId });
-        var toLocName = toLocation["name"]?.ToString() ?? "";
+        string responseMessage;
+        long? sourceBatchIdToLoad = null;
+        long targetBatchIdToLoad;
+        Dictionary<string, object?>? prodRow;
 
-        if (curLocId == toLocationId.Value)
+        try
         {
-            await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["rack"] = targetRack });
-            var sameFresh = await GetBatchWithLocationAsync(batch, prodRow);
-            return Ok(new Dictionary<string, object?>
+            var lockedSource = await Db.QuerySingleOrDefaultAsync("SELECT * FROM batches WHERE id = @batch", new { batch }, moveConn, moveTx);
+            if (lockedSource == null)
             {
-                ["message"] = "Batch rack/location updated.",
-                ["source_batch"] = sameFresh,
-                ["target_batch"] = sameFresh
-            });
-        }
+                await moveTx.RollbackAsync();
+                return NotFound(new { message = "Batch not found." });
+            }
 
-        var batchNumber = sourceBatch["batch_number"]?.ToString() ?? "";
-        await using var moveConn = await Db.OpenConnectionAsync();
-        await using var moveTx = await moveConn.BeginTransactionAsync();
-
-        var targetBatch = await Db.QuerySingleOrDefaultAsync(@"
-            SELECT * FROM batches
-            WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id = @toLocId AND id != @batch
-            LIMIT 1",
-            new { productId, batchNumber, toLocId = toLocationId.Value, batch }, moveConn, moveTx);
-
-        if (targetBatch != null)
-        {
-            var targetId = Convert.ToInt64(targetBatch["id"]);
-            var targetNewQty = Convert.ToInt32(targetBatch["quantity"] ?? 0) + moveQty;
-            var targetUpdates = new Dictionary<string, object?> { ["quantity"] = targetNewQty };
-            if (targetRack != null) targetUpdates["rack"] = targetRack;
-            await Db.UpdateAsync("batches", targetId, targetUpdates, "id", moveConn, moveTx);
-
-            var remQty = sourceQty - moveQty;
-            if (remQty <= 0)
+            var toLocation = await Db.QuerySingleOrDefaultAsync("SELECT * FROM storage_locations WHERE id = @id", new { id = toLocationId.Value }, moveConn, moveTx);
+            if (toLocation == null)
             {
-                await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch }, moveConn, moveTx);
+                await moveTx.RollbackAsync();
+                return Unprocessable("The selected to_storage_location_id is invalid.", new Dictionary<string, string[]>
+                {
+                    ["to_storage_location_id"] = ["The selected to_storage_location_id is invalid."]
+                });
+            }
+
+            var sourceQty = Convert.ToInt32(lockedSource["quantity"] ?? 0);
+            if (moveQty > sourceQty)
+            {
+                await moveTx.RollbackAsync();
+                var msg = $"Cannot move {moveQty} units. Only {sourceQty} units are available in this batch location.";
+                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
+            }
+
+            var targetRack = !string.IsNullOrEmpty(reqRack)
+                ? reqRack
+                : (toLocation["default_rack"]?.ToString() ?? lockedSource["rack"]?.ToString());
+
+            var curLocId = lockedSource["storage_location_id"] != null ? Convert.ToInt64(lockedSource["storage_location_id"]) : 0;
+            var productId = Convert.ToInt64(lockedSource["product_id"]);
+            prodRow = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @productId", new { productId }, moveConn, moveTx);
+            var toLocName = toLocation["name"]?.ToString() ?? "";
+            var batchNumber = lockedSource["batch_number"]?.ToString() ?? "";
+
+            if (curLocId == toLocationId.Value)
+            {
+                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["rack"] = targetRack }, "id", moveConn, moveTx);
+                await moveTx.CommitAsync();
+                var sameFresh = await GetBatchWithLocationAsync(batch, prodRow);
+                return Ok(new Dictionary<string, object?>
+                {
+                    ["message"] = "Batch rack/location updated.",
+                    ["source_batch"] = sameFresh,
+                    ["target_batch"] = sameFresh
+                });
+            }
+
+            var targetBatch = await Db.QuerySingleOrDefaultAsync(@"
+                SELECT * FROM batches
+                WHERE product_id = @productId AND batch_number = @batchNumber AND storage_location_id = @toLocId AND id != @batch
+                LIMIT 1",
+                new { productId, batchNumber, toLocId = toLocationId.Value, batch }, moveConn, moveTx);
+
+            if (targetBatch != null)
+            {
+                var targetId = Convert.ToInt64(targetBatch["id"]);
+                var targetNewQty = Convert.ToInt32(targetBatch["quantity"] ?? 0) + moveQty;
+                var targetUpdates = new Dictionary<string, object?> { ["quantity"] = targetNewQty };
+                if (targetRack != null) targetUpdates["rack"] = targetRack;
+                await Db.UpdateAsync("batches", targetId, targetUpdates, "id", moveConn, moveTx);
+
+                var remQty = sourceQty - moveQty;
+                if (remQty <= 0)
+                {
+                    await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch }, moveConn, moveTx);
+                }
+                else
+                {
+                    await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = remQty }, "id", moveConn, moveTx);
+                    sourceBatchIdToLoad = batch;
+                }
+
+                await moveTx.CommitAsync();
+                responseMessage = $"Moved {moveQty} units to {toLocName}.";
+                targetBatchIdToLoad = targetId;
+            }
+            else if (moveQty == sourceQty)
+            {
+                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?>
+                {
+                    ["storage_location_id"] = toLocationId.Value,
+                    ["rack"] = targetRack
+                }, "id", moveConn, moveTx);
+                await moveTx.CommitAsync();
+
+                responseMessage = $"Moved all {moveQty} units to {toLocName}.";
+                targetBatchIdToLoad = batch;
             }
             else
             {
-                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = remQty }, "id", moveConn, moveTx);
+                await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = sourceQty - moveQty }, "id", moveConn, moveTx);
+                var newTargetId = await Db.InsertAsync("batches", new Dictionary<string, object?>
+                {
+                    ["product_id"] = productId,
+                    ["batch_number"] = batchNumber,
+                    ["expiry_date"] = lockedSource["expiry_date"],
+                    ["quantity"] = moveQty,
+                    ["storage_location_id"] = toLocationId.Value,
+                    ["rack"] = targetRack,
+                    ["pack_purchase_price"] = lockedSource["pack_purchase_price"],
+                    ["unit_purchase_price"] = lockedSource["unit_purchase_price"],
+                    ["pack_sale_price"] = lockedSource["pack_sale_price"],
+                    ["unit_sale_price"] = lockedSource["unit_sale_price"],
+                    ["whole_sale_pack_price"] = lockedSource["whole_sale_pack_price"],
+                    ["whole_sale_unit_price"] = lockedSource["whole_sale_unit_price"]
+                }, moveConn, moveTx);
+                await moveTx.CommitAsync();
+
+                responseMessage = $"Split and moved {moveQty} units to {toLocName}.";
+                sourceBatchIdToLoad = batch;
+                targetBatchIdToLoad = newTargetId;
             }
-
-            await moveTx.CommitAsync();
-            var sourceResult = remQty > 0 ? await GetBatchWithLocationAsync(batch, prodRow) : null;
-
-            return Ok(new Dictionary<string, object?>
-            {
-                ["message"] = $"Moved {moveQty} units to {toLocName}.",
-                ["source_batch"] = sourceResult,
-                ["target_batch"] = await GetBatchWithLocationAsync(targetId, prodRow)
-            });
         }
-
-        if (moveQty == sourceQty)
+        catch
         {
-            await Db.UpdateAsync("batches", batch, new Dictionary<string, object?>
-            {
-                ["storage_location_id"] = toLocationId.Value,
-                ["rack"] = targetRack
-            }, "id", moveConn, moveTx);
-            await moveTx.CommitAsync();
-
-            return Ok(new Dictionary<string, object?>
-            {
-                ["message"] = $"Moved all {moveQty} units to {toLocName}.",
-                ["source_batch"] = null,
-                ["target_batch"] = await GetBatchWithLocationAsync(batch, prodRow)
-            });
+            await moveTx.RollbackAsync();
+            throw;
         }
-
-        await Db.UpdateAsync("batches", batch, new Dictionary<string, object?> { ["quantity"] = sourceQty - moveQty }, "id", moveConn, moveTx);
-        var newTargetId = await Db.InsertAsync("batches", new Dictionary<string, object?>
-        {
-            ["product_id"] = productId,
-            ["batch_number"] = batchNumber,
-            ["expiry_date"] = sourceBatch["expiry_date"],
-            ["quantity"] = moveQty,
-            ["storage_location_id"] = toLocationId.Value,
-            ["rack"] = targetRack,
-            ["pack_purchase_price"] = sourceBatch["pack_purchase_price"],
-            ["unit_purchase_price"] = sourceBatch["unit_purchase_price"],
-            ["pack_sale_price"] = sourceBatch["pack_sale_price"],
-            ["unit_sale_price"] = sourceBatch["unit_sale_price"],
-            ["whole_sale_pack_price"] = sourceBatch["whole_sale_pack_price"],
-            ["whole_sale_unit_price"] = sourceBatch["whole_sale_unit_price"]
-        }, moveConn, moveTx);
-        await moveTx.CommitAsync();
 
         return Ok(new Dictionary<string, object?>
         {
-            ["message"] = $"Split and moved {moveQty} units to {toLocName}.",
-            ["source_batch"] = await GetBatchWithLocationAsync(batch, prodRow),
-            ["target_batch"] = await GetBatchWithLocationAsync(newTargetId, prodRow)
+            ["message"] = responseMessage,
+            ["source_batch"] = sourceBatchIdToLoad.HasValue ? await GetBatchWithLocationAsync(sourceBatchIdToLoad.Value, prodRow) : null,
+            ["target_batch"] = await GetBatchWithLocationAsync(targetBatchIdToLoad, prodRow)
         });
     }
 
@@ -561,27 +643,56 @@ public class BatchController : ApiControllerBase
     {
         if (!await CanAsync("product.update")) return Forbidden();
 
-        var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM batches WHERE id = @batch", new { batch });
-        if (existing == null) return NotFound(new { message = "Batch not found." });
+        await PrewarmWriteSchemaAsync();
+        var hasSaleInvoiceItems = await Db.HasTableAsync("sale_invoice_items");
 
-        var productId = Convert.ToInt64(existing["product_id"]);
-        var batchNumber = existing["batch_number"]?.ToString() ?? "";
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        if (await Db.HasTableAsync("sale_invoice_items"))
+        try
         {
-            var hasSales = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM sale_invoice_items WHERE product_id = @productId AND batch_number = @batchNumber",
-                new { productId, batchNumber }) > 0;
-
-            if (hasSales)
+            var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM batches WHERE id = @batch", new { batch }, conn, tx);
+            if (existing == null)
             {
-                var msg = $"Cannot delete batch '{batchNumber}' because sale transactions are recorded for it. Adjust its quantity to 0 instead.";
-                return Unprocessable(msg, new Dictionary<string, string[]> { ["batch"] = [msg] });
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Batch not found." });
             }
+
+            var productId = Convert.ToInt64(existing["product_id"]);
+            var batchNumber = existing["batch_number"]?.ToString() ?? "";
+
+            if (hasSaleInvoiceItems)
+            {
+                var hasSales = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM sale_invoice_items WHERE product_id = @productId AND batch_number = @batchNumber",
+                    new { productId, batchNumber }, conn, tx) > 0;
+
+                if (hasSales)
+                {
+                    await tx.RollbackAsync();
+                    var msg = $"Cannot delete batch '{batchNumber}' because sale transactions are recorded for it. Adjust its quantity to 0 instead.";
+                    return Unprocessable(msg, new Dictionary<string, string[]> { ["batch"] = [msg] });
+                }
+            }
+
+            await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch }, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await Db.ExecuteAsync("DELETE FROM batches WHERE id = @batch", new { batch });
         return Ok(new { message = "Batch deleted successfully" });
+    }
+
+    private async Task PrewarmWriteSchemaAsync()
+    {
+        await Db.GetTableColumnsAsync("batches");
+        await Db.GetTableColumnsAsync("products");
+        await Db.GetTableColumnsAsync("storage_locations");
+        await Db.GetTableColumnsAsync("sale_invoice_items");
     }
 
     private async Task<Dictionary<string, object?>?> GetBatchWithLocationAsync(long batchId, Dictionary<string, object?>? product)

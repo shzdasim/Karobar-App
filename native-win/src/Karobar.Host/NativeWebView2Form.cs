@@ -975,8 +975,7 @@ public sealed class NativeWebView2Form : Form
                 try
                 {
                     var reqUri = reqArgs.Request.Uri ?? "";
-                    if (!string.IsNullOrWhiteSpace(_baseOrigin) &&
-                        reqUri.StartsWith(_baseOrigin, StringComparison.OrdinalIgnoreCase))
+                    if (NetworkConfigManager.IsSameOrigin(reqUri, _baseOrigin))
                     {
                         var headers = _windowManager.NetworkConfig.GetTerminalIdentityHeaders();
                         foreach (var kv in headers)
@@ -995,7 +994,10 @@ public sealed class NativeWebView2Form : Form
             };
 
             var preloadJs = "window.__karobarUseNativeWebView2PostMessage = true;\n" +
-                            KarobarPreloadScript.GetPreloadScript(_winInstance.IsOffscreenPrintWorker);
+                            KarobarPreloadScript.GetPreloadScript(
+                                _winInstance.IsOffscreenPrintWorker,
+                                ipcToken: null,
+                                trustedOrigin: _baseOrigin);
             await core.AddScriptToExecuteOnDocumentCreatedAsync(preloadJs);
             if (IsDisposed || wv.IsDisposed) return;
 

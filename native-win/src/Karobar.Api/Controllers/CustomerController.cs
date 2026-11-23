@@ -251,35 +251,75 @@ public class CustomerController : ApiControllerBase
 
         NormalizeRegularFields(data, null);
 
+        var hasLedgerTable = openingBalance > 0 && await Db.HasTableAsync("customer_ledgers");
+        await Db.GetTableColumnsAsync("customers");
+        await Db.GetTableColumnsAsync("customer_regular_items");
+        if (hasLedgerTable)
+        {
+            await Db.GetTableColumnsAsync("customer_ledgers");
+        }
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        var id = await Db.InsertAsync("customers", data, conn, tx);
-
-        if (body.TryGetValue("regular_items", out var regItemsEl) && regItemsEl.ValueKind == JsonValueKind.Array)
+        long id;
+        try
         {
-            await SyncRegularItemsAsync(id, regItemsEl, conn, tx);
-        }
-
-        if (openingBalance > 0 && await Db.HasTableAsync("customer_ledgers"))
-        {
-            await Db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
+            var lockedExistsName = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM customers WHERE name = @name", new { name }, conn, tx);
+            if (lockedExistsName > 0)
             {
-                ["customer_id"] = id,
-                ["entry_type"] = "manual",
-                ["is_manual"] = true,
-                ["entry_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
-                ["posted_number"] = "OB-" + id.ToString().PadLeft(5, '0'),
-                ["invoice_total"] = openingBalance,
-                ["total_received"] = 0m,
-                ["balance_remaining"] = openingBalance,
-                ["credited_amount"] = 0m,
-                ["description"] = "Opening Balance",
-                ["created_by"] = CurrentUserId
-            }, conn, tx);
-        }
+                await tx.RollbackAsync();
+                return Unprocessable("The name has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["name"] = ["The name has already been taken."]
+                });
+            }
 
-        await tx.CommitAsync();
+            if (!string.IsNullOrEmpty(email))
+            {
+                var lockedExistsEmail = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM customers WHERE email = @email", new { email }, conn, tx);
+                if (lockedExistsEmail > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("The email has already been taken.", new Dictionary<string, string[]>
+                    {
+                        ["email"] = ["The email has already been taken."]
+                    });
+                }
+            }
+
+            id = await Db.InsertAsync("customers", data, conn, tx);
+
+            if (body.TryGetValue("regular_items", out var regItemsEl) && regItemsEl.ValueKind == JsonValueKind.Array)
+            {
+                await SyncRegularItemsAsync(id, regItemsEl, conn, tx);
+            }
+
+            if (hasLedgerTable)
+            {
+                await Db.InsertAsync("customer_ledgers", new Dictionary<string, object?>
+                {
+                    ["customer_id"] = id,
+                    ["entry_type"] = "manual",
+                    ["is_manual"] = true,
+                    ["entry_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                    ["posted_number"] = "OB-" + id.ToString().PadLeft(5, '0'),
+                    ["invoice_total"] = openingBalance,
+                    ["total_received"] = 0m,
+                    ["balance_remaining"] = openingBalance,
+                    ["credited_amount"] = 0m,
+                    ["description"] = "Opening Balance",
+                    ["created_by"] = CurrentUserId
+                }, conn, tx);
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var customer = await GetCustomerWithRegularMetadataAsync(id);
         return StatusCode(201, customer);
@@ -379,11 +419,13 @@ public class CustomerController : ApiControllerBase
             });
         }
 
+        string? emailToCheck = null;
         if (body.ContainsKey("email"))
         {
             var email = GetString(body, "email")?.Trim();
             if (!string.IsNullOrEmpty(email))
             {
+                emailToCheck = email;
                 var existsEmail = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM customers WHERE email = @email AND id != @id", new { email, id });
                 if (existsEmail > 0)
                 {
@@ -395,21 +437,62 @@ public class CustomerController : ApiControllerBase
             }
         }
 
-        var data = BuildCustomerFieldDictionary(body, existing);
-        data["name"] = name;
-        NormalizeRegularFields(data, existing);
+        await Db.GetTableColumnsAsync("customers");
+        await Db.GetTableColumnsAsync("customer_regular_items");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        await Db.UpdateAsync("customers", id, data, "id", conn, tx);
-
-        if (body.TryGetValue("regular_items", out var regItemsEl) && regItemsEl.ValueKind == JsonValueKind.Array)
+        try
         {
-            await SyncRegularItemsAsync(id, regItemsEl, conn, tx);
-        }
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Customer not found." });
+            }
 
-        await tx.CommitAsync();
+            var lockedExistsName = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM customers WHERE name = @name AND id != @id", new { name, id }, conn, tx);
+            if (lockedExistsName > 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("The name has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["name"] = ["The name has already been taken."]
+                });
+            }
+
+            if (!string.IsNullOrEmpty(emailToCheck))
+            {
+                var lockedExistsEmail = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM customers WHERE email = @email AND id != @id", new { email = emailToCheck, id }, conn, tx);
+                if (lockedExistsEmail > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("The email has already been taken.", new Dictionary<string, string[]>
+                    {
+                        ["email"] = ["The email has already been taken."]
+                    });
+                }
+            }
+
+            var data = BuildCustomerFieldDictionary(body, lockedExisting);
+            data["name"] = name;
+            NormalizeRegularFields(data, lockedExisting);
+
+            await Db.UpdateAsync("customers", id, data, "id", conn, tx);
+
+            if (body.TryGetValue("regular_items", out var regItemsEl) && regItemsEl.ValueKind == JsonValueKind.Array)
+            {
+                await SyncRegularItemsAsync(id, regItemsEl, conn, tx);
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var updated = await GetCustomerWithRegularMetadataAsync(id);
         return Ok(updated);
@@ -764,18 +847,36 @@ public class CustomerController : ApiControllerBase
     {
         if (!await CanAsync("customer.delete")) return Forbidden();
 
-        var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id });
-        if (existing == null) return NotFound(new { message = "Customer not found." });
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        var hasInvoices = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sale_invoices WHERE customer_id = @id", new { id }) > 0;
-        var hasReturns = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sale_returns WHERE customer_id = @id", new { id }) > 0;
-
-        if (hasInvoices || hasReturns)
+        try
         {
-            return Unprocessable("Cannot delete: customer has related sale invoices/returns.");
+            var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id }, conn, tx);
+            if (existing == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            var hasInvoices = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sale_invoices WHERE customer_id = @id", new { id }, conn, tx) > 0;
+            var hasReturns = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sale_returns WHERE customer_id = @id", new { id }, conn, tx) > 0;
+
+            if (hasInvoices || hasReturns)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Cannot delete: customer has related sale invoices/returns.");
+            }
+
+            await Db.ExecuteAsync("DELETE FROM customers WHERE id = @id", new { id }, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await Db.ExecuteAsync("DELETE FROM customers WHERE id = @id", new { id });
         return NoContent();
     }
 
@@ -903,27 +1004,42 @@ public class CustomerController : ApiControllerBase
             });
         }
 
-        var existing = await Db.QuerySingleOrDefaultAsync(
-            "SELECT id FROM customer_whole_sale_prices WHERE customer_id = @customerId AND product_id = @productId LIMIT 1",
-            new { customerId, productId = productId.Value });
+        await Db.GetTableColumnsAsync("customer_whole_sale_prices");
+
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         long recordId;
-        if (existing != null)
+        try
         {
-            recordId = Convert.ToInt64(existing["id"]);
-            await Db.UpdateAsync("customer_whole_sale_prices", recordId, new Dictionary<string, object?>
+            var existing = await Db.QuerySingleOrDefaultAsync(
+                "SELECT id FROM customer_whole_sale_prices WHERE customer_id = @customerId AND product_id = @productId LIMIT 1",
+                new { customerId, productId = productId.Value }, conn, tx);
+
+            if (existing != null)
             {
-                ["pack_price"] = packPrice
-            });
+                recordId = Convert.ToInt64(existing["id"]);
+                await Db.UpdateAsync("customer_whole_sale_prices", recordId, new Dictionary<string, object?>
+                {
+                    ["pack_price"] = packPrice
+                }, "id", conn, tx);
+            }
+            else
+            {
+                recordId = await Db.InsertAsync("customer_whole_sale_prices", new Dictionary<string, object?>
+                {
+                    ["customer_id"] = customerId,
+                    ["product_id"] = productId.Value,
+                    ["pack_price"] = packPrice
+                }, conn, tx);
+            }
+
+            await tx.CommitAsync();
         }
-        else
+        catch
         {
-            recordId = await Db.InsertAsync("customer_whole_sale_prices", new Dictionary<string, object?>
-            {
-                ["customer_id"] = customerId,
-                ["product_id"] = productId.Value,
-                ["pack_price"] = packPrice
-            });
+            await tx.RollbackAsync();
+            throw;
         }
 
         var saved = await Db.QuerySingleOrDefaultAsync("SELECT * FROM customer_whole_sale_prices WHERE id = @recordId", new { recordId });

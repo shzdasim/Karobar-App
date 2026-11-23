@@ -332,13 +332,6 @@ public sealed class CubeTaskExecutorService
     // 3. Structured Task Executor (All 15 Task Types)
     // =========================================================================
 
-    public Task<Dictionary<string, object?>> ExecuteStructuredTaskAsync(
-        KarobarDbContext db,
-        Dictionary<string, object?> payload,
-        string productVersion = "2026.10",
-        CancellationToken cancellationToken = default)
-        => ExecuteStructuredTaskAsync(db, new CubeUserContext { UserId = 1, IsAdmin = true }, payload, productVersion, cancellationToken);
-
     public async Task<Dictionary<string, object?>> ExecuteStructuredTaskAsync(
         KarobarDbContext db,
         CubeUserContext user,
@@ -673,7 +666,7 @@ public sealed class CubeTaskExecutorService
 
         var assignments = ExtractListOfDicts(payload, "assignments");
         var standalone = ExtractStringList(payload, "standalone_formulations");
-        var userConfirmed = GetBool(payload, "user_confirmed", true);
+        var userConfirmed = GetBool(payload, "user_confirmed", false);
 
         if (assignments.Count == 0 && standalone.Count == 0)
         {

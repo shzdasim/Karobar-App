@@ -6,6 +6,7 @@ import { createFilter } from "react-select";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 
 import {
   ArrowDownOnSquareIcon,
@@ -311,18 +312,11 @@ export default function CurrentStockReport() {
         },
         responseType: "blob",
       });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "current-stock-report.pdf";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      openReportPdfSafely({
+        data: res.data,
+        filename: "current-stock-report.pdf",
+        revokeDelayMs: 10000,
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to generate PDF");

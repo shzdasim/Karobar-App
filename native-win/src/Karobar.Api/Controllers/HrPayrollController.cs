@@ -155,18 +155,30 @@ public class HrPayrollController : ApiControllerBase
         }
 
         var linkedUserId = GetNullableLong(body, "user_id");
+        var callerIsAdmin = await IsAdminAsync();
+        if (linkedUserId.HasValue && !callerIsAdmin && await Db.UserHasRoleAsync(linkedUserId.Value, KarobarDb.AdminRoleNames))
+        {
+            return Forbidden("Only an Administrator can link an employee to an Admin user or manage an Admin user's PIN.");
+        }
+
         var pinService = new OperatorPinService(Db);
+        var rawPinInput = GetString(body, "pin_code");
+        var hasNonEmptyPin = !string.IsNullOrWhiteSpace(rawPinInput);
         string? validatedPin = null;
 
         try
         {
-            if (body.ContainsKey("pin_code") && !string.IsNullOrWhiteSpace(GetString(body, "pin_code")))
+            if (hasNonEmptyPin)
             {
-                validatedPin = await pinService.ValidateUniquePinAsync(GetString(body, "pin_code"), null, null, linkedUserId, null);
+                validatedPin = await pinService.ValidateUniquePinAsync(rawPinInput, null, null, linkedUserId, null);
             }
             else if (linkedUserId.HasValue && await Db.HasTableAsync("users") && await Db.HasColumnAsync("users", "pin_code"))
             {
                 validatedPin = await Db.ExecuteScalarAsync<string?>("SELECT pin_code FROM users WHERE id = @uid", new { uid = linkedUserId.Value });
+                if (!string.IsNullOrWhiteSpace(validatedPin) && !OperatorPinService.IsHashedPin(validatedPin))
+                {
+                    validatedPin = OperatorPinService.HashPin(validatedPin);
+                }
             }
         }
         catch (OperatorPinException ex)
@@ -207,7 +219,7 @@ public class HrPayrollController : ApiControllerBase
         };
 
         var empId = await Db.InsertAsync("employees", insertData);
-        if (body.ContainsKey("pin_code"))
+        if (hasNonEmptyPin)
         {
             await pinService.SyncLinkedPinForEmployeeAsync(linkedUserId, validatedPin);
         }
@@ -267,23 +279,46 @@ public class HrPayrollController : ApiControllerBase
             });
         }
 
+        long? existingLinkedUserId = existing.TryGetValue("user_id", out var uObj) && uObj != null && long.TryParse(uObj.ToString(), out var parsedUid)
+            ? parsedUid
+            : null;
         var linkedUserId = body.ContainsKey("user_id")
             ? GetNullableLong(body, "user_id")
-            : (existing.TryGetValue("user_id", out var uObj) && uObj != null && long.TryParse(uObj.ToString(), out var uid) ? (long?)uid : null);
+            : existingLinkedUserId;
+
+        var callerIsAdmin = await IsAdminAsync();
+        var targetIsAdmin = (existingLinkedUserId.HasValue && await Db.UserHasRoleAsync(existingLinkedUserId.Value, KarobarDb.AdminRoleNames)) ||
+                            (linkedUserId.HasValue && await Db.UserHasRoleAsync(linkedUserId.Value, KarobarDb.AdminRoleNames));
+        if (!callerIsAdmin && targetIsAdmin)
+        {
+            return Forbidden("Only an Administrator can modify an employee linked to an Admin user or manage an Admin user's PIN.");
+        }
 
         var pinService = new OperatorPinService(Db);
-        bool hasPinInput = body.ContainsKey("pin_code");
+        var clearPin = GetBool(body, "clear_pin", false);
+        var hasPinInput = body.ContainsKey("pin_code");
+        var rawPinInput = !clearPin && hasPinInput ? GetString(body, "pin_code") : null;
+        var hasNonEmptyPin = !clearPin && !string.IsNullOrWhiteSpace(rawPinInput);
+        var shouldUpdatePin = clearPin || hasNonEmptyPin;
         string? resolvedPin = existing.GetValueOrDefault("pin_code")?.ToString();
 
         try
         {
-            if (hasPinInput)
+            if (clearPin)
             {
-                resolvedPin = await pinService.ValidateUniquePinAsync(GetString(body, "pin_code"), null, employee, linkedUserId, null);
+                resolvedPin = null;
+            }
+            else if (hasNonEmptyPin)
+            {
+                resolvedPin = await pinService.ValidateUniquePinAsync(rawPinInput, null, employee, linkedUserId, null);
             }
             else if (linkedUserId.HasValue && string.IsNullOrEmpty(resolvedPin) && await Db.HasTableAsync("users") && await Db.HasColumnAsync("users", "pin_code"))
             {
                 resolvedPin = await Db.ExecuteScalarAsync<string?>("SELECT pin_code FROM users WHERE id = @uid", new { uid = linkedUserId.Value });
+                if (!string.IsNullOrWhiteSpace(resolvedPin) && !OperatorPinService.IsHashedPin(resolvedPin))
+                {
+                    resolvedPin = OperatorPinService.HashPin(resolvedPin);
+                }
             }
         }
         catch (OperatorPinException ex)
@@ -317,7 +352,7 @@ public class HrPayrollController : ApiControllerBase
         }
 
         await Db.UpdateAsync("employees", employee, updates);
-        if (hasPinInput)
+        if (shouldUpdatePin)
         {
             await pinService.SyncLinkedPinForEmployeeAsync(linkedUserId, resolvedPin);
         }
@@ -500,7 +535,9 @@ public class HrPayrollController : ApiControllerBase
         var saved = await Db.QuerySingleOrDefaultAsync("SELECT * FROM employee_attendances WHERE id = @id", new { id = attId });
         if (saved != null)
         {
-            saved["employee"] = await Db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = employeeId.Value });
+            var emp = await Db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = employeeId.Value });
+            HrPayrollService.RedactEmployeePin(emp);
+            saved["employee"] = emp;
         }
 
         return Ok(saved);
@@ -532,48 +569,55 @@ public class HrPayrollController : ApiControllerBase
         int count = 0;
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        foreach (var el in entriesEl.EnumerateArray())
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        try
         {
-            if (el.ValueKind != JsonValueKind.Object) continue;
-            var row = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in el.EnumerateObject()) row[p.Name] = p.Value;
-
-            var empId = GetNullableLong(row, "employee_id");
-            if (empId == null || empId <= 0) continue;
-
-            var status = (GetString(row, "status") ?? "present").Trim().ToLowerInvariant();
-            var existing = await Db.QuerySingleOrDefaultAsync(
-                "SELECT id FROM employee_attendances WHERE employee_id = @empId AND date = @dateStr LIMIT 1",
-                new { empId = empId.Value, dateStr }, conn, tx);
-
-            var payload = new Dictionary<string, object?>
+            foreach (var el in entriesEl.EnumerateArray())
             {
-                ["employee_id"] = empId.Value,
-                ["date"] = dateStr,
-                ["status"] = status,
-                ["check_in"] = GetString(row, "check_in"),
-                ["check_out"] = GetString(row, "check_out"),
-                ["late_minutes"] = Math.Max(0, GetInt(row, "late_minutes", 0)),
-                ["overtime_hours"] = Math.Max(0m, GetDecimal(row, "overtime_hours", 0m)),
-                ["fine_amount"] = Math.Max(0m, GetDecimal(row, "fine_amount", 0m)),
-                ["notes"] = GetString(row, "notes"),
-                ["recorded_by"] = CurrentUserId
-            };
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                var row = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+                foreach (var p in el.EnumerateObject()) row[p.Name] = p.Value;
 
-            if (existing != null)
-            {
-                await Db.UpdateAsync("employee_attendances", Convert.ToInt64(existing["id"]), payload, "id", conn, tx);
+                var empId = GetNullableLong(row, "employee_id");
+                if (empId == null || empId <= 0) continue;
+
+                var status = (GetString(row, "status") ?? "present").Trim().ToLowerInvariant();
+                var existing = await Db.QuerySingleOrDefaultAsync(
+                    "SELECT id FROM employee_attendances WHERE employee_id = @empId AND date = @dateStr LIMIT 1",
+                    new { empId = empId.Value, dateStr }, conn, tx);
+
+                var payload = new Dictionary<string, object?>
+                {
+                    ["employee_id"] = empId.Value,
+                    ["date"] = dateStr,
+                    ["status"] = status,
+                    ["check_in"] = GetString(row, "check_in"),
+                    ["check_out"] = GetString(row, "check_out"),
+                    ["late_minutes"] = Math.Max(0, GetInt(row, "late_minutes", 0)),
+                    ["overtime_hours"] = Math.Max(0m, GetDecimal(row, "overtime_hours", 0m)),
+                    ["fine_amount"] = Math.Max(0m, GetDecimal(row, "fine_amount", 0m)),
+                    ["notes"] = GetString(row, "notes"),
+                    ["recorded_by"] = CurrentUserId
+                };
+
+                if (existing != null)
+                {
+                    await Db.UpdateAsync("employee_attendances", Convert.ToInt64(existing["id"]), payload, "id", conn, tx);
+                }
+                else
+                {
+                    await Db.InsertAsync("employee_attendances", payload, conn, tx);
+                }
+                count++;
             }
-            else
-            {
-                await Db.InsertAsync("employee_attendances", payload, conn, tx);
-            }
-            count++;
+
+            await tx.CommitAsync();
         }
-
-        await tx.CommitAsync();
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new
         {
@@ -856,6 +900,7 @@ public class HrPayrollController : ApiControllerBase
 
         foreach (var e in employees)
         {
+            HrPayrollService.RedactEmployeePin(e);
             e["user"] = e.TryGetValue("user_id", out var uObj) && uObj != null && long.TryParse(uObj.ToString(), out var uid) && usersMap.TryGetValue(uid, out var uDict) ? uDict : null;
         }
     }

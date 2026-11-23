@@ -216,30 +216,56 @@ public class SupplierController : ApiControllerBase
             data = BrandController.NormalizeExpiryPolicyPayload(data);
         }
 
-        await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var id = await Db.InsertAsync("suppliers", data, conn, tx);
-
-        if (openingBalance > 0 && await Db.HasTableAsync("supplier_ledgers"))
+        var hasLedgerTable = openingBalance > 0 && await Db.HasTableAsync("supplier_ledgers");
+        await Db.GetTableColumnsAsync("suppliers");
+        if (hasLedgerTable)
         {
-            await Db.InsertAsync("supplier_ledgers", new Dictionary<string, object?>
-            {
-                ["supplier_id"] = id,
-                ["entry_type"] = "manual",
-                ["is_manual"] = true,
-                ["entry_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
-                ["posted_number"] = "OB-" + id.ToString().PadLeft(5, '0'),
-                ["invoice_total"] = openingBalance,
-                ["total_paid"] = 0m,
-                ["credit_remaining"] = openingBalance,
-                ["debited_amount"] = 0m,
-                ["description"] = "Opening Balance",
-                ["created_by"] = CurrentUserId
-            }, conn, tx);
+            await Db.GetTableColumnsAsync("supplier_ledgers");
         }
 
-        await tx.CommitAsync();
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+
+        long id;
+        try
+        {
+            var lockedExists = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM suppliers WHERE name = @name", new { name }, conn, tx);
+            if (lockedExists > 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("The name has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["name"] = ["The name has already been taken."]
+                });
+            }
+
+            id = await Db.InsertAsync("suppliers", data, conn, tx);
+
+            if (hasLedgerTable)
+            {
+                await Db.InsertAsync("supplier_ledgers", new Dictionary<string, object?>
+                {
+                    ["supplier_id"] = id,
+                    ["entry_type"] = "manual",
+                    ["is_manual"] = true,
+                    ["entry_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                    ["posted_number"] = "OB-" + id.ToString().PadLeft(5, '0'),
+                    ["invoice_total"] = openingBalance,
+                    ["total_paid"] = 0m,
+                    ["credit_remaining"] = openingBalance,
+                    ["debited_amount"] = 0m,
+                    ["description"] = "Opening Balance",
+                    ["created_by"] = CurrentUserId
+                }, conn, tx);
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         var supplier = await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id });
         if (supplier != null) AttachPolicyLabel(supplier);
@@ -413,48 +439,80 @@ public class SupplierController : ApiControllerBase
             });
         }
 
-        var data = new Dictionary<string, object?>
-        {
-            ["name"] = name
-        };
+        await Db.GetTableColumnsAsync("suppliers");
 
-        foreach (var k in new[] { "address", "phone", "tax_number", "strn", "province", "email" })
-        {
-            if (body.ContainsKey(k)) data[k] = GetString(body, k);
-        }
-        if (body.ContainsKey("tax_status"))
-        {
-            var ts = GetString(body, "tax_status");
-            data["tax_status"] = string.IsNullOrWhiteSpace(ts)
-                ? (existing.GetValueOrDefault("tax_status")?.ToString() is { Length: > 0 } ets ? ets : "registered")
-                : ts.Trim();
-        }
-        if (body.ContainsKey("credit_limit"))
-        {
-            var clRaw = GetString(body, "credit_limit");
-            data["credit_limit"] = !string.IsNullOrWhiteSpace(clRaw) && decimal.TryParse(clRaw, NumberStyles.Any, CultureInfo.InvariantCulture, out var cl) ? cl : null;
-        }
-        if (body.ContainsKey("credit_days"))
-        {
-            var cdRaw = GetString(body, "credit_days");
-            data["credit_days"] = !string.IsNullOrWhiteSpace(cdRaw) && int.TryParse(cdRaw, out var cd) ? cd : null;
-        }
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        if (body.ContainsKey("expiry_return_policy") || body.ContainsKey("expiry_return_months") ||
-            body.ContainsKey("expiry_return_days") || body.ContainsKey("expiry_return_notes"))
+        try
         {
-            var merged = new Dictionary<string, object?>
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
             {
-                ["expiry_return_policy"] = body.ContainsKey("expiry_return_policy") ? GetString(body, "expiry_return_policy") : existing["expiry_return_policy"] ?? "before_expiry",
-                ["expiry_return_months"] = body.ContainsKey("expiry_return_months") ? GetString(body, "expiry_return_months") : existing["expiry_return_months"] ?? 3,
-                ["expiry_return_days"] = body.ContainsKey("expiry_return_days") ? GetString(body, "expiry_return_days") : existing["expiry_return_days"] ?? 90,
-                ["expiry_return_notes"] = body.ContainsKey("expiry_return_notes") ? GetString(body, "expiry_return_notes") : existing["expiry_return_notes"]
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Supplier not found." });
+            }
+
+            var lockedDup = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM suppliers WHERE name = @name AND id != @id", new { name, id }, conn, tx);
+            if (lockedDup > 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("The name has already been taken.", new Dictionary<string, string[]>
+                {
+                    ["name"] = ["The name has already been taken."]
+                });
+            }
+
+            var data = new Dictionary<string, object?>
+            {
+                ["name"] = name
             };
-            var norm = BrandController.NormalizeExpiryPolicyPayload(merged);
-            foreach (var kv in norm) data[kv.Key] = kv.Value;
+
+            foreach (var k in new[] { "address", "phone", "tax_number", "strn", "province", "email" })
+            {
+                if (body.ContainsKey(k)) data[k] = GetString(body, k);
+            }
+            if (body.ContainsKey("tax_status"))
+            {
+                var ts = GetString(body, "tax_status");
+                data["tax_status"] = string.IsNullOrWhiteSpace(ts)
+                    ? (lockedExisting.GetValueOrDefault("tax_status")?.ToString() is { Length: > 0 } ets ? ets : "registered")
+                    : ts.Trim();
+            }
+            if (body.ContainsKey("credit_limit"))
+            {
+                var clRaw = GetString(body, "credit_limit");
+                data["credit_limit"] = !string.IsNullOrWhiteSpace(clRaw) && decimal.TryParse(clRaw, NumberStyles.Any, CultureInfo.InvariantCulture, out var cl) ? cl : null;
+            }
+            if (body.ContainsKey("credit_days"))
+            {
+                var cdRaw = GetString(body, "credit_days");
+                data["credit_days"] = !string.IsNullOrWhiteSpace(cdRaw) && int.TryParse(cdRaw, out var cd) ? cd : null;
+            }
+
+            if (body.ContainsKey("expiry_return_policy") || body.ContainsKey("expiry_return_months") ||
+                body.ContainsKey("expiry_return_days") || body.ContainsKey("expiry_return_notes"))
+            {
+                var merged = new Dictionary<string, object?>
+                {
+                    ["expiry_return_policy"] = body.ContainsKey("expiry_return_policy") ? GetString(body, "expiry_return_policy") : lockedExisting["expiry_return_policy"] ?? "before_expiry",
+                    ["expiry_return_months"] = body.ContainsKey("expiry_return_months") ? GetString(body, "expiry_return_months") : lockedExisting["expiry_return_months"] ?? 3,
+                    ["expiry_return_days"] = body.ContainsKey("expiry_return_days") ? GetString(body, "expiry_return_days") : lockedExisting["expiry_return_days"] ?? 90,
+                    ["expiry_return_notes"] = body.ContainsKey("expiry_return_notes") ? GetString(body, "expiry_return_notes") : lockedExisting["expiry_return_notes"]
+                };
+                var norm = BrandController.NormalizeExpiryPolicyPayload(merged);
+                foreach (var kv in norm) data[kv.Key] = kv.Value;
+            }
+
+            await Db.UpdateAsync("suppliers", id, data, "id", conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await Db.UpdateAsync("suppliers", id, data);
         var fresh = await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id });
         if (fresh != null) AttachPolicyLabel(fresh);
         return Ok(fresh);
@@ -465,16 +523,34 @@ public class SupplierController : ApiControllerBase
     {
         if (!await CanAsync("supplier.delete")) return Forbidden();
 
-        var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id });
-        if (existing == null) return NotFound(new { message = "Supplier not found." });
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
-        var inUse = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM products WHERE supplier_id = @id", new { id }) > 0;
-        if (inUse)
+        try
         {
-            return Unprocessable("Cannot delete: supplier is used by one or more products.");
+            var existing = await Db.QuerySingleOrDefaultAsync("SELECT * FROM suppliers WHERE id = @id", new { id }, conn, tx);
+            if (existing == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Supplier not found." });
+            }
+
+            var inUse = await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM products WHERE supplier_id = @id", new { id }, conn, tx) > 0;
+            if (inUse)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Cannot delete: supplier is used by one or more products.");
+            }
+
+            await Db.ExecuteAsync("DELETE FROM suppliers WHERE id = @id", new { id }, conn, tx);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
-        await Db.ExecuteAsync("DELETE FROM suppliers WHERE id = @id", new { id });
         return NoContent();
     }
 

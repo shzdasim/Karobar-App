@@ -250,6 +250,7 @@ public class SaleInvoiceController : ApiControllerBase
 
         try
         {
+            using var _ = InvoiceCalculationService.BeginRequestScope();
             double? clientSubmittedTotal = rawData.TryGetValue("total", out var ctObj) && ctObj != null && double.TryParse(ctObj.ToString(), out var ctv)
                 ? Math.Round(ctv, 2)
                 : null;
@@ -311,16 +312,17 @@ public class SaleInvoiceController : ApiControllerBase
             }
 
             await ResolveDoctorAndPatientDataAsync(rawData);
-            await ValidateCreditLimitsAsync(rawData, clientSubmittedTotal, null);
+            bool? canOverrideCredit = await ValidateCreditLimitsAsync(rawData, clientSubmittedTotal, null);
 
             var op = await _operatorPinService.ResolveOperatorAsync(rawPin, CurrentUserId, "sale_invoice");
             var operatorUserId = ToNullableLong(op.GetValueOrDefault("user_id")) ?? CurrentUserId!.Value;
             var operatorEmpId = ToNullableLong(op.GetValueOrDefault("employee_id"));
 
             var draftId = ToNullableLong(rawData.GetValueOrDefault("draft_id"));
-            if (draftId.HasValue && await Db.HasTableAsync("invoice_drafts"))
+            var hasDraftsTable = draftId.HasValue && await Db.HasTableAsync("invoice_drafts");
+            if (hasDraftsTable)
             {
-                var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId.Value });
+                var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId!.Value });
                 if (draft != null && string.Equals(draft.GetValueOrDefault("status")?.ToString(), "posted", StringComparison.OrdinalIgnoreCase))
                 {
                     var postedInvId = ToLong(draft.GetValueOrDefault("posted_invoice_id"));
@@ -345,10 +347,31 @@ public class SaleInvoiceController : ApiControllerBase
                 true);
 
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
+                if (hasDraftsTable)
+                {
+                    var lockedDraft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId!.Value }, conn, tx);
+                    if (lockedDraft != null && string.Equals(lockedDraft.GetValueOrDefault("status")?.ToString(), "posted", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var postedInvId = ToLong(lockedDraft.GetValueOrDefault("posted_invoice_id"));
+                        var postedInv = postedInvId > 0
+                            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = postedInvId }, conn, tx)
+                            : null;
+                        await tx.RollbackAsync();
+                        return Ok(new Dictionary<string, object?>
+                        {
+                            ["message"] = "Sale Invoice already created",
+                            ["id"] = postedInvId,
+                            ["posted_number"] = postedInv?.GetValueOrDefault("posted_number")
+                        });
+                    }
+                }
+
+                await ValidateCreditLimitsAsync(rawData, clientSubmittedTotal, null, conn, tx, precomputedCanOverride: canOverrideCredit);
+
                 bool expiredOverride = IsTruthy(rawData.GetValueOrDefault("expired_override"));
                 await _stockAvailabilityService.ValidateAsync(calcItems, null, CurrentUserId, expiredOverride, rawData, conn, tx);
 
@@ -663,6 +686,7 @@ public class SaleInvoiceController : ApiControllerBase
 
         try
         {
+            using var _ = InvoiceCalculationService.BeginRequestScope();
             double? clientUpdateTotal = rawData.TryGetValue("total", out var ctObj) && ctObj != null && double.TryParse(ctObj.ToString(), out var ctv)
                 ? Math.Round(ctv, 2)
                 : null;
@@ -714,7 +738,7 @@ public class SaleInvoiceController : ApiControllerBase
             }
 
             await ResolveDoctorAndPatientDataAsync(rawData);
-            await ValidateCreditLimitsAsync(rawData, clientUpdateTotal, existing);
+            bool? canOverrideCredit = await ValidateCreditLimitsAsync(rawData, clientUpdateTotal, existing);
 
             var rawPin = GetString(body, "operator_pin") ?? Request.Headers["X-Operator-Pin"].FirstOrDefault();
             var op = await _operatorPinService.ResolveOperatorAsync(rawPin, CurrentUserId, "sale_invoice");
@@ -723,10 +747,25 @@ public class SaleInvoiceController : ApiControllerBase
             var verifiedViaPin = op.GetValueOrDefault("verified_via_pin") is true;
 
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
+                var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id }, conn, tx);
+                if (lockedExisting == null)
+                {
+                    await tx.RollbackAsync();
+                    return NotFound(new { message = "Sale invoice not found." });
+                }
+                if (string.Equals(lockedExisting.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot edit an invoice that has been reversed.");
+                }
+                existing = lockedExisting;
+
+                await ValidateCreditLimitsAsync(rawData, clientUpdateTotal, existing, conn, tx, precomputedCanOverride: canOverrideCredit);
+
                 var allocatedOnInvoice = await GetAllocatedAmountForInvoiceAsync("sale_invoice", id, conn, tx);
                 var oldInvoiceType = (existing.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
                 var newInvoiceType = reqInvType;
@@ -1134,12 +1173,37 @@ public class SaleInvoiceController : ApiControllerBase
         }
 
         var beforeSnapshot = (await LoadSaleInvoiceAsync(id)) ?? existing;
+        var hasSaleReturnsTable = await Db.HasTableAsync("sale_returns");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Sale invoice not found." });
+            }
+            if (string.Equals(lockedExisting.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Invoice has already been reversed.");
+            }
+            if (hasSaleReturnsTable)
+            {
+                var hasReturns = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM sale_returns WHERE sale_invoice_id = @id",
+                    new { id }, conn, tx) > 0;
+                if (hasReturns)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot reverse this invoice because linked sale returns exist. Please reverse or remove the returns first.");
+                }
+            }
+            existing = lockedExisting;
+
             var items = await Db.QueryListAsync("SELECT * FROM sale_invoice_items WHERE sale_invoice_id = @id", new { id }, conn, tx);
             await _stockAvailabilityService.ValidateAsync(new List<Dictionary<string, object?>>(), items, CurrentUserId, false, null, conn, tx);
             await RevertItemsAsync(items, conn, tx);
@@ -1311,11 +1375,33 @@ public class SaleInvoiceController : ApiControllerBase
         var effectiveMode = (mode ?? GetString(body, "mode") ?? "none").Trim().ToLowerInvariant();
         if (effectiveMode is not ("none" or "credit" or "refund")) effectiveMode = "none";
 
+        var hasSaleReturnsTable = await Db.HasTableAsync("sale_returns");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Sale invoice not found." });
+            }
+            if (hasSaleReturnsTable)
+            {
+                var hasReturns = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM sale_returns WHERE sale_invoice_id = @id",
+                    new { id }, conn, tx) > 0;
+                if (hasReturns)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot delete this invoice because linked sale returns exist. Please delete the returns first.");
+                }
+            }
+            existing = lockedExisting;
+            var prescriptionImagePath = existing.GetValueOrDefault("prescription_image_path")?.ToString();
+
             var items = await Db.QueryListAsync("SELECT * FROM sale_invoice_items WHERE sale_invoice_id = @id", new { id }, conn, tx);
             var isReversed = string.Equals(existing.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase);
 
@@ -1464,6 +1550,7 @@ public class SaleInvoiceController : ApiControllerBase
             await Db.ExecuteAsync("DELETE FROM sale_invoices WHERE id = @id", new { id }, conn, tx);
 
             await tx.CommitAsync();
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, prescriptionImagePath, "prescriptions");
             SyncPulseService.Bump("stock", "drawer");
 
             return Ok(new Dictionary<string, object?> { ["message"] = "Sale Invoice deleted" });
@@ -1612,7 +1699,7 @@ public class SaleInvoiceController : ApiControllerBase
 
         var form = await Request.ReadFormAsync();
         var file = form.Files.GetFile("prescription");
-        if (file == null || file.Length == 0)
+        if (file == null)
         {
             return Unprocessable("The prescription file is required.", new Dictionary<string, string[]>
             {
@@ -1620,36 +1707,17 @@ public class SaleInvoiceController : ApiControllerBase
             });
         }
 
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp" or ".pdf"))
+        var (ok, relPath, errMsg) = await SafeFileStorageHelper.SaveValidatedUploadAsync(Db, file, "prescriptions", allowPdf: true);
+        if (!ok || string.IsNullOrEmpty(relPath))
         {
-            return Unprocessable("Invalid file type.", new Dictionary<string, string[]>
+            var msg = errMsg ?? "Invalid prescription file.";
+            return Unprocessable(msg, new Dictionary<string, string[]>
             {
-                ["prescription"] = new[] { "Prescription must be a jpg, jpeg, png, webp, or pdf file." }
+                ["prescription"] = new[] { msg }
             });
         }
 
         var oldPath = inv.GetValueOrDefault("prescription_image_path")?.ToString();
-        if (!string.IsNullOrWhiteSpace(oldPath))
-        {
-            var fullOld = Db.StoragePath(Path.Combine("app", "public", oldPath));
-            if (System.IO.File.Exists(fullOld))
-            {
-                try { System.IO.File.Delete(fullOld); } catch { }
-            }
-        }
-
-        var fileName = $"{Guid.NewGuid():N}{ext}";
-        var relPath = $"prescriptions/{fileName}";
-        var fullDest = Db.StoragePath(Path.Combine("app", "public", "prescriptions", fileName));
-        var dir = Path.GetDirectoryName(fullDest);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
-        await using (var fs = new FileStream(fullDest, FileMode.Create, FileAccess.Write))
-        {
-            await file.CopyToAsync(fs);
-        }
-
         var updates = new Dictionary<string, object?>
         {
             ["prescription_image_path"] = relPath
@@ -1660,8 +1728,33 @@ public class SaleInvoiceController : ApiControllerBase
             updates["prescription_no"] = pNoVal.ToString().Trim();
         }
 
-        await Db.UpdateAsync("sale_invoices", saleInvoice, updates);
-        var fresh = (await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = saleInvoice }))!;
+        int updatedRows;
+        try
+        {
+            updatedRows = await Db.UpdateAsync("sale_invoices", saleInvoice, updates);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, relPath, "prescriptions");
+            throw;
+        }
+
+        if (updatedRows <= 0)
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, relPath, "prescriptions");
+            return NotFound(new { message = "Sale invoice not found." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(oldPath) && !string.Equals(oldPath, relPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldPath, "prescriptions");
+        }
+
+        var fresh = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = saleInvoice });
+        if (fresh == null)
+        {
+            return NotFound(new { message = "Sale invoice not found." });
+        }
 
         return Ok(new Dictionary<string, object?>
         {
@@ -1687,15 +1780,11 @@ public class SaleInvoiceController : ApiControllerBase
         var oldPath = inv.GetValueOrDefault("prescription_image_path")?.ToString();
         if (!string.IsNullOrWhiteSpace(oldPath))
         {
-            var fullOld = Db.StoragePath(Path.Combine("app", "public", oldPath));
-            if (System.IO.File.Exists(fullOld))
-            {
-                try { System.IO.File.Delete(fullOld); } catch { }
-            }
             await Db.UpdateAsync("sale_invoices", saleInvoice, new Dictionary<string, object?>
             {
                 ["prescription_image_path"] = null
             });
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldPath, "prescriptions");
         }
 
         return Ok(new Dictionary<string, object?>
@@ -1726,7 +1815,7 @@ public class SaleInvoiceController : ApiControllerBase
         }
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
@@ -2260,15 +2349,18 @@ public class SaleInvoiceController : ApiControllerBase
         }
     }
 
-    private async Task ValidateCreditLimitsAsync(
+    private async Task<bool?> ValidateCreditLimitsAsync(
         Dictionary<string, object?> data,
         double? clientSubmittedTotal,
-        Dictionary<string, object?>? existingInvoice)
+        Dictionary<string, object?>? existingInvoice,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        bool? precomputedCanOverride = null)
     {
         var invoiceType = (data.GetValueOrDefault("invoice_type")?.ToString() ?? existingInvoice?.GetValueOrDefault("invoice_type")?.ToString() ?? "debit").ToLowerInvariant();
         var customerId = ToLong(data.GetValueOrDefault("customer_id") ?? existingInvoice?.GetValueOrDefault("customer_id"));
         var customer = customerId > 0 && await Db.HasTableAsync("customers")
-            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = customerId })
+            ? await Db.QuerySingleOrDefaultAsync("SELECT * FROM customers WHERE id = @id", new { id = customerId }, conn, tx)
             : null;
 
         var total = Math.Round(ToDouble(data.GetValueOrDefault("total")), 2);
@@ -2295,7 +2387,7 @@ public class SaleInvoiceController : ApiControllerBase
             }
         }
 
-        if (invoiceType != "credit" || customer == null) return;
+        if (invoiceType != "credit" || customer == null) return precomputedCanOverride;
 
         var custName = customer.GetValueOrDefault("name")?.ToString() ?? "Customer";
         var creditStatus = (customer.GetValueOrDefault("credit_status")?.ToString() ?? "active").ToLowerInvariant();
@@ -2316,8 +2408,19 @@ public class SaleInvoiceController : ApiControllerBase
         }
 
         bool creditOverride = IsTruthy(data.GetValueOrDefault("credit_override"));
-        var authorizingUserId = await _calculationService.ResolveAuthorizingUserIdAsync(CurrentUserId, data, "sale-invoice.credit-override");
-        bool canOverride = await _calculationService.CanOverrideCreditAsync(authorizingUserId);
+        bool? resolvedCanOverride = precomputedCanOverride;
+        async Task<bool> CheckCanOverrideCreditAsync()
+        {
+            if (resolvedCanOverride.HasValue) return resolvedCanOverride.Value;
+            if (!creditOverride)
+            {
+                resolvedCanOverride = await _calculationService.CanOverrideCreditAsync(CurrentUserId);
+                return resolvedCanOverride.Value;
+            }
+            var authorizingUserId = await _calculationService.ResolveAuthorizingUserIdAsync(CurrentUserId, data, "sale-invoice.credit-override");
+            resolvedCanOverride = await _calculationService.CanOverrideCreditAsync(authorizingUserId);
+            return resolvedCanOverride.Value;
+        }
 
         if (creditStatus == "on_hold")
         {
@@ -2335,7 +2438,7 @@ public class SaleInvoiceController : ApiControllerBase
                     }
                 });
             }
-            if (!canOverride)
+            if (!await CheckCanOverrideCreditAsync())
             {
                 throw new InvoiceValidationException(
                     "You do not have permission to override customer credit holds.",
@@ -2350,7 +2453,7 @@ public class SaleInvoiceController : ApiControllerBase
         var creditLimit = ToDouble(customer.GetValueOrDefault("credit_limit"));
         if (creditLimit > 0)
         {
-            var currentNet = await GetCustomerNetBalanceAsync(customerId);
+            var currentNet = await GetCustomerNetBalanceAsync(customerId, conn, tx);
             if (existingInvoice != null && string.Equals(existingInvoice.GetValueOrDefault("invoice_type")?.ToString(), "credit", StringComparison.OrdinalIgnoreCase))
             {
                 var oldTotal = ToDouble(existingInvoice.GetValueOrDefault("total"));
@@ -2384,7 +2487,7 @@ public class SaleInvoiceController : ApiControllerBase
                     });
                 }
 
-                if (!canOverride)
+                if (!await CheckCanOverrideCreditAsync())
                 {
                     throw new InvoiceValidationException(
                         "You do not have permission to override customer credit limits.",
@@ -2396,16 +2499,18 @@ public class SaleInvoiceController : ApiControllerBase
                 }
             }
         }
+
+        return resolvedCanOverride;
     }
 
-    private async Task<double> GetCustomerNetBalanceAsync(long customerId)
+    private async Task<double> GetCustomerNetBalanceAsync(long customerId, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         if (customerId <= 0 || !await Db.HasTableAsync("customer_ledgers")) return 0.0;
         var net = await Db.ExecuteScalarAsync<double?>(@"
             SELECT COALESCE(SUM(COALESCE(invoice_total, 0) - COALESCE(total_received, 0) - COALESCE(credited_amount, 0)), 0)
             FROM customer_ledgers
             WHERE customer_id = @cid",
-            new { cid = customerId });
+            new { cid = customerId }, conn, tx);
         return Math.Round(net ?? 0.0, 2);
     }
 

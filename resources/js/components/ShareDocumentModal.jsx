@@ -19,6 +19,16 @@ import {
 } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import { clearTrackedBlobUrl, replaceTrackedBlobUrl } from "../utils/uiResilienceHelpers";
+
+function revokeBlobUrlSafe(url) {
+  if (!url || typeof window === "undefined") return;
+  try {
+    window.URL?.revokeObjectURL?.(url);
+  } catch {
+    // Ignore blob URL revocation errors
+  }
+}
 
 const PDF_DESIGN_OPTIONS = [
   { id: "standard", name: "Standard Corporate", short: "Standard" },
@@ -125,6 +135,9 @@ export default function ShareDocumentModal({
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
+  const pdfBlobUrlRef = useRef(null);
+  const loadSeqRef = useRef(0);
+  const queryParamsKey = JSON.stringify(queryParams);
 
   // WhatsApp form state
   const [messageLang, setMessageLang] = useState("en"); // 'en' | 'ur'
@@ -173,18 +186,32 @@ export default function ShareDocumentModal({
   }, [isOpen, onClose]);
 
   useEffect(() => {
+    return () => {
+      loadSeqRef.current += 1;
+      clearTrackedBlobUrl(pdfBlobUrlRef, revokeBlobUrlSafe);
+    };
+  }, []);
+
+  useEffect(() => {
+    const reqId = ++loadSeqRef.current;
     if (isOpen && documentType) {
       setActiveTab(initialTab || "whatsapp");
       setShowInlinePreview(false);
       setQrStep((s) => ({ ...s, open: false, pairing_code: null }));
-      loadMetadataAndBuildPdf();
+      loadMetadataAndBuildPdf(reqId);
+    } else {
+      clearTrackedBlobUrl(pdfBlobUrlRef, revokeBlobUrlSafe);
+      setPdfBlobUrl(null);
+      setPdfFile(null);
+      setShowInlinePreview(false);
+      setLoading(false);
+      setBuildingPdf(false);
     }
     return () => {
-      if (pdfBlobUrl) {
-        window.URL.revokeObjectURL(pdfBlobUrl);
-      }
+      loadSeqRef.current += 1;
+      clearTrackedBlobUrl(pdfBlobUrlRef, revokeBlobUrlSafe);
     };
-  }, [isOpen, documentType, documentId, JSON.stringify(queryParams)]);
+  }, [isOpen, documentType, documentId, queryParamsKey]);
 
   // Poll Built-in Free WhatsApp Agent while the inline QR code step is open;
   // as soon as the user scans the QR code on their phone (status === 'connected'),
@@ -238,7 +265,7 @@ export default function ShareDocumentModal({
     return () => clearInterval(timer);
   }, [isOpen, qrStep.open, qrStep.autoSendOnConnect]);
 
-  const loadMetadataAndBuildPdf = async () => {
+  const loadMetadataAndBuildPdf = async (reqId = ++loadSeqRef.current) => {
     setLoading(true);
     setBuildingPdf(true);
     try {
@@ -248,6 +275,7 @@ export default function ShareDocumentModal({
         ...queryParams,
       };
       const metaRes = await axios.get("/api/share/metadata", { params: baseParams });
+      if (reqId !== loadSeqRef.current) return;
       const data = metaRes.data;
       const defaultDesign = data.pdf_template || "standard";
       const defaultPaperSize = data.paper_size || "a4";
@@ -266,24 +294,29 @@ export default function ShareDocumentModal({
         params: { ...baseParams, size: defaultPaperSize, template: defaultDesign },
         responseType: "blob",
       });
+      if (reqId !== loadSeqRef.current) return;
 
       const filename = data.filename || `${documentType}_document.pdf`;
       const blob = new Blob([pdfRes.data], { type: "application/pdf" });
       const file = new File([blob], filename, { type: "application/pdf" });
 
-      if (pdfBlobUrl) {
-        window.URL.revokeObjectURL(pdfBlobUrl);
-      }
       const nextUrl = window.URL.createObjectURL(blob);
+      replaceTrackedBlobUrl(pdfBlobUrlRef, nextUrl, revokeBlobUrlSafe);
       setPdfFile(file);
       setPdfBlobUrl(nextUrl);
     } catch (err) {
+      if (reqId !== loadSeqRef.current) return;
+      clearTrackedBlobUrl(pdfBlobUrlRef, revokeBlobUrlSafe);
+      setPdfFile(null);
+      setPdfBlobUrl(null);
       toast.error(
         err?.response?.data?.message || "Failed to generate PDF document for sharing"
       );
     } finally {
-      setLoading(false);
-      setBuildingPdf(false);
+      if (reqId === loadSeqRef.current) {
+        setLoading(false);
+        setBuildingPdf(false);
+      }
     }
   };
 
@@ -322,7 +355,7 @@ export default function ShareDocumentModal({
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+    setTimeout(() => revokeBlobUrlSafe(url), 5000);
   };
 
   const isExternalCloudGateway = Boolean(

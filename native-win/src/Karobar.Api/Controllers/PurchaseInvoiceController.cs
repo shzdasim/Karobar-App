@@ -259,9 +259,10 @@ public class PurchaseInvoiceController : ApiControllerBase
             var operatorEmpId = ToNullableLong(op.GetValueOrDefault("employee_id"));
 
             var draftId = ToNullableLong(rawData.GetValueOrDefault("draft_id"));
-            if (draftId.HasValue && await Db.HasTableAsync("invoice_drafts"))
+            var hasDraftsTable = draftId.HasValue && await Db.HasTableAsync("invoice_drafts");
+            if (hasDraftsTable)
             {
-                var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId.Value });
+                var draft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId!.Value });
                 if (draft != null && string.Equals(draft.GetValueOrDefault("status")?.ToString(), "posted", StringComparison.OrdinalIgnoreCase))
                 {
                     var postedInvId = ToLong(draft.GetValueOrDefault("posted_invoice_id"));
@@ -273,15 +274,15 @@ public class PurchaseInvoiceController : ApiControllerBase
                 }
             }
 
-            // Check duplicate invoice_number
+            // Check duplicate (supplier_id, invoice_number)
             var dupInvCount = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM purchase_invoices WHERE invoice_number = @invNo",
-                new { invNo = invoiceNumber });
+                "SELECT COUNT(1) FROM purchase_invoices WHERE supplier_id = @sid AND invoice_number = @invNo",
+                new { sid = supplierId, invNo = invoiceNumber });
             if (dupInvCount > 0)
             {
                 return Unprocessable("Validation failed. Please correct the highlighted fields.", new Dictionary<string, string[]>
                 {
-                    ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier or globally." }
+                    ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier." }
                 });
             }
 
@@ -309,10 +310,50 @@ public class PurchaseInvoiceController : ApiControllerBase
                 "posted_number");
 
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
+                if (hasDraftsTable)
+                {
+                    var lockedDraft = await Db.QuerySingleOrDefaultAsync("SELECT * FROM invoice_drafts WHERE id = @id", new { id = draftId!.Value }, conn, tx);
+                    if (lockedDraft != null && string.Equals(lockedDraft.GetValueOrDefault("status")?.ToString(), "posted", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var postedInvId = ToLong(lockedDraft.GetValueOrDefault("posted_invoice_id"));
+                        if (postedInvId > 0)
+                        {
+                            await tx.RollbackAsync();
+                            var postedInv = await LoadPurchaseInvoiceAsync(postedInvId);
+                            return Ok(postedInv);
+                        }
+                    }
+                }
+
+                var lockedDupInvCount = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM purchase_invoices WHERE supplier_id = @sid AND invoice_number = @invNo",
+                    new { sid = supplierId, invNo = invoiceNumber }, conn, tx);
+                if (lockedDupInvCount > 0)
+                {
+                    throw new InvoiceValidationException("Validation failed. Please correct the highlighted fields.", new Dictionary<string, string[]>
+                    {
+                        ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier." }
+                    });
+                }
+
+                if (purchaseOrderId.HasValue && !string.IsNullOrWhiteSpace(receiptKey))
+                {
+                    var lockedDupReceipt = await Db.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM purchase_invoices WHERE receipt_key = @rk",
+                        new { rk = receiptKey }, conn, tx);
+                    if (lockedDupReceipt > 0)
+                    {
+                        throw new InvoiceValidationException("Validation failed. Please correct the highlighted fields.", new Dictionary<string, string[]>
+                        {
+                            ["receipt_key"] = new[] { "This receipt has already been saved. Open the Purchase Order to review its invoices." }
+                        });
+                    }
+                }
+
                 if (purchaseOrderId.HasValue)
                 {
                     var po = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_orders WHERE id = @id", new { id = purchaseOrderId.Value }, conn, tx);
@@ -533,22 +574,54 @@ public class PurchaseInvoiceController : ApiControllerBase
             var postedDate = rawData.GetValueOrDefault("posted_date")?.ToString() ?? existing.GetValueOrDefault("posted_date")?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
             var postedNumber = existing.GetValueOrDefault("posted_number")?.ToString() ?? $"PRINV-{id:D4}";
 
+            var updateErrors = new Dictionary<string, string[]>();
+            if (supplierId <= 0) updateErrors["supplier_id"] = new[] { "The supplier id field is required." };
+            if (string.IsNullOrWhiteSpace(invoiceNumber)) updateErrors["invoice_number"] = new[] { "The invoice number field is required." };
+            if (updateErrors.Count > 0)
+            {
+                return Unprocessable("The given data was invalid.", updateErrors);
+            }
+
             var dupInvCount = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM purchase_invoices WHERE invoice_number = @invNo AND id != @id",
-                new { invNo = invoiceNumber, id });
+                "SELECT COUNT(1) FROM purchase_invoices WHERE supplier_id = @sid AND invoice_number = @invNo AND id != @id",
+                new { sid = supplierId, invNo = invoiceNumber, id });
             if (dupInvCount > 0)
             {
                 return Unprocessable("Validation failed. Please correct the highlighted fields.", new Dictionary<string, string[]>
                 {
-                    ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier or globally." }
+                    ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier." }
                 });
             }
 
             await using var conn = await Db.OpenConnectionAsync();
-            await using var tx = await conn.BeginTransactionAsync();
+            await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
             try
             {
+                var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id }, conn, tx);
+                if (lockedExisting == null)
+                {
+                    await tx.RollbackAsync();
+                    return NotFound(new { message = "Purchase invoice not found." });
+                }
+                if (string.Equals(lockedExisting.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot edit an invoice that has been reversed.");
+                }
+                existing = lockedExisting;
+
+                var lockedDupInvCount = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM purchase_invoices WHERE supplier_id = @sid AND invoice_number = @invNo AND id != @id",
+                    new { sid = supplierId, invNo = invoiceNumber, id }, conn, tx);
+                if (lockedDupInvCount > 0)
+                {
+                    throw new InvoiceValidationException("Validation failed. Please correct the highlighted fields.", new Dictionary<string, string[]>
+                    {
+                        ["invoice_number"] = new[] { "Invoice number has already been taken for this supplier." }
+                    });
+                }
+
                 var poId = ToNullableLong(existing.GetValueOrDefault("purchase_order_id"));
                 if (poId.HasValue)
                 {
@@ -971,12 +1044,37 @@ public class PurchaseInvoiceController : ApiControllerBase
         }
 
         var beforeSnapshot = (await LoadPurchaseInvoiceAsync(id)) ?? existing;
+        var hasPurchaseReturnsTable = await Db.HasTableAsync("purchase_returns");
 
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Purchase invoice not found." });
+            }
+            if (string.Equals(lockedExisting.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Invoice has already been reversed.");
+            }
+            if (hasPurchaseReturnsTable)
+            {
+                var hasReturns = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM purchase_returns WHERE purchase_invoice_id = @id",
+                    new { id }, conn, tx) > 0;
+                if (hasReturns)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot reverse this invoice because linked purchase returns exist. Please reverse or remove the returns first.");
+                }
+            }
+            existing = lockedExisting;
+
             var items = await Db.QueryListAsync("SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = @id", new { id }, conn, tx);
             await ValidatePurchaseReversalStockAsync(items, conn, tx);
 
@@ -1150,11 +1248,32 @@ public class PurchaseInvoiceController : ApiControllerBase
             }
         }
 
+        var hasPurchaseReturnsTable = await Db.HasTableAsync("purchase_returns");
+
         await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
 
         try
         {
+            var lockedExisting = await Db.QuerySingleOrDefaultAsync("SELECT * FROM purchase_invoices WHERE id = @id", new { id }, conn, tx);
+            if (lockedExisting == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Purchase invoice not found." });
+            }
+            if (hasPurchaseReturnsTable)
+            {
+                var hasReturns = await Db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM purchase_returns WHERE purchase_invoice_id = @id",
+                    new { id }, conn, tx) > 0;
+                if (hasReturns)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot delete this invoice because linked purchase returns exist. Please delete the returns first.");
+                }
+            }
+            existing = lockedExisting;
+
             var items = await Db.QueryListAsync("SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = @id", new { id }, conn, tx);
             var isReversed = string.Equals(existing.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase);
 

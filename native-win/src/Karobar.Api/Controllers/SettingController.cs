@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
@@ -135,61 +137,136 @@ public class SettingController : ApiControllerBase
         return decimal.TryParse(val.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
     }
 
-    [HttpPost("settings")]
-    public async Task<IActionResult> Update()
+    private static readonly HashSet<string> ProtectedSettingKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        if (!await CanAsync("settings.update")) return Forbidden();
-        var setting = await GetOrCreateSettingAsync();
-        var settingId = Convert.ToInt64(setting["id"]);
+        "network_server_token",
+        "terminal_auto_authorize",
+        "terms_accepted_at",
+        "privacy_accepted_at",
+        "legal_accepted_version",
+        "setup_completed_at",
+        "logo_path",
+        "created_at",
+        "updated_at"
+    };
 
-        var body = await ReadJsonBodyAsync();
+    private static readonly HashSet<string> IgnoredRequestMetaKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "id",
+        "logo",
+        "remove_logo",
+        "clear_fbr_bearer_token",
+        "clear_cube_groq_api_key",
+        "clear_cube_gemini_api_key",
+        "is_setup_completed",
+        "theme_id",
+        "backup_is_automated",
+        "backup_frequency",
+        "backup_time_of_day",
+        "custom_backup_path",
+        "seed_default_accounts",
+        "seed_default_locations",
+        "logo_url",
+        "has_smtp_password",
+        "has_whatsapp_access_token",
+        "has_cube_groq_api_key",
+        "has_cube_gemini_api_key",
+        "has_fbr_bearer_token",
+        "fbr_bearer_token_preview",
+        "cube_usage_summary"
+    };
+
+    private static readonly HashSet<string> AllowedSettingKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Store
+        "store_name", "phone_number", "address", "license_number", "note", "note_en", "note_ur",
+        // Sale / Currency
+        "sale_system", "shop_type", "currency_code", "currency_symbol", "currency_position", "currency_decimal_places",
+        // UI / Print / Share
+        "navigation_style", "printer_type", "thermal_template", "a4_template", "thermal_custom_layout",
+        "print_paper_width_mm", "print_margin_top_mm", "print_margin_bottom_mm", "print_margin_left_mm",
+        "print_margin_right_mm", "print_font_scale", "print_contrast_mode", "print_scale_mode", "print_show_logo",
+        "share_paper_size", "share_show_logo",
+        // Expiry
+        "expiry_warning_days", "expiry_critical_days", "expiry_daily_flash_limit",
+        // SMTP
+        "smtp_enabled", "smtp_host", "smtp_port", "smtp_username", "smtp_password",
+        "smtp_encryption", "smtp_from_address", "smtp_from_name",
+        // Cube AI
+        "cube_ai_enabled", "cube_groq_enabled", "cube_groq_api_key", "cube_groq_model", "cube_groq_daily_limit",
+        "cube_gemini_enabled", "cube_gemini_api_key", "cube_gemini_model", "cube_gemini_daily_limit",
+        // WhatsApp
+        "whatsapp_enabled", "whatsapp_provider", "whatsapp_access_token", "whatsapp_phone_number_id",
+        "whatsapp_business_account_id", "whatsapp_api_version", "whatsapp_api_url",
+        "whatsapp_default_country_code", "whatsapp_template_name", "whatsapp_template_language",
+        "whatsapp_auto_fallback", "whatsapp_message_en", "whatsapp_message_ur",
+        // FBR
+        "fbr_enabled", "fbr_environment", "fbr_mode", "fbr_bearer_token", "fbr_pos_id",
+        "fbr_seller_ntn", "fbr_seller_strn", "fbr_seller_province",
+        "fbr_sandbox_url", "fbr_production_url", "fbr_default_hs_code", "fbr_scenario_id",
+        "fbr_pos_fee_enabled", "fbr_pos_fee_amount", "fbr_auto_sync",
+        // Clinical / Operator PIN
+        "enable_dosage_stickers", "enable_prescription_attachments", "enable_drug_interaction_warnings",
+        "enable_cold_chain_log", "dosage_sticker_config",
+        "require_operator_pin", "operator_pin_auto_submit", "operator_pin_modules"
+    };
+
+    private static readonly HashSet<string> SecretSettingFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "smtp_password",
+        "whatsapp_access_token",
+        "cube_groq_api_key",
+        "cube_gemini_api_key",
+        "fbr_bearer_token"
+    };
+
+    private static readonly Dictionary<string, object?> NumericSettingDefaults = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["currency_decimal_places"] = 2,
+        ["fbr_pos_fee_amount"] = 1.00m,
+        ["expiry_warning_days"] = 90,
+        ["expiry_critical_days"] = 30,
+        ["expiry_daily_flash_limit"] = 5,
+        ["smtp_port"] = 587,
+        ["print_paper_width_mm"] = null,
+        ["print_margin_top_mm"] = 0,
+        ["print_margin_bottom_mm"] = 4,
+        ["print_margin_left_mm"] = 0,
+        ["print_margin_right_mm"] = 0,
+        ["print_font_scale"] = 100,
+        ["cube_groq_daily_limit"] = 250,
+        ["cube_gemini_daily_limit"] = 250
+    };
+
+    private (Dictionary<string, object?> Updates, IActionResult? ErrorResult) BuildValidatedSettingUpdates(
+        Dictionary<string, JsonElement> body,
+        Dictionary<string, object?> existingSetting)
+    {
         var updates = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-        var secretFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "smtp_password",
-            "whatsapp_access_token",
-            "cube_groq_api_key",
-            "cube_gemini_api_key",
-            "fbr_bearer_token"
-        };
-
-        var numericDefaults = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["currency_decimal_places"] = 2,
-            ["fbr_pos_fee_amount"] = 1.00m,
-            ["expiry_warning_days"] = 90,
-            ["expiry_critical_days"] = 30,
-            ["expiry_daily_flash_limit"] = 5,
-            ["smtp_port"] = 587,
-            ["print_paper_width_mm"] = null,
-            ["print_margin_top_mm"] = 0,
-            ["print_margin_bottom_mm"] = 4,
-            ["print_margin_left_mm"] = 0,
-            ["print_margin_right_mm"] = 0,
-            ["print_font_scale"] = 100,
-            ["cube_groq_daily_limit"] = 250,
-            ["cube_gemini_daily_limit"] = 250
-        };
 
         foreach (var kv in body)
         {
-            if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo_path", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("clear_fbr_bearer_token", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("clear_cube_groq_api_key", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("clear_cube_gemini_api_key", StringComparison.OrdinalIgnoreCase))
+            if (ProtectedSettingKeys.Contains(kv.Key))
+            {
+                return (updates, Unprocessable(
+                    $"Setting key '{kv.Key}' cannot be modified via this endpoint.",
+                    new Dictionary<string, string[]>
+                    {
+                        [kv.Key] = [$"The {kv.Key} setting cannot be modified."]
+                    }));
+            }
+
+            if (IgnoredRequestMetaKeys.Contains(kv.Key) || !AllowedSettingKeys.Contains(kv.Key))
             {
                 continue;
             }
+
             var prepared = KarobarDb.PrepareDbValue(kv.Value);
-            if (secretFields.Contains(kv.Key) && string.IsNullOrWhiteSpace(prepared?.ToString()))
+            if (SecretSettingFields.Contains(kv.Key) && string.IsNullOrWhiteSpace(prepared?.ToString()))
             {
                 continue;
             }
-            if (numericDefaults.TryGetValue(kv.Key, out var numFallback) && string.IsNullOrWhiteSpace(prepared?.ToString()))
+            if (NumericSettingDefaults.TryGetValue(kv.Key, out var numFallback) && string.IsNullOrWhiteSpace(prepared?.ToString()))
             {
                 prepared = numFallback;
             }
@@ -209,11 +286,208 @@ public class SettingController : ApiControllerBase
             updates["cube_gemini_api_key"] = null;
         }
 
+        if (updates.TryGetValue("fbr_mode", out var rawFmObj))
+        {
+            var fmStr = rawFmObj?.ToString()?.Trim();
+            updates["fbr_mode"] = string.IsNullOrWhiteSpace(fmStr) ? "digital_invoicing" : fmStr;
+        }
+
+        if (updates.TryGetValue("whatsapp_provider", out var rawWpObj))
+        {
+            var wpStr = rawWpObj?.ToString()?.Trim();
+            updates["whatsapp_provider"] = string.IsNullOrWhiteSpace(wpStr) ? "local_agent" : wpStr;
+        }
+
+        var existingFbrMode = existingSetting.GetValueOrDefault("fbr_mode")?.ToString()?.Trim();
+        var effectiveFbrMode = updates.TryGetValue("fbr_mode", out var fmObj) && !string.IsNullOrWhiteSpace(fmObj?.ToString())
+            ? fmObj!.ToString()!.Trim()
+            : (!string.IsNullOrWhiteSpace(existingFbrMode) ? existingFbrMode : "digital_invoicing");
+
+        var shouldValidateFbrUrls = updates.ContainsKey("fbr_mode") ||
+                                    updates.ContainsKey("fbr_sandbox_url") ||
+                                    updates.ContainsKey("fbr_production_url");
+        if (shouldValidateFbrUrls)
+        {
+            foreach (var urlKey in new[] { "fbr_sandbox_url", "fbr_production_url" })
+            {
+                var hasIncoming = updates.TryGetValue(urlKey, out var urlVal);
+                var rawUrl = hasIncoming
+                    ? urlVal?.ToString()?.Trim()
+                    : existingSetting.GetValueOrDefault(urlKey)?.ToString()?.Trim();
+
+                if (string.IsNullOrWhiteSpace(rawUrl))
+                {
+                    continue;
+                }
+
+                if (!FbrController.IsAllowedFbrEndpointUrl(rawUrl, effectiveFbrMode, out _, out var fbrErr))
+                {
+                    var errMsg = fbrErr ?? "Invalid FBR endpoint URL.";
+                    return (updates, Unprocessable(
+                        errMsg,
+                        new Dictionary<string, string[]>
+                        {
+                            [urlKey] = [errMsg]
+                        }));
+                }
+
+                if (hasIncoming)
+                {
+                    updates[urlKey] = rawUrl;
+                }
+            }
+        }
+
+        if (updates.ContainsKey("whatsapp_provider") || updates.ContainsKey("whatsapp_api_url"))
+        {
+            var existingProv = existingSetting.GetValueOrDefault("whatsapp_provider")?.ToString()?.Trim();
+            var effectiveWaProvider = updates.TryGetValue("whatsapp_provider", out var wpObj) && !string.IsNullOrWhiteSpace(wpObj?.ToString())
+                ? wpObj!.ToString()!.Trim()
+                : (!string.IsNullOrWhiteSpace(existingProv) ? existingProv : "local_agent");
+
+            var hasIncomingWaUrl = updates.TryGetValue("whatsapp_api_url", out var waUrlObj);
+            var rawWaUrl = hasIncomingWaUrl
+                ? waUrlObj?.ToString()?.Trim()
+                : existingSetting.GetValueOrDefault("whatsapp_api_url")?.ToString()?.Trim();
+
+            if (!string.IsNullOrWhiteSpace(rawWaUrl))
+            {
+                if (!ValidateWhatsAppApiUrl(rawWaUrl, effectiveWaProvider, out var normalizedWaUrl, out var waErr))
+                {
+                    var errMsg = waErr ?? "Invalid WhatsApp API URL.";
+                    return (updates, Unprocessable(
+                        errMsg,
+                        new Dictionary<string, string[]>
+                        {
+                            ["whatsapp_api_url"] = [errMsg]
+                        }));
+                }
+
+                if (hasIncomingWaUrl)
+                {
+                    updates["whatsapp_api_url"] = normalizedWaUrl;
+                }
+            }
+        }
+
+        return (updates, null);
+    }
+
+    private static bool ValidateWhatsAppApiUrl(
+        string rawUrl,
+        string provider,
+        out string? normalizedUrl,
+        out string? errorMessage)
+    {
+        normalizedUrl = null;
+        errorMessage = null;
+
+        var trimmed = rawUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            errorMessage = "WhatsApp API URL must be a valid absolute URL.";
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "WhatsApp API URL must use http:// or https://.";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            errorMessage = "WhatsApp API URL must not contain embedded credentials.";
+            return false;
+        }
+
+        if (IsBlockedMetadataOrLinkLocalHost(uri.Host))
+        {
+            errorMessage = "WhatsApp API URL cannot target link-local, unspecified, or cloud metadata addresses.";
+            return false;
+        }
+
+        if (provider.Equals("local_agent", StringComparison.OrdinalIgnoreCase) &&
+            !FbrController.IsLoopbackHost(uri.Host))
+        {
+            errorMessage = "Local WhatsApp Agent URL must target localhost / loopback (127.0.0.1) only.";
+            return false;
+        }
+
+        normalizedUrl = trimmed;
+        return true;
+    }
+
+    private static bool IsBlockedMetadataOrLinkLocalHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return true;
+
+        var clean = host.Trim().Trim('[', ']').TrimEnd('.');
+        if (clean.Equals("metadata.google.internal", StringComparison.OrdinalIgnoreCase) ||
+            clean.Equals("metadata.goog", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var pctIdx = clean.IndexOf('%');
+        if (pctIdx >= 0)
+        {
+            clean = clean[..pctIdx];
+        }
+
+        if (IPAddress.TryParse(clean, out var ip))
+        {
+            if (ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
+            if (IPAddress.Any.Equals(ip) || IPAddress.IPv6Any.Equals(ip))
+            {
+                return true;
+            }
+
+            if (ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                var bytes = ip.GetAddressBytes();
+                if (bytes[0] == 169 && bytes[1] == 254)
+                {
+                    return true;
+                }
+            }
+            else if (ip.AddressFamily == AddressFamily.InterNetworkV6 && ip.IsIPv6LinkLocal)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [HttpPost("settings")]
+    public async Task<IActionResult> Update()
+    {
+        if (!await CanAsync("settings.update")) return Forbidden();
+        var setting = await GetOrCreateSettingAsync();
+        var settingId = Convert.ToInt64(setting["id"]);
+
+        var body = await ReadJsonBodyAsync();
+        var (updates, validationErr) = BuildValidatedSettingUpdates(body, setting);
+        if (validationErr != null)
+        {
+            return validationErr;
+        }
+
+        var oldLogoPath = setting.GetValueOrDefault("logo_path")?.ToString();
+        string? newLogoPath = null;
+        var shouldDeleteOldLogo = false;
+
         if (Request.HasFormContentType)
         {
             var form = await Request.ReadFormAsync();
             var logoFile = form.Files.GetFile("logo");
-            if (logoFile != null && logoFile.Length > 0)
+            if (logoFile != null)
             {
                 var (logoOk, logoRelPath, logoErr) = await SaveValidatedLogoAsync(logoFile);
                 if (!logoOk)
@@ -223,16 +497,20 @@ public class SettingController : ApiControllerBase
                         ["logo"] = new[] { logoErr ?? "Invalid logo image." }
                     });
                 }
+                newLogoPath = logoRelPath;
                 updates["logo_path"] = logoRelPath;
+                shouldDeleteOldLogo = true;
             }
             else if (GetBool(body, "remove_logo", false))
             {
                 updates["logo_path"] = null;
+                shouldDeleteOldLogo = true;
             }
         }
         else if (GetBool(body, "remove_logo", false))
         {
             updates["logo_path"] = null;
+            shouldDeleteOldLogo = true;
         }
 
         if (await Db.HasColumnAsync("settings", "is_setup_completed"))
@@ -266,7 +544,20 @@ public class SettingController : ApiControllerBase
 
         if (updates.Count > 0)
         {
-            await Db.UpdateAsync("settings", settingId, updates);
+            try
+            {
+                await Db.UpdateAsync("settings", settingId, updates);
+            }
+            catch
+            {
+                SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newLogoPath, "logos");
+                throw;
+            }
+
+            if (shouldDeleteOldLogo && !string.Equals(oldLogoPath, newLogoPath, StringComparison.OrdinalIgnoreCase))
+            {
+                SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldLogoPath, "logos");
+            }
         }
 
         var fresh = await GetOrCreateSettingAsync();
@@ -331,38 +622,21 @@ public class SettingController : ApiControllerBase
         var setting = await GetOrCreateSettingAsync();
         var settingId = Convert.ToInt64(setting["id"]);
 
-        var secretFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var (updates, validationErr) = BuildValidatedSettingUpdates(body, setting);
+        if (validationErr != null)
         {
-            "smtp_password",
-            "whatsapp_access_token",
-            "cube_groq_api_key",
-            "cube_gemini_api_key",
-            "fbr_bearer_token"
-        };
-
-        var updates = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var kv in body)
-        {
-            if (kv.Key.Equals("id", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("remove_logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.Equals("logo_path", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-            var prepared = KarobarDb.PrepareDbValue(kv.Value);
-            if (secretFields.Contains(kv.Key) && string.IsNullOrWhiteSpace(prepared?.ToString()))
-            {
-                continue;
-            }
-            updates[kv.Key] = prepared;
+            return validationErr;
         }
+
+        var oldLogoPath = setting.GetValueOrDefault("logo_path")?.ToString();
+        string? newLogoPath = null;
+        var shouldDeleteOldLogo = false;
 
         if (Request.HasFormContentType)
         {
             var form = await Request.ReadFormAsync();
             var logoFile = form.Files.GetFile("logo");
-            if (logoFile != null && logoFile.Length > 0)
+            if (logoFile != null)
             {
                 var (logoOk, logoRelPath, logoErr) = await SaveValidatedLogoAsync(logoFile);
                 if (!logoOk)
@@ -372,23 +646,40 @@ public class SettingController : ApiControllerBase
                         ["logo"] = new[] { logoErr ?? "Invalid logo image." }
                     });
                 }
+                newLogoPath = logoRelPath;
                 updates["logo_path"] = logoRelPath;
+                shouldDeleteOldLogo = true;
             }
             else if (GetBool(body, "remove_logo", false))
             {
                 updates["logo_path"] = null;
+                shouldDeleteOldLogo = true;
             }
         }
         else if (GetBool(body, "remove_logo", false))
         {
             updates["logo_path"] = null;
+            shouldDeleteOldLogo = true;
         }
 
         if (!updates.ContainsKey("printer_type")) updates["printer_type"] = "thermal";
         updates["is_setup_completed"] = 1;
         updates["setup_completed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
-        await Db.UpdateAsync("settings", settingId, updates);
+        try
+        {
+            await Db.UpdateAsync("settings", settingId, updates);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newLogoPath, "logos");
+            throw;
+        }
+
+        if (shouldDeleteOldLogo && !string.Equals(oldLogoPath, newLogoPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldLogoPath, "logos");
+        }
 
         var themeId = GetNullableLong(body, "theme_id");
         if (themeId.HasValue && await Db.HasTableAsync("theme_settings"))
@@ -565,11 +856,35 @@ public class SettingController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var existing = await GetOrCreateSettingAsync();
 
-        var provider = (GetString(body, "whatsapp_provider") ?? existing.GetValueOrDefault("whatsapp_provider")?.ToString() ?? "local_agent").Trim();
+        var rawProvider = body.ContainsKey("whatsapp_provider")
+            ? GetString(body, "whatsapp_provider")
+            : existing.GetValueOrDefault("whatsapp_provider")?.ToString();
+        var provider = string.IsNullOrWhiteSpace(rawProvider) ? "local_agent" : rawProvider.Trim();
+
         var testPhone = (GetString(body, "test_phone") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(testPhone))
         {
             return Unprocessable("Test phone number is required.");
+        }
+
+        var hasBodyApiUrl = body.ContainsKey("whatsapp_api_url") &&
+                            body["whatsapp_api_url"].ValueKind != JsonValueKind.Null &&
+                            body["whatsapp_api_url"].ValueKind != JsonValueKind.Undefined;
+        var rawApiUrl = hasBodyApiUrl
+            ? GetString(body, "whatsapp_api_url")?.Trim()
+            : existing.GetValueOrDefault("whatsapp_api_url")?.ToString()?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(rawApiUrl))
+        {
+            if (!ValidateWhatsAppApiUrl(rawApiUrl, provider, out var validatedApiUrl, out var waErr))
+            {
+                var errMsg = waErr ?? "Invalid WhatsApp API URL.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]>
+                {
+                    ["whatsapp_api_url"] = [errMsg]
+                });
+            }
+            rawApiUrl = validatedApiUrl;
         }
 
         var token = GetString(body, "whatsapp_access_token");
@@ -583,7 +898,7 @@ public class SettingController : ApiControllerBase
             PhoneNumberId = GetString(body, "whatsapp_phone_number_id") ?? existing.GetValueOrDefault("whatsapp_phone_number_id")?.ToString() ?? "",
             BusinessAccountId = GetString(body, "whatsapp_business_account_id") ?? existing.GetValueOrDefault("whatsapp_business_account_id")?.ToString() ?? "",
             ApiVersion = GetString(body, "whatsapp_api_version") ?? existing.GetValueOrDefault("whatsapp_api_version")?.ToString() ?? "v21.0",
-            ApiUrl = GetString(body, "whatsapp_api_url") ?? existing.GetValueOrDefault("whatsapp_api_url")?.ToString() ?? "http://127.0.0.1:3002",
+            ApiUrl = rawApiUrl ?? (provider.Equals("local_agent", StringComparison.OrdinalIgnoreCase) ? "http://127.0.0.1:3002" : ""),
             DefaultCountryCode = GetString(body, "whatsapp_default_country_code") ?? existing.GetValueOrDefault("whatsapp_default_country_code")?.ToString() ?? "92",
             AutoFallback = false
         };
@@ -627,6 +942,19 @@ public class SettingController : ApiControllerBase
             var liveKey = agentStatus.GetValueOrDefault("api_key")?.ToString();
             if (!string.IsNullOrWhiteSpace(liveUrl)) waConfig.ApiUrl = liveUrl;
             if (!string.IsNullOrWhiteSpace(liveKey)) waConfig.AccessToken = liveKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(waConfig.ApiUrl))
+        {
+            if (!ValidateWhatsAppApiUrl(waConfig.ApiUrl, provider, out var effectiveWaUrl, out var effectiveWaErr))
+            {
+                var errMsg = effectiveWaErr ?? "Invalid WhatsApp API URL.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]>
+                {
+                    ["whatsapp_api_url"] = [errMsg]
+                });
+            }
+            waConfig.ApiUrl = effectiveWaUrl!;
         }
 
         var normalized = _shareEngine.NormalizePhone(testPhone, waConfig.DefaultCountryCode);
@@ -690,45 +1018,9 @@ public class SettingController : ApiControllerBase
         return await _dbContext.Settings.OrderBy(s => s.Id).FirstOrDefaultAsync(HttpContext.RequestAborted);
     }
 
-    private async Task<(bool Ok, string? RelativePath, string? Error)> SaveValidatedLogoAsync(Microsoft.AspNetCore.Http.IFormFile logoFile)
+    private Task<(bool Ok, string? RelativePath, string? Error)> SaveValidatedLogoAsync(Microsoft.AspNetCore.Http.IFormFile logoFile)
     {
-        const long maxLogoBytes = 5L * 1024 * 1024;
-        if (logoFile.Length <= 0 || logoFile.Length > maxLogoBytes)
-        {
-            return (false, null, "Logo image must be between 1 byte and 5 MB.");
-        }
-
-        var ext = (Path.GetExtension(logoFile.FileName) ?? "").Trim().ToLowerInvariant();
-        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
-        {
-            return (false, null, "Only PNG, JPG, JPEG, and WebP logo images are allowed.");
-        }
-
-        await using var ms = new MemoryStream((int)Math.Min(logoFile.Length, maxLogoBytes));
-        await logoFile.CopyToAsync(ms);
-        var bytes = ms.ToArray();
-
-        bool isPng = bytes.Length >= 8 &&
-                     bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
-                     bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
-        bool isJpeg = bytes.Length >= 3 &&
-                      bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
-        bool isWebp = bytes.Length >= 12 &&
-                      bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
-                      bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
-
-        if (!isPng && !isJpeg && !isWebp)
-        {
-            return (false, null, "Uploaded logo file is not a valid PNG, JPEG, or WebP image.");
-        }
-
-        var safeExt = isPng ? ".png" : (isWebp ? ".webp" : ".jpg");
-        var logosDir = Db.StoragePath("app/public/logos");
-        if (!Directory.Exists(logosDir)) Directory.CreateDirectory(logosDir);
-        var fileName = $"logo_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{safeExt}";
-        var fullPath = Path.Combine(logosDir, fileName);
-        await System.IO.File.WriteAllBytesAsync(fullPath, bytes);
-        return (true, $"logos/{fileName}", null);
+        return SafeFileStorageHelper.SaveValidatedUploadAsync(Db, logoFile, "logos", allowPdf: false);
     }
 
     [HttpGet("settings/whatsapp-agent/status")]

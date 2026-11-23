@@ -40,7 +40,7 @@ public class OperatorPinController : ApiControllerBase
                 ["email"] = u.GetValueOrDefault("email"),
                 ["status"] = u.GetValueOrDefault("status") ?? "active",
                 ["roles"] = roleNames,
-                ["pin_code"] = hasUserPin ? u.GetValueOrDefault("pin_code") : null
+                ["has_pin"] = hasUserPin && !string.IsNullOrWhiteSpace(u.GetValueOrDefault("pin_code")?.ToString())
             });
         }
 
@@ -66,7 +66,7 @@ public class OperatorPinController : ApiControllerBase
                     ["department"] = e.GetValueOrDefault("department"),
                     ["designation"] = e.GetValueOrDefault("designation"),
                     ["status"] = e.GetValueOrDefault("status") ?? "active",
-                    ["pin_code"] = hasEmpPin ? e.GetValueOrDefault("pin_code") : null
+                    ["has_pin"] = hasEmpPin && !string.IsNullOrWhiteSpace(e.GetValueOrDefault("pin_code")?.ToString())
                 });
             }
         }
@@ -117,10 +117,17 @@ public class OperatorPinController : ApiControllerBase
 
         try
         {
+            var callerIsAdmin = await IsAdminAsync();
+
             if (type == "user")
             {
                 var user = await Db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id = id.Value });
                 if (user == null) return NotFound(new { message = "User not found" });
+
+                if (!callerIsAdmin && await Db.UserHasRoleAsync(id.Value, KarobarDb.AdminRoleNames))
+                {
+                    return Forbidden("Only an Administrator can assign or clear an Admin user's PIN.");
+                }
 
                 long? linkedEmpId = null;
                 if (await Db.HasTableAsync("employees"))
@@ -136,7 +143,7 @@ public class OperatorPinController : ApiControllerBase
                 return Ok(new
                 {
                     message = pin != null ? $"4-digit code assigned to {uName}." : $"4-digit code cleared for {uName}.",
-                    pin_code = pin
+                    has_pin = pin != null
                 });
             }
             else
@@ -150,6 +157,11 @@ public class OperatorPinController : ApiControllerBase
                     linkedUserId = parsedUid;
                 }
 
+                if (!callerIsAdmin && linkedUserId.HasValue && await Db.UserHasRoleAsync(linkedUserId.Value, KarobarDb.AdminRoleNames))
+                {
+                    return Forbidden("Only an Administrator can assign or clear a PIN linked to an Admin user.");
+                }
+
                 var pin = await _pinService.ValidateUniquePinAsync(rawPin, null, id.Value, linkedUserId, null);
                 await Db.UpdateAsync("employees", id.Value, new Dictionary<string, object?> { ["pin_code"] = pin });
                 await _pinService.SyncLinkedPinForEmployeeAsync(linkedUserId, pin);
@@ -158,7 +170,7 @@ public class OperatorPinController : ApiControllerBase
                 return Ok(new
                 {
                     message = pin != null ? $"4-digit code assigned to {eName}." : $"4-digit code cleared for {eName}.",
-                    pin_code = pin
+                    has_pin = pin != null
                 });
             }
         }

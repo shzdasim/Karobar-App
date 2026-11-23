@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
@@ -346,15 +347,18 @@ public class ProductController : ApiControllerBase
             return Unprocessable(errors.Values.First().First(), errors);
         }
 
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { Length: > 0 } file)
+        string? newImagePath = null;
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { } file)
         {
-            var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? ".jpg";
-            var dir = Db.StoragePath("app/public/products");
-            Directory.CreateDirectory(dir);
-            var fileName = $"{Guid.NewGuid()}{ext}";
-            await using var fs = new FileStream(Path.Combine(dir, fileName), FileMode.Create);
-            await file.CopyToAsync(fs);
-            data["image"] = $"products/{fileName}";
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "products", allowPdf: false);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid product image.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["image"] = new[] { errMsg } });
+            }
+            newImagePath = relPath;
+            data["image"] = newImagePath;
         }
 
         if ((!data.TryGetValue("storage_location_id", out var locObj) || locObj == null) && await Db.HasTableAsync("storage_locations"))
@@ -364,7 +368,16 @@ public class ProductController : ApiControllerBase
             data["storage_location_id"] = defaultLocId;
         }
 
-        var id = await Db.InsertAsync("products", data);
+        long id;
+        try
+        {
+            id = await Db.InsertAsync("products", data);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newImagePath, "products");
+            throw;
+        }
 
         if (data.TryGetValue("supplier_id", out var sidObj) && sidObj != null && await Db.HasTableAsync("product_suppliers"))
         {
@@ -463,18 +476,36 @@ public class ProductController : ApiControllerBase
             return Unprocessable(errors.Values.First().First(), errors);
         }
 
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { Length: > 0 } file)
+        var oldImagePath = existing.GetValueOrDefault("image")?.ToString();
+        string? newImagePath = null;
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { } file)
         {
-            var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? ".jpg";
-            var dir = Db.StoragePath("app/public/products");
-            Directory.CreateDirectory(dir);
-            var fileName = $"{Guid.NewGuid()}{ext}";
-            await using var fs = new FileStream(Path.Combine(dir, fileName), FileMode.Create);
-            await file.CopyToAsync(fs);
-            data["image"] = $"products/{fileName}";
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "products", allowPdf: false);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid product image.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["image"] = new[] { errMsg } });
+            }
+            newImagePath = relPath;
+            data["image"] = newImagePath;
         }
 
-        await Db.UpdateAsync("products", id, data);
+        try
+        {
+            await Db.UpdateAsync("products", id, data);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newImagePath, "products");
+            throw;
+        }
+
+        if (!string.IsNullOrWhiteSpace(newImagePath) &&
+            !string.Equals(oldImagePath, newImagePath, StringComparison.OrdinalIgnoreCase))
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldImagePath, "products");
+        }
 
         if (data.TryGetValue("supplier_id", out var sidObj) && sidObj != null && await Db.HasTableAsync("product_suppliers"))
         {
@@ -538,6 +569,7 @@ public class ProductController : ApiControllerBase
         }
 
         await Db.ExecuteAsync("DELETE FROM products WHERE id = @id", new { id });
+        SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, product.GetValueOrDefault("image")?.ToString(), "products");
         return Ok(new { message = "Product deleted" });
     }
 
@@ -603,6 +635,7 @@ public class ProductController : ApiControllerBase
             }
 
             await Db.ExecuteAsync("DELETE FROM products WHERE id = @id", new { id });
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, product.GetValueOrDefault("image")?.ToString(), "products");
             deleted++;
         }
 

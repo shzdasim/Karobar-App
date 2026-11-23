@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import axios from "axios";
 import { clearApiCache } from "./axiosSetup.js";
 import { invalidatePermissionsCache } from "../api/usePermissions.js";
+import { shouldClearAuthOnUserFetchError } from "../utils/securityHelpers.js";
 
 const AuthContext = createContext();
 
@@ -45,20 +46,33 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (token && !user) {
-      axios.get("/api/user", {
-        headers: { Authorization: `Bearer ${token}` }
+    if (!token || user) return undefined;
+    let cancelled = false;
+
+    axios
+      .get("/api/user", {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      .then(res => {
+      .then((res) => {
+        if (cancelled) return;
         setUser(res.data);
         localStorage.setItem("user", JSON.stringify(res.data));
       })
-      .catch(() => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        setToken(null);
+      .catch((err) => {
+        if (cancelled) return;
+        if (shouldClearAuthOnUserFetchError(err)) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          localStorage.removeItem("token_expires_at");
+          localStorage.removeItem("karobar_session_prompt_at");
+          delete axios.defaults.headers.common["Authorization"];
+          setToken(null);
+        }
       });
-    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [token, user]);
 
   const login = useCallback((userData, tokenValue, additionalData = {}) => {

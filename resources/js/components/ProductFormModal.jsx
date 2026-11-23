@@ -8,6 +8,10 @@ import CreatableSelect from "react-select/creatable";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import {
+  parseStoredProductModalPos,
+  parseStoredProductModalSize,
+} from "../utils/uiResilienceHelpers";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -59,37 +63,31 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
   const [brandOption, setBrandOption] = useState(null);
   const [saving, setSaving] = useState(false);
   const [windowPos, setWindowPos] = useState(() => {
-    const saved = localStorage.getItem("productModalPos");
-    const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return isCompact
-        ? { x: Math.max(8, Number(parsed.x ?? 8)), y: Math.max(8, Number(parsed.y ?? 8)) }
-        : parsed;
+    let saved = null;
+    try {
+      saved = localStorage.getItem("productModalPos");
+    } catch {
+      saved = null;
     }
-    const width = isCompact ? Math.min(800, window.innerWidth - 16) : 800;
-    const height = isCompact ? Math.min(600, window.innerHeight - 24) : 600;
-    const x = isCompact ? Math.max(8, (window.innerWidth - width) / 2) : (window.innerWidth - width) / 2;
-    const y = isCompact ? Math.max(8, (window.innerHeight - height) / 2) : (window.innerHeight - height) / 2;
-    return { x, y };
+    const viewport =
+      typeof window !== "undefined"
+        ? { viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }
+        : {};
+    return parseStoredProductModalPos(saved, viewport);
   });
 
   const [windowSize, setWindowSize] = useState(() => {
-    const saved = localStorage.getItem("productModalSize");
-    const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return isCompact
-        ? {
-            width: Math.min(800, Number(parsed.width || 800), window.innerWidth - 16),
-            height: Math.min(600, Number(parsed.height || 600), window.innerHeight - 24),
-          }
-        : parsed;
+    let saved = null;
+    try {
+      saved = localStorage.getItem("productModalSize");
+    } catch {
+      saved = null;
     }
-    return {
-      width: isCompact ? Math.min(800, window.innerWidth - 16) : 800,
-      height: isCompact ? Math.min(600, window.innerHeight - 24) : 600,
-    };
+    const viewport =
+      typeof window !== "undefined"
+        ? { viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }
+        : {};
+    return parseStoredProductModalSize(saved, viewport);
   });
 
 const modalRef = useRef(null);
@@ -472,7 +470,11 @@ const handleEnterNav = (e, nextField) => {
 
 const stopDrag = () => {
     dragRef.current.isDragging = false;
-    localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+    try {
+      localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+    } catch {
+      // Ignore storage quota/security errors
+    }
     document.removeEventListener("mousemove", handleDrag);
     document.removeEventListener("mouseup", stopDrag);
   };
@@ -558,8 +560,12 @@ const stopDrag = () => {
     setIsResizing(false);
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
-    localStorage.setItem("productModalSize", JSON.stringify(windowSize));
-    localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+    try {
+      localStorage.setItem("productModalSize", JSON.stringify(windowSize));
+      localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+    } catch {
+      // Ignore storage quota/security errors
+    }
     document.removeEventListener("mousemove", handleResize);
     document.removeEventListener("mouseup", stopResize);
   };

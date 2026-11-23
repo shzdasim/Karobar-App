@@ -1,4 +1,5 @@
 import toast from "react-hot-toast";
+import { sanitizePrintHtml } from "./securityHelpers.js";
 
 /**
  * Universal Direct & Silent Print Engine for Karobar-App.
@@ -137,6 +138,7 @@ function runIframeUrlPrint(url) {
 }
 
 function runIframeHtmlPrint(html) {
+  const safeHtml = sanitizePrintHtml(html);
   return new Promise((resolve) => {
     try {
       const existing = document.getElementById("karobar-hidden-print-iframe");
@@ -163,7 +165,7 @@ function runIframeHtmlPrint(html) {
       }
 
       doc.open();
-      doc.write(html);
+      doc.write(safeHtml);
       doc.close();
 
       let printed = false;
@@ -265,6 +267,7 @@ export async function printSlipUrl(urlOrPayload, options = {}) {
  * without any popup window or system print dialog in Desktop .exe.
  */
 export async function printSlipHtml(html, options = {}) {
+  const safeHtml = sanitizePrintHtml(html);
   const desktop = getDesktopPrintBridge();
   const deviceName = options.deviceName ?? getPreferredPrinter();
 
@@ -274,7 +277,7 @@ export async function printSlipHtml(html, options = {}) {
       toast.loading(options.loadingMessage || "Printing slip...", { id: toastId });
     }
     try {
-      const res = await desktop.printHtml(html, {
+      const res = await desktop.printHtml(safeHtml, {
         silent: options.silent !== false,
         deviceName: deviceName || undefined,
         isThermal: options.isThermal,
@@ -292,7 +295,7 @@ export async function printSlipHtml(html, options = {}) {
         if (!options.quiet) {
           toast.dismiss(toastId);
         }
-        return runIframeHtmlPrint(html);
+        return runIframeHtmlPrint(safeHtml);
       }
       if (!options.quiet) {
         toast.error(
@@ -309,7 +312,7 @@ export async function printSlipHtml(html, options = {}) {
     }
   }
 
-  return runIframeHtmlPrint(html);
+  return runIframeHtmlPrint(safeHtml);
 }
 
 /**

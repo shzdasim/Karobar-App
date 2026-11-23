@@ -450,9 +450,11 @@ public class Milestone1SecurityAndWhatsAppTests
             // All minimal API routes MUST succeed even with the expired-user Bearer token
             (await client.GetAsync("/up")).StatusCode.Should().Be(HttpStatusCode.OK);
             (await client.GetAsync("/__karobar_ipc/preload.js")).StatusCode.Should().Be(HttpStatusCode.OK);
+            client.DefaultRequestHeaders.Add("X-Karobar-Ipc-Token", server.IpcToken);
             (await client.PostAsync("/__karobar_ipc/invoke", JsonBody(new { channel = "karobar:app-info" }))).StatusCode.Should().Be(HttpStatusCode.OK);
             (await client.PostAsync("/__karobar_ipc/karobar:app-info", JsonBody(new { }))).StatusCode.Should().Be(HttpStatusCode.OK);
             (await client.GetAsync("/__karobar_ipc/events?since=0")).StatusCode.Should().Be(HttpStatusCode.OK);
+            client.DefaultRequestHeaders.Remove("X-Karobar-Ipc-Token");
             (await client.GetAsync("/__desktop/splash.html")).StatusCode.Should().Be(HttpStatusCode.OK);
             (await client.GetAsync("/__desktop/terminal-offline.html")).StatusCode.Should().Be(HttpStatusCode.OK);
         }

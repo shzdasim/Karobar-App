@@ -21,6 +21,7 @@ import { usePermissions, Guard } from "@/api/usePermissions.js";
 // Reusable components
 import { TextSearch, DeleteConfirmationModal } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
+import { hasStaffPin } from "@/utils/operatorPinHelpers.js";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -264,7 +265,7 @@ export default function UsersIndex() {
 
   // Check if has actions
   const hasActions = can.update || can.delete;
-  const columnCount = 6 + (hasActions ? 1 : 0);
+  const columnCount = 7 + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view users.</div>;
@@ -481,6 +482,9 @@ export default function UsersIndex() {
                 <th scope="col" className="pb-2 pl-3">
                   <span className="products-column-label">Roles</span>
                 </th>
+                <th scope="col" className="w-28 pb-2 pl-3">
+                  <span className="products-column-label">PIN</span>
+                </th>
                 <th scope="col" className="w-32 pb-2 pl-3">
                   <span className="products-column-label">Status</span>
                 </th>
@@ -554,6 +558,17 @@ export default function UsersIndex() {
                           <span className="text-xs text-gray-400">No role</span>
                         )}
                       </div>
+                    </td>
+                    <td className="products-cell">
+                      {hasStaffPin(u) ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-700/50">
+                          PIN Set
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400 border border-gray-200/70 dark:border-slate-700/50">
+                          No PIN
+                        </span>
+                      )}
                     </td>
                     <td className="products-cell">
                       <span className={`people-badge ${isActive ? "people-badge-active" : "people-badge-inactive"}`}>

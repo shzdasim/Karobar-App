@@ -24,6 +24,8 @@
 /storage/backups/*
 /storage/app/.machine-id
 /storage/app/.license-*
+/storage/app/.app-key
+/storage/app/whatsapp-agent/
 /storage/pail
 /storage/framework/views/*
 !/storage/framework/views/.gitignore

@@ -25,6 +25,7 @@ import {
 } from "@heroicons/react/24/outline";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { openReportPdfSafely } from "../../utils/reportPdfOpener";
 
 const getSelectStyles = (isDarkMode = false) => ({
   control: (base) => ({
@@ -520,18 +521,11 @@ export default function NarcoticsReport() {
         params,
         responseType: "blob",
       });
-      const blob = new Blob([response.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `narcotics-register-${from || "report"}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+      openReportPdfSafely({
+        data: response.data,
+        filename: `narcotics-register-${from || "report"}.pdf`,
+        revokeDelayMs: 60000,
+      });
     } catch (err) {
       toast.error("Failed to generate Pakistani Statutory Narcotics PDF.");
     } finally {

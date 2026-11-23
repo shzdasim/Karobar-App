@@ -456,23 +456,35 @@ public class LicenseService
             ? DateTimeOffset.FromUnixTimeSeconds(expTs.Value).UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss")
             : null;
 
-        await using var conn = await _db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        await _db.GetTableColumnsAsync("licenses");
 
-        await _db.ExecuteAsync("DELETE FROM licenses", null, conn, tx);
-        var recId = await _db.InsertAsync("licenses", new Dictionary<string, object?>
+        long recId;
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            ["license_key"] = canonicalKey,
-            ["payload"] = JsonSerializer.Serialize(storedPayload),
-            ["valid"] = 1,
-            ["reason"] = null,
-            ["machine_hash"] = machineId,
-            ["activated_at"] = nowStr,
-            ["expires_at"] = expiresAtStr,
-            ["last_verified_at"] = nowStr
-        }, conn, tx);
+            try
+            {
+                await _db.ExecuteAsync("DELETE FROM licenses", null, conn, tx);
+                recId = await _db.InsertAsync("licenses", new Dictionary<string, object?>
+                {
+                    ["license_key"] = canonicalKey,
+                    ["payload"] = JsonSerializer.Serialize(storedPayload),
+                    ["valid"] = 1,
+                    ["reason"] = null,
+                    ["machine_hash"] = machineId,
+                    ["activated_at"] = nowStr,
+                    ["expires_at"] = expiresAtStr,
+                    ["last_verified_at"] = nowStr
+                }, conn, tx);
 
-        await tx.CommitAsync();
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
 
         var rec = await _db.QuerySingleOrDefaultAsync("SELECT * FROM licenses WHERE id = @id", new { id = recId });
         await RecordMonotonicTimestampAsync(activatedTs, rec, true);

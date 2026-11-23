@@ -12,6 +12,7 @@ import { BarcodeSvg, generateBarcodeSvgString } from "@/utils/barcode";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printHtmlViaIframe } from "@/utils/printHelper.js";
+import { escapeHtml, sanitizeCssAlign } from "@/utils/securityHelpers.js";
 import {
   QrCodeIcon,
   PrinterIcon,
@@ -1047,10 +1048,30 @@ export default function BarcodeIndex() {
 
       // Generate HTML content for printing
       const isRoll = layout.paper_type === "roll";
-      const wMm = layout.width_mm;
-      const hMm = layout.height_mm;
-      const fontPt = layout.options.font_scale || 10;
-      const textAlign = layout.options.text_align || "center";
+      const wMm = Number.isFinite(Number(layout.width_mm)) ? Number(layout.width_mm) : 50;
+      const hMm = Number.isFinite(Number(layout.height_mm)) ? Number(layout.height_mm) : 25;
+      const fontPt =
+        Number.isFinite(Number(layout.options.font_scale)) && Number(layout.options.font_scale) > 0
+          ? Number(layout.options.font_scale)
+          : 10;
+      const textAlign = sanitizeCssAlign(layout.options.text_align, "center");
+      const nameLines = Math.max(1, Math.min(6, Math.trunc(Number(layout.options.name_lines) || 1)));
+      const marginTopMm = Number(layout.margin_top_mm) || 0;
+      const marginRightMm = Number(layout.margin_right_mm) || 0;
+      const marginBottomMm = Number(layout.margin_bottom_mm) || 0;
+      const marginLeftMm = Number(layout.margin_left_mm) || 0;
+      const gapXMm = Number(layout.gap_x_mm) || 0;
+      const gapYMm = Number(layout.gap_y_mm) || 0;
+      const decimalPlaces = Math.max(
+        0,
+        Math.min(
+          6,
+          Number.isFinite(Number(storeInfo.currency_decimal_places))
+            ? Math.trunc(Number(storeInfo.currency_decimal_places))
+            : 2
+        )
+      );
+      const safeCurrencySymbol = escapeHtml(storeInfo.currency_symbol ?? "");
 
       let labelsHtml = "";
 
@@ -1072,7 +1093,7 @@ export default function BarcodeIndex() {
             );
 
             return `
-              <div class="roll-label" style="width:${wMm}mm; height:${hMm}mm; padding:${layout.margin_top_mm}mm ${layout.margin_right_mm}mm ${layout.margin_bottom_mm}mm ${layout.margin_left_mm}mm;">
+              <div class="roll-label" style="width:${wMm}mm; height:${hMm}mm; padding:${marginTopMm}mm ${marginRightMm}mm ${marginBottomMm}mm ${marginLeftMm}mm;">
                 ${
                   layout.options.show_store_name
                     ? `<div class="lbl-store" style="font-size:${fontPt - 1}pt;">${escapeHtml(storeName)}</div>`
@@ -1080,7 +1101,7 @@ export default function BarcodeIndex() {
                 }
                 ${
                   layout.options.show_product_name
-                    ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${layout.options.name_lines};">${escapeHtml(label.product_name)}</div>`
+                    ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${nameLines};">${escapeHtml(label.product_name)}</div>`
                     : ""
                 }
                 ${
@@ -1101,7 +1122,7 @@ export default function BarcodeIndex() {
                   }
                   ${
                     layout.options.show_price
-                      ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${storeInfo.currency_symbol} ${Number(label.price).toFixed(storeInfo.currency_decimal_places || 2)}</span>`
+                      ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${safeCurrencySymbol} ${Number(label.price || 0).toFixed(decimalPlaces)}</span>`
                       : ""
                   }
                 </div>
@@ -1116,8 +1137,8 @@ export default function BarcodeIndex() {
           .join("");
       } else {
         // Multi-label sheet printing (A4 / Letter grid)
-        const cols = layout.columns || 3;
-        const rows = layout.rows || 10;
+        const cols = Math.max(1, Math.trunc(Number(layout.columns) || 3));
+        const rows = Math.max(1, Math.trunc(Number(layout.rows) || 10));
         const totalPerSheet = cols * rows;
 
         // Chunk labels into separate sheets
@@ -1155,7 +1176,7 @@ export default function BarcodeIndex() {
                     }
                     ${
                       layout.options.show_product_name
-                        ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${layout.options.name_lines};">${escapeHtml(label.product_name)}</div>`
+                        ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${nameLines};">${escapeHtml(label.product_name)}</div>`
                         : ""
                     }
                     ${
@@ -1176,7 +1197,7 @@ export default function BarcodeIndex() {
                       }
                       ${
                         layout.options.show_price
-                          ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${storeInfo.currency_symbol} ${Number(label.price).toFixed(storeInfo.currency_decimal_places || 2)}</span>`
+                          ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${safeCurrencySymbol} ${Number(label.price || 0).toFixed(decimalPlaces)}</span>`
                           : ""
                       }
                     </div>
@@ -1186,8 +1207,8 @@ export default function BarcodeIndex() {
               .join("");
 
             return `
-              <div class="sheet-page" style="padding-top:${layout.margin_top_mm}mm; padding-left:${layout.margin_left_mm}mm; padding-right:${layout.margin_right_mm}mm; padding-bottom:${layout.margin_bottom_mm}mm;">
-                <div class="sheet-grid" style="grid-template-columns: repeat(${cols}, ${wMm}mm); column-gap:${layout.gap_x_mm}mm; row-gap:${layout.gap_y_mm}mm;">
+              <div class="sheet-page" style="padding-top:${marginTopMm}mm; padding-left:${marginLeftMm}mm; padding-right:${marginRightMm}mm; padding-bottom:${marginBottomMm}mm;">
+                <div class="sheet-grid" style="grid-template-columns: repeat(${cols}, ${wMm}mm); column-gap:${gapXMm}mm; row-gap:${gapYMm}mm;">
                   ${sheetLabels}
                 </div>
               </div>
@@ -1320,15 +1341,6 @@ export default function BarcodeIndex() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [printQueue, layout, storeInfo, isPrinting, skipLabelsCount]);
-
-  const escapeHtml = (str) => {
-    return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  };
 
   // React-select options for presets
   const templateOptions = useMemo(() => {

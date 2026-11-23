@@ -1,7 +1,15 @@
 // src/pages/users/UserForm.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
+import {
+  buildUserPinPayload,
+  extractApiErrorMessage,
+  hasStaffPin,
+  normalizePinDigits,
+  validateOptionalOperatorPin,
+} from "@/utils/operatorPinHelpers.js";
 import {
   UserCircleIcon,
   ShieldCheckIcon,
@@ -33,9 +41,11 @@ export default function UserForm({ onSubmit, initial, submitting }) {
     permissions: [],
   });
 
+  const [clearPin, setClearPin] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
   const [permissionOptions, setPermissionOptions] = useState([]);
   const formRef = useRef(null);
+  const existingHasPin = Boolean(initial && hasStaffPin(initial));
 
   // helpers
   const norm = (s) => (s == null ? "" : String(s).trim());
@@ -69,11 +79,12 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   // ---- Apply initial (edit mode)
   useEffect(() => {
     if (initial) {
+      setClearPin(false);
       setForm({
         name: norm(initial.name),
         email: norm(initial.email),
         password: "",
-        pin_code: norm(initial.pin_code),
+        pin_code: "",
         status: norm(initial.status || "active"),
         roles: asArray(initial.roles)
           .map((r) => (typeof r === "string" ? r : r?.name))
@@ -89,14 +100,27 @@ export default function UserForm({ onSubmit, initial, submitting }) {
 
   const submit = (e) => {
     e.preventDefault();
+    const pinError = validateOptionalOperatorPin(form.pin_code);
+    if (pinError) {
+      toast.error(pinError);
+      return;
+    }
+
+    const { pin_code: _ignoredPinCode, ...baseForm } = form;
+    const pinPayload = buildUserPinPayload({
+      isEdit: Boolean(initial),
+      pinInput: form.pin_code,
+      clearPin,
+    });
+
     onSubmit({
-      ...form,
+      ...baseForm,
       name: norm(form.name),
       email: norm(form.email),
-      pin_code: norm(form.pin_code) || null,
       status: norm(form.status || "active"),
       roles: Array.from(new Set(form.roles)),
       permissions: Array.from(new Set(form.permissions)),
+      ...pinPayload,
     });
   };
 
@@ -352,9 +376,24 @@ export default function UserForm({ onSubmit, initial, submitting }) {
             </div>
 
             <div className="people-field">
-              <label className="people-label" htmlFor="user-pin-code">
-                4-Digit Operator Code (PIN)
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="people-label" htmlFor="user-pin-code">
+                  4-Digit Operator Code (PIN)
+                </label>
+                {initial && (
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                      existingHasPin
+                        ? clearPin
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        : "bg-gray-200/70 text-gray-600 dark:bg-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    {existingHasPin ? (clearPin ? "Clearing on save" : "PIN Set") : "No PIN"}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   id="user-pin-code"
@@ -362,8 +401,17 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                   inputMode="numeric"
                   maxLength={4}
                   value={form.pin_code}
-                  onChange={(e) => set("pin_code", e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="e.g. 4821"
+                  onChange={(e) => {
+                    set("pin_code", normalizePinDigits(e.target.value));
+                    setClearPin(false);
+                  }}
+                  placeholder={
+                    existingHasPin
+                      ? clearPin
+                        ? "PIN will be cleared on save"
+                        : "Leave blank to keep existing PIN"
+                      : "Optional 4-digit code"
+                  }
                   className="font-mono tracking-widest"
                 />
                 <button
@@ -371,15 +419,45 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                   onClick={async () => {
                     try {
                       const { data } = await axios.get("/api/operator-pins/generate");
-                      if (data?.pin_code) set("pin_code", data.pin_code);
-                    } catch {}
+                      if (data?.pin_code) {
+                        set("pin_code", normalizePinDigits(data.pin_code));
+                        setClearPin(false);
+                      }
+                    } catch (err) {
+                      toast.error(extractApiErrorMessage(err, "Failed to generate 4-digit code."));
+                    }
                   }}
                   className="px-2.5 py-2 text-xs font-semibold rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 shrink-0 cursor-pointer"
                 >
                   Auto
                 </button>
+                {existingHasPin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClearPin((prev) => {
+                        const next = !prev;
+                        if (next) set("pin_code", "");
+                        return next;
+                      });
+                    }}
+                    className={`px-2.5 py-2 text-xs font-semibold rounded-lg border shrink-0 cursor-pointer ${
+                      clearPin
+                        ? "border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30"
+                        : "border-rose-300 dark:border-rose-700/70 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    }`}
+                  >
+                    {clearPin ? "Keep Existing" : "Clear PIN"}
+                  </button>
+                )}
               </div>
-              <span className="people-hint">Optional unique 4-digit code for counter invoice attribution.</span>
+              <span className="people-hint">
+                {existingHasPin
+                  ? clearPin
+                    ? "Existing 4-digit PIN will be removed when you save."
+                    : "PIN is set. Leave blank to keep existing, enter 4 digits to replace, or click Clear PIN."
+                  : "Optional unique 4-digit code for counter invoice attribution."}
+              </span>
             </div>
           </div>
 

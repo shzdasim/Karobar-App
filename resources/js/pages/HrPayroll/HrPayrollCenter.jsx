@@ -5,6 +5,13 @@ import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles.js";
 import { printCurrentView } from "@/utils/printHelper.js";
+import {
+  buildEmployeePinPayload,
+  extractApiErrorMessage,
+  hasStaffPin,
+  normalizePinDigits,
+  validateOptionalOperatorPin,
+} from "@/utils/operatorPinHelpers.js";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import {
   UserGroupIcon,
@@ -110,6 +117,7 @@ export default function HrPayrollCenter() {
   const [empStatusFilter, setEmpStatusFilter] = useState("all");
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [empClearPin, setEmpClearPin] = useState(false);
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [empForm, setEmpForm] = useState({
     employee_code: "",
@@ -347,6 +355,7 @@ export default function HrPayrollCenter() {
       /* ignore */
     }
     setEditingEmployee(null);
+    setEmpClearPin(false);
     setEmpForm({
       employee_code: nextCode,
       user_id: "",
@@ -383,6 +392,7 @@ export default function HrPayrollCenter() {
   // Open Edit Employee Modal
   const handleOpenEditEmployee = (emp) => {
     setEditingEmployee(emp);
+    setEmpClearPin(false);
     setEmpForm({
       employee_code: emp.employee_code || "",
       user_id: emp.user_id ? String(emp.user_id) : "",
@@ -409,7 +419,7 @@ export default function HrPayrollCenter() {
       payment_method: emp.payment_method || "cash",
       bank_name: emp.bank_name || "",
       bank_account_number: emp.bank_account_number || "",
-      pin_code: emp.pin_code || "",
+      pin_code: "",
       status: emp.status || "active",
       notes: emp.notes || "",
     });
@@ -423,10 +433,21 @@ export default function HrPayrollCenter() {
       toast.error("Employee name is required.");
       return;
     }
+    const pinError = validateOptionalOperatorPin(empForm.pin_code);
+    if (pinError) {
+      toast.error(pinError);
+      return;
+    }
     setSavingEmployee(true);
     try {
+      const { pin_code: _ignoredPinCode, ...restEmpForm } = empForm;
+      const pinPayload = buildEmployeePinPayload({
+        isEdit: Boolean(editingEmployee),
+        pinInput: empForm.pin_code,
+        clearPin: empClearPin,
+      });
       const payload = {
-        ...empForm,
+        ...restEmpForm,
         user_id: empForm.user_id ? Number(empForm.user_id) : null,
         working_days_per_month: Number(empForm.working_days_per_month || 26),
         basic_salary: Number(empForm.basic_salary || 0),
@@ -435,7 +456,7 @@ export default function HrPayrollCenter() {
         commission_rate: Number(empForm.commission_rate || 0),
         monthly_sales_target: Number(empForm.monthly_sales_target || 0),
         target_bonus_amount: Number(empForm.target_bonus_amount || 0),
-        pin_code: empForm.pin_code ? String(empForm.pin_code).trim() : null,
+        ...pinPayload,
       };
 
       if (editingEmployee) {
@@ -452,12 +473,7 @@ export default function HrPayrollCenter() {
         fetchCommissions(),
       ]);
     } catch (err) {
-      const msg =
-        err?.response?.data?.errors?.employee_code?.[0] ||
-        err?.response?.data?.errors?.name?.[0] ||
-        err?.response?.data?.message ||
-        "Failed to save employee.";
-      toast.error(msg);
+      toast.error(extractApiErrorMessage(err, "Failed to save employee."));
     } finally {
       setSavingEmployee(false);
     }
@@ -2217,37 +2233,93 @@ export default function HrPayrollCenter() {
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">4-Digit Operator Code (PIN)</label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={4}
-                      value={empForm.pin_code || ""}
-                      onChange={(e) =>
-                        setEmpForm((p) => ({
-                          ...p,
-                          pin_code: e.target.value.replace(/\D/g, "").slice(0, 4),
-                        }))
-                      }
-                      placeholder="e.g. 4821"
-                      className="w-full h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono tracking-widest"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const { data } = await axios.get("/api/operator-pins/generate");
-                          if (data?.pin_code) {
-                            setEmpForm((p) => ({ ...p, pin_code: data.pin_code }));
-                          }
-                        } catch {}
-                      }}
-                      className="h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold shrink-0 cursor-pointer"
-                    >
-                      Auto
-                    </button>
-                  </div>
+                  {(() => {
+                    const editingHasPin = Boolean(editingEmployee && hasStaffPin(editingEmployee));
+                    return (
+                      <>
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
+                          <label className="block font-semibold">4-Digit Operator Code (PIN)</label>
+                          {editingEmployee && (
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                                editingHasPin
+                                  ? empClearPin
+                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                              }`}
+                            >
+                              {editingHasPin ? (empClearPin ? "Clearing on save" : "PIN Set") : "No PIN"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={4}
+                            value={empForm.pin_code || ""}
+                            onChange={(e) => {
+                              setEmpForm((p) => ({
+                                ...p,
+                                pin_code: normalizePinDigits(e.target.value),
+                              }));
+                              setEmpClearPin(false);
+                            }}
+                            placeholder={
+                              editingHasPin
+                                ? empClearPin
+                                  ? "PIN will be cleared"
+                                  : "Leave blank to keep"
+                                : "e.g. 4821"
+                            }
+                            className="w-full h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono tracking-widest"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { data } = await axios.get("/api/operator-pins/generate");
+                                if (data?.pin_code) {
+                                  setEmpForm((p) => ({
+                                    ...p,
+                                    pin_code: normalizePinDigits(data.pin_code),
+                                  }));
+                                  setEmpClearPin(false);
+                                }
+                              } catch (err) {
+                                toast.error(extractApiErrorMessage(err, "Failed to generate 4-digit code."));
+                              }
+                            }}
+                            className="h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold shrink-0 cursor-pointer"
+                          >
+                            Auto
+                          </button>
+                          {editingHasPin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmpClearPin((prev) => {
+                                  const next = !prev;
+                                  if (next) {
+                                    setEmpForm((p) => ({ ...p, pin_code: "" }));
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className={`h-9 px-2.5 rounded-xl border text-[11px] font-semibold shrink-0 cursor-pointer ${
+                                empClearPin
+                                  ? "border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30"
+                                  : "border-rose-300 dark:border-rose-700/70 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              }`}
+                            >
+                              {empClearPin ? "Keep Existing" : "Clear PIN"}
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block font-semibold mb-1">Preferred Payout Method</label>

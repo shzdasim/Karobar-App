@@ -55,7 +55,12 @@ public class RoleController : ApiControllerBase
 
         var body = await ReadJsonBodyAsync();
         var name = (GetString(body, "name") ?? "").Trim();
-        var permissions = GetStringList(body, "permissions");
+        var permissions = GetStringList(body, "permissions")
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var callerIsAdmin = await IsAdminAsync();
 
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -68,6 +73,11 @@ public class RoleController : ApiControllerBase
         if (IsReservedAdminRoleName(name))
         {
             return Unprocessable("Cannot create a role with a reserved Admin role name.");
+        }
+
+        if (permissions.Count > 0 && !callerIsAdmin)
+        {
+            return Forbidden("Only an Admin can assign or sync role permissions.");
         }
 
         var exists = await Db.ExecuteScalarAsync<int>(
@@ -87,7 +97,7 @@ public class RoleController : ApiControllerBase
             ["guard_name"] = "sanctum"
         });
 
-        if (permissions.Count > 0)
+        if (permissions.Count > 0 && callerIsAdmin)
         {
             await SyncRolePermissionsInternalAsync(roleId, permissions);
         }
@@ -166,6 +176,13 @@ public class RoleController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var newName = (GetString(body, "name") ?? currentName).Trim();
         var hasPerms = body.ContainsKey("permissions");
+        var callerIsAdmin = await IsAdminAsync();
+        var requestedPerms = hasPerms
+            ? GetStringList(body, "permissions")
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (IsReservedAdminRoleName(currentName))
         {
@@ -173,7 +190,7 @@ public class RoleController : ApiControllerBase
             {
                 return Unprocessable("Cannot rename Admin role");
             }
-            if (!await IsAdminAsync())
+            if (!callerIsAdmin)
             {
                 return Forbidden("Only an Admin can modify the Admin role");
             }
@@ -181,6 +198,24 @@ public class RoleController : ApiControllerBase
         else if (IsReservedAdminRoleName(newName))
         {
             return Unprocessable("Cannot rename a role to a reserved Admin role name.");
+        }
+        else if (!callerIsAdmin && hasPerms)
+        {
+            var existingPermRows = await Db.QueryListAsync(@"
+                SELECT p.name
+                FROM permissions p
+                INNER JOIN role_has_permissions rhp ON rhp.permission_id = p.id
+                WHERE rhp.role_id = @id",
+                new { id });
+            var existingPerms = existingPermRows
+                .Select(r => r.GetValueOrDefault("name")?.ToString()?.Trim() ?? "")
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!requestedPerms.SetEquals(existingPerms))
+            {
+                return Forbidden("Only an Admin can sync role permissions.");
+            }
         }
 
         var conflict = await Db.ExecuteScalarAsync<int>(
@@ -199,9 +234,9 @@ public class RoleController : ApiControllerBase
             var allNames = allPerms.Select(p => p.GetValueOrDefault("name")?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s));
             await SyncRolePermissionsInternalAsync(id, allNames);
         }
-        else if (hasPerms)
+        else if (hasPerms && callerIsAdmin)
         {
-            await SyncRolePermissionsInternalAsync(id, GetStringList(body, "permissions"));
+            await SyncRolePermissionsInternalAsync(id, requestedPerms);
         }
 
         return Ok(await GetRoleWithPermissionsAsync(id));

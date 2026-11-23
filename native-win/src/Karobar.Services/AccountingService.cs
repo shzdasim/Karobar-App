@@ -264,86 +264,128 @@ public class AccountingService
         var description = (data.GetValueOrDefault("description")?.ToString() ?? "").Trim();
         if (string.IsNullOrEmpty(description)) description = "Manual Journal Entry";
 
-        var cashBankCoaRows = await _db.QueryListAsync(
-            "SELECT id FROM chart_of_accounts WHERE sub_type = 'cash_bank' OR system_key = 'cash_and_banks'");
-        var cashBankCoaIds = cashBankCoaRows.Select(r => AccountService.ToLong(r["id"])).ToHashSet();
+        await _db.GetTableColumnsAsync("journal_entries");
+        await _db.GetTableColumnsAsync("journal_entry_lines");
+        await _db.GetTableColumnsAsync("accounts");
+        await _db.GetTableColumnsAsync("account_transactions");
+        await _db.GetTableColumnsAsync("cash_drawer_sessions");
+        await _db.GetTableColumnsAsync("cash_drawer_transactions");
 
         long entryId;
         decimal netCashDelta = 0m;
+        bool touchedDrawer = false;
         await using (var conn = await _db.OpenConnectionAsync())
-        await using (var tx = await conn.BeginTransactionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            entryId = await _db.InsertAsync("journal_entries", new Dictionary<string, object?>
+            try
             {
-                ["entry_number"] = entryNumber,
-                ["entry_date"] = entryDate,
-                ["reference_type"] = data.GetValueOrDefault("reference_type")?.ToString() ?? "manual",
-                ["reference_number"] = data.GetValueOrDefault("reference_number")?.ToString(),
-                ["account_id"] = treasuryAccountId,
-                ["description"] = description,
-                ["total_debit"] = totalDebit,
-                ["total_credit"] = totalCredit,
-                ["status"] = "posted",
-                ["created_by"] = userId
-            }, conn, tx);
+                var cashBankCoaRows = await _db.QueryListAsync(
+                    "SELECT id FROM chart_of_accounts WHERE sub_type = 'cash_bank' OR system_key = 'cash_and_banks'",
+                    null,
+                    conn,
+                    tx);
+                var cashBankCoaIds = cashBankCoaRows.Select(r => AccountService.ToLong(r["id"])).ToHashSet();
 
-            foreach (var lineData in normalizedLines)
-            {
-                lineData["journal_entry_id"] = entryId;
-                await _db.InsertAsync("journal_entry_lines", lineData, conn, tx);
-
-                var coaId = AccountService.ToLong(lineData["chart_of_account_id"]);
-                if (cashBankCoaIds.Contains(coaId))
+                entryId = await _db.InsertAsync("journal_entries", new Dictionary<string, object?>
                 {
-                    var dr = AccountService.ToDecimal(lineData["debit"]);
-                    var cr = AccountService.ToDecimal(lineData["credit"]);
-                    netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
-                }
-            }
+                    ["entry_number"] = entryNumber,
+                    ["entry_date"] = entryDate,
+                    ["reference_type"] = data.GetValueOrDefault("reference_type")?.ToString() ?? "manual",
+                    ["reference_number"] = data.GetValueOrDefault("reference_number")?.ToString(),
+                    ["account_id"] = treasuryAccountId,
+                    ["description"] = description,
+                    ["total_debit"] = totalDebit,
+                    ["total_credit"] = totalCredit,
+                    ["status"] = "posted",
+                    ["created_by"] = userId
+                }, conn, tx);
 
-            await tx.CommitAsync();
+                foreach (var lineData in normalizedLines)
+                {
+                    lineData["journal_entry_id"] = entryId;
+                    await _db.InsertAsync("journal_entry_lines", lineData, conn, tx);
+
+                    var coaId = AccountService.ToLong(lineData["chart_of_account_id"]);
+                    if (cashBankCoaIds.Contains(coaId))
+                    {
+                        var dr = AccountService.ToDecimal(lineData["debit"]);
+                        var cr = AccountService.ToDecimal(lineData["credit"]);
+                        netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
+                    }
+                }
+
+                if (treasuryAccountId.HasValue && Math.Abs(netCashDelta) > 0.009m)
+                {
+                    var hasAccounts = await conn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = 'accounts'",
+                        transaction: tx) > 0;
+
+                    if (hasAccounts)
+                    {
+                        var treasuryAcc = await _db.QuerySingleOrDefaultAsync(
+                            "SELECT * FROM accounts WHERE id = @id",
+                            new { id = treasuryAccountId.Value },
+                            conn,
+                            tx);
+                        if (treasuryAcc != null)
+                        {
+                            if (netCashDelta > 0m)
+                            {
+                                await _accountService.DepositInTxAsync(
+                                    treasuryAcc,
+                                    netCashDelta,
+                                    "journal_entry",
+                                    entryId,
+                                    $"JV {entryNumber}: {description}",
+                                    userId,
+                                    conn,
+                                    tx);
+                            }
+                            else
+                            {
+                                await _accountService.WithdrawInTxAsync(
+                                    treasuryAcc,
+                                    Math.Abs(netCashDelta),
+                                    "journal_entry",
+                                    entryId,
+                                    $"JV {entryNumber}: {description}",
+                                    userId,
+                                    conn,
+                                    tx);
+                            }
+
+                            if (_accountService.IsDefaultCashDrawerAccount(treasuryAcc))
+                            {
+                                var cashDrawerService = new CashDrawerService(_db);
+                                var drawerTxn = await cashDrawerService.RecordTransactionInTxAsync(
+                                    null,
+                                    netCashDelta > 0m ? "cash_in" : "cash_out",
+                                    Math.Abs(netCashDelta),
+                                    "journal_entry",
+                                    entryId,
+                                    $"JV {entryNumber}: {description}",
+                                    userId,
+                                    terminalId,
+                                    conn,
+                                    tx);
+                                touchedDrawer = drawerTxn != null;
+                            }
+                        }
+                    }
+                }
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
 
-        if (treasuryAccountId.HasValue && Math.Abs(netCashDelta) > 0.009m && await _db.HasTableAsync("accounts"))
+        if (touchedDrawer)
         {
-            var treasuryAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = treasuryAccountId.Value });
-            if (treasuryAcc != null)
-            {
-                if (netCashDelta > 0m)
-                {
-                    await _accountService.DepositAsync(
-                        treasuryAcc,
-                        netCashDelta,
-                        "journal_entry",
-                        entryId,
-                        $"JV {entryNumber}: {description}",
-                        userId);
-                }
-                else
-                {
-                    await _accountService.WithdrawAsync(
-                        treasuryAcc,
-                        Math.Abs(netCashDelta),
-                        "journal_entry",
-                        entryId,
-                        $"JV {entryNumber}: {description}",
-                        userId);
-                }
-
-                if (_accountService.IsDefaultCashDrawerAccount(treasuryAcc))
-                {
-                    var cashDrawerService = new CashDrawerService(_db);
-                    await cashDrawerService.RecordTransactionAsync(
-                        null,
-                        netCashDelta > 0m ? "cash_in" : "cash_out",
-                        Math.Abs(netCashDelta),
-                        "journal_entry",
-                        entryId,
-                        $"JV {entryNumber}: {description}",
-                        userId,
-                        terminalId);
-                }
-            }
+            SyncPulseService.Bump("drawer");
         }
 
         var entry = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId }))!;
@@ -352,86 +394,141 @@ public class AccountingService
 
     public async Task<Dictionary<string, object?>> ReverseJournalEntryAsync(long entryId, string reason, long? userId = null, long? terminalId = null)
     {
-        var entry = await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId })
-                    ?? throw new KeyNotFoundException("Journal entry not found.");
+        await _db.GetTableColumnsAsync("journal_entries");
+        await _db.GetTableColumnsAsync("accounts");
+        await _db.GetTableColumnsAsync("account_transactions");
+        await _db.GetTableColumnsAsync("cash_drawer_sessions");
+        await _db.GetTableColumnsAsync("cash_drawer_transactions");
 
-        if (string.Equals(entry.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
+        bool touchedDrawer = false;
+        await using (var conn = await _db.OpenConnectionAsync())
+        await using (var tx = await KarobarDb.BeginImmediateTransactionAsync(conn))
         {
-            throw new InvalidOperationException("This journal entry has already been reversed.");
-        }
-
-        var lines = await _db.QueryListAsync("SELECT * FROM journal_entry_lines WHERE journal_entry_id = @entryId", new { entryId });
-        var treasuryAccountId = AccountService.ToLong(entry.GetValueOrDefault("account_id"));
-        var entryNumber = entry.GetValueOrDefault("entry_number")?.ToString() ?? $"JV-{entryId}";
-
-        if (treasuryAccountId > 0 && await _db.HasTableAsync("accounts"))
-        {
-            var treasuryAcc = await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = treasuryAccountId });
-            if (treasuryAcc != null)
+            try
             {
-                var cashBankCoaRows = await _db.QueryListAsync(
-                    "SELECT id FROM chart_of_accounts WHERE sub_type = 'cash_bank' OR system_key = 'cash_and_banks'");
-                var cashBankCoaIds = cashBankCoaRows.Select(r => AccountService.ToLong(r["id"])).ToHashSet();
+                var entry = await _db.QuerySingleOrDefaultAsync(
+                                "SELECT * FROM journal_entries WHERE id = @id",
+                                new { id = entryId },
+                                conn,
+                                tx)
+                            ?? throw new KeyNotFoundException("Journal entry not found.");
 
-                decimal netCashDelta = 0m;
-                foreach (var line in lines)
+                if (string.Equals(entry.GetValueOrDefault("status")?.ToString(), "reversed", StringComparison.OrdinalIgnoreCase))
                 {
-                    var coaId = AccountService.ToLong(line.GetValueOrDefault("chart_of_account_id"));
-                    if (cashBankCoaIds.Contains(coaId))
+                    throw new InvalidOperationException("This journal entry has already been reversed.");
+                }
+
+                var lines = await _db.QueryListAsync(
+                    "SELECT * FROM journal_entry_lines WHERE journal_entry_id = @entryId",
+                    new { entryId },
+                    conn,
+                    tx);
+                var treasuryAccountId = AccountService.ToLong(entry.GetValueOrDefault("account_id"));
+                var entryNumber = entry.GetValueOrDefault("entry_number")?.ToString() ?? $"JV-{entryId}";
+
+                await _db.UpdateAsync("journal_entries", entryId, new Dictionary<string, object?>
+                {
+                    ["status"] = "reversed",
+                    ["reversed_by"] = userId,
+                    ["reversed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                    ["reversal_reason"] = reason.Trim()
+                }, "id", conn, tx);
+
+                if (treasuryAccountId > 0)
+                {
+                    var hasAccounts = await conn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = 'accounts'",
+                        transaction: tx) > 0;
+
+                    if (hasAccounts)
                     {
-                        var dr = AccountService.ToDecimal(line.GetValueOrDefault("debit"));
-                        var cr = AccountService.ToDecimal(line.GetValueOrDefault("credit"));
-                        netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
+                        var treasuryAcc = await _db.QuerySingleOrDefaultAsync(
+                            "SELECT * FROM accounts WHERE id = @id",
+                            new { id = treasuryAccountId },
+                            conn,
+                            tx);
+                        if (treasuryAcc != null)
+                        {
+                            var cashBankCoaRows = await _db.QueryListAsync(
+                                "SELECT id FROM chart_of_accounts WHERE sub_type = 'cash_bank' OR system_key = 'cash_and_banks'",
+                                null,
+                                conn,
+                                tx);
+                            var cashBankCoaIds = cashBankCoaRows.Select(r => AccountService.ToLong(r["id"])).ToHashSet();
+
+                            decimal netCashDelta = 0m;
+                            foreach (var line in lines)
+                            {
+                                var coaId = AccountService.ToLong(line.GetValueOrDefault("chart_of_account_id"));
+                                if (cashBankCoaIds.Contains(coaId))
+                                {
+                                    var dr = AccountService.ToDecimal(line.GetValueOrDefault("debit"));
+                                    var cr = AccountService.ToDecimal(line.GetValueOrDefault("credit"));
+                                    netCashDelta = Math.Round(netCashDelta + (dr - cr), 2);
+                                }
+                            }
+
+                            if (Math.Abs(netCashDelta) > 0.009m)
+                            {
+                                if (netCashDelta > 0m)
+                                {
+                                    await _accountService.WithdrawInTxAsync(
+                                        treasuryAcc,
+                                        netCashDelta,
+                                        "journal_entry_reversal",
+                                        entryId,
+                                        $"Reversal of JV {entryNumber}: {reason}",
+                                        userId,
+                                        conn,
+                                        tx);
+                                }
+                                else
+                                {
+                                    await _accountService.DepositInTxAsync(
+                                        treasuryAcc,
+                                        Math.Abs(netCashDelta),
+                                        "journal_entry_reversal",
+                                        entryId,
+                                        $"Reversal of JV {entryNumber}: {reason}",
+                                        userId,
+                                        conn,
+                                        tx);
+                                }
+
+                                if (_accountService.IsDefaultCashDrawerAccount(treasuryAcc))
+                                {
+                                    var cashDrawerService = new CashDrawerService(_db);
+                                    var drawerTxn = await cashDrawerService.RecordTransactionInTxAsync(
+                                        null,
+                                        netCashDelta > 0m ? "cash_out" : "cash_in",
+                                        Math.Abs(netCashDelta),
+                                        "journal_entry_reversal",
+                                        entryId,
+                                        $"Reversal of JV {entryNumber}: {reason}",
+                                        userId,
+                                        terminalId,
+                                        conn,
+                                        tx);
+                                    touchedDrawer = drawerTxn != null;
+                                }
+                            }
+                        }
                     }
                 }
 
-                if (Math.Abs(netCashDelta) > 0.009m)
-                {
-                    if (netCashDelta > 0m)
-                    {
-                        await _accountService.WithdrawAsync(
-                            treasuryAcc,
-                            netCashDelta,
-                            "journal_entry_reversal",
-                            entryId,
-                            $"Reversal of JV {entryNumber}: {reason}",
-                            userId);
-                    }
-                    else
-                    {
-                        await _accountService.DepositAsync(
-                            treasuryAcc,
-                            Math.Abs(netCashDelta),
-                            "journal_entry_reversal",
-                            entryId,
-                            $"Reversal of JV {entryNumber}: {reason}",
-                            userId);
-                    }
-
-                    if (_accountService.IsDefaultCashDrawerAccount(treasuryAcc))
-                    {
-                        var cashDrawerService = new CashDrawerService(_db);
-                        await cashDrawerService.RecordTransactionAsync(
-                            null,
-                            netCashDelta > 0m ? "cash_out" : "cash_in",
-                            Math.Abs(netCashDelta),
-                            "journal_entry_reversal",
-                            entryId,
-                            $"Reversal of JV {entryNumber}: {reason}",
-                            userId,
-                            terminalId);
-                    }
-                }
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
             }
         }
 
-        await _db.UpdateAsync("journal_entries", entryId, new Dictionary<string, object?>
+        if (touchedDrawer)
         {
-            ["status"] = "reversed",
-            ["reversed_by"] = userId,
-            ["reversed_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
-            ["reversal_reason"] = reason.Trim()
-        });
+            SyncPulseService.Bump("drawer");
+        }
 
         var updated = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId }))!;
         return await EnrichJournalEntryAsync(updated);

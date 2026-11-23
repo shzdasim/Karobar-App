@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Dapper;
 using Karobar.Api.Infrastructure;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 
 namespace Karobar.Api.Controllers;
 
@@ -116,20 +118,6 @@ public class StockAdjustmentController : ApiControllerBase
             });
         }
 
-        if (!string.IsNullOrEmpty(postedNumber) && !postedNumber.StartsWith("STADJ-", StringComparison.OrdinalIgnoreCase))
-        {
-            var dup = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM stock_adjustments WHERE posted_number = @postedNumber",
-                new { postedNumber });
-            if (dup > 0)
-            {
-                return Unprocessable("The posted number has already been taken.", new Dictionary<string, string[]>
-                {
-                    ["posted_number"] = new[] { "The posted number has already been taken." }
-                });
-            }
-        }
-
         if (!body.TryGetValue("items", out var itemsEl) || itemsEl.ValueKind != JsonValueKind.Array || itemsEl.GetArrayLength() == 0)
         {
             return Unprocessable("At least one stock adjustment item is required.", new Dictionary<string, string[]>
@@ -179,140 +167,167 @@ public class StockAdjustmentController : ApiControllerBase
             idx++;
         }
 
-        if (string.IsNullOrEmpty(postedNumber) ||
-            (postedNumber.StartsWith("STADJ-", StringComparison.OrdinalIgnoreCase) &&
-             await Db.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM stock_adjustments WHERE posted_number = @postedNumber", new { postedNumber }) > 0))
+        if (itemInputs.Count == 0)
         {
-            postedNumber = await new DocumentSequenceService(Db).NextAsync(
-                "stock_adjustment",
-                "STADJ-",
-                5,
-                "stock_adjustments",
-                "posted_number");
+            return Unprocessable("At least one stock adjustment item is required.", new Dictionary<string, string[]>
+            {
+                ["items"] = new[] { "At least one stock adjustment item is required." }
+            });
         }
 
+        await new DocumentSequenceService(Db).EnsureTableExistsAsync();
         var hasBatchesTable = await Db.HasTableAsync("batches");
         var stocktakeSvc = new StocktakeService(Db);
 
-        await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        var adjId = await Db.InsertAsync("stock_adjustments", new Dictionary<string, object?>
-        {
-            ["posted_number"] = postedNumber,
-            ["posted_date"] = postedDate,
-            ["note"] = note,
-            ["total_worth"] = 0m,
-            ["user_id"] = CurrentUserId
-        }, conn, tx);
-
+        long adjId;
         decimal totalWorth = 0m;
         decimal netSignedValue = 0m;
 
-        for (int i = 0; i < itemInputs.Count; i++)
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        try
         {
-            var row = itemInputs[i];
-            var productId = GetNullableLong(row, "product_id")!.Value;
-            var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
-            if (product == null)
+            if (!string.IsNullOrEmpty(postedNumber) && !postedNumber.StartsWith("STADJ-", StringComparison.OrdinalIgnoreCase))
             {
-                await tx.RollbackAsync();
-                return Unprocessable($"Product #{productId} not found.", new Dictionary<string, string[]>
+                var dup = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM stock_adjustments WHERE posted_number = @postedNumber",
+                    new { postedNumber },
+                    tx);
+                if (dup > 0)
                 {
-                    [$"items.{i}.product_id"] = new[] { "Selected product does not exist." }
-                });
+                    await tx.RollbackAsync();
+                    return Unprocessable("The posted number has already been taken.", new Dictionary<string, string[]>
+                    {
+                        ["posted_number"] = new[] { "The posted number has already been taken." }
+                    });
+                }
+            }
+            else if (string.IsNullOrEmpty(postedNumber) ||
+                     (postedNumber.StartsWith("STADJ-", StringComparison.OrdinalIgnoreCase) &&
+                      await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM stock_adjustments WHERE posted_number = @postedNumber", new { postedNumber }, tx) > 0))
+            {
+                postedNumber = await AllocateAdjustmentNumberInTxAsync(conn, tx);
             }
 
-            var batchNumber = (GetString(row, "batch_number") ?? "").Trim();
-            var expiry = GetString(row, "expiry");
-            var packSize = row.ContainsKey("pack_size") && row["pack_size"].ValueKind != JsonValueKind.Null
-                ? (object?)GetDecimal(row, "pack_size")
-                : null;
-            var actual = GetDecimal(row, "actual_qty");
-            var unitCost = row.ContainsKey("unit_purchase_price") && row["unit_purchase_price"].ValueKind != JsonValueKind.Null && !string.IsNullOrWhiteSpace(GetString(row, "unit_purchase_price"))
-                ? GetDecimal(row, "unit_purchase_price")
-                : StocktakeService.ToDecimal(product.GetValueOrDefault("unit_purchase_price"));
-
-            if (!string.IsNullOrEmpty(batchNumber) && hasBatchesTable)
+            adjId = await Db.InsertAsync("stock_adjustments", new Dictionary<string, object?>
             {
-                var batch = await Db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
-                    new { productId, batchNumber }, conn, tx);
+                ["posted_number"] = postedNumber,
+                ["posted_date"] = postedDate,
+                ["note"] = note,
+                ["total_worth"] = 0m,
+                ["user_id"] = CurrentUserId
+            }, conn, tx);
 
-                decimal previous = batch != null ? StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) : 0m;
-                decimal diff = actual - previous;
-                decimal worth = Math.Abs(diff) * unitCost;
-
-                await Db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
+            for (int i = 0; i < itemInputs.Count; i++)
+            {
+                var row = itemInputs[i];
+                var productId = GetNullableLong(row, "product_id")!.Value;
+                var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
+                if (product == null)
                 {
-                    ["stock_adjustment_id"] = adjId,
-                    ["product_id"] = productId,
-                    ["batch_number"] = batchNumber,
-                    ["expiry"] = expiry,
-                    ["pack_size"] = packSize,
-                    ["previous_qty"] = previous,
-                    ["actual_qty"] = actual,
-                    ["diff_qty"] = diff,
-                    ["unit_purchase_price"] = unitCost,
-                    ["worth_adjusted"] = worth
-                }, conn, tx);
-
-                totalWorth += worth;
-                netSignedValue += (diff * unitCost);
-
-                if (batch != null)
-                {
-                    await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
+                    await tx.RollbackAsync();
+                    return Unprocessable($"Product #{productId} not found.", new Dictionary<string, string[]>
                     {
-                        ["quantity"] = actual
-                    }, "id", conn, tx);
+                        [$"items.{i}.product_id"] = new[] { "Selected product does not exist." }
+                    });
+                }
+
+                var batchNumber = (GetString(row, "batch_number") ?? "").Trim();
+                var expiry = GetString(row, "expiry");
+                var packSize = row.ContainsKey("pack_size") && row["pack_size"].ValueKind != JsonValueKind.Null
+                    ? (object?)GetDecimal(row, "pack_size")
+                    : null;
+                var actual = GetDecimal(row, "actual_qty");
+                var unitCost = row.ContainsKey("unit_purchase_price") && row["unit_purchase_price"].ValueKind != JsonValueKind.Null && !string.IsNullOrWhiteSpace(GetString(row, "unit_purchase_price"))
+                    ? GetDecimal(row, "unit_purchase_price")
+                    : StocktakeService.ToDecimal(product.GetValueOrDefault("unit_purchase_price"));
+
+                if (!string.IsNullOrEmpty(batchNumber) && hasBatchesTable)
+                {
+                    var batch = await Db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
+                        new { productId, batchNumber }, conn, tx);
+
+                    decimal previous = batch != null ? StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) : 0m;
+                    decimal diff = actual - previous;
+                    decimal worth = Math.Abs(diff) * unitCost;
+
+                    await Db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
+                    {
+                        ["stock_adjustment_id"] = adjId,
+                        ["product_id"] = productId,
+                        ["batch_number"] = batchNumber,
+                        ["expiry"] = expiry,
+                        ["pack_size"] = packSize,
+                        ["previous_qty"] = previous,
+                        ["actual_qty"] = actual,
+                        ["diff_qty"] = diff,
+                        ["unit_purchase_price"] = unitCost,
+                        ["worth_adjusted"] = worth
+                    }, conn, tx);
+
+                    totalWorth += worth;
+                    netSignedValue += (diff * unitCost);
+
+                    if (batch != null)
+                    {
+                        await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
+                        {
+                            ["quantity"] = actual
+                        }, "id", conn, tx);
+                    }
+                    else
+                    {
+                        await Db.InsertAsync("batches", new Dictionary<string, object?>
+                        {
+                            ["product_id"] = productId,
+                            ["batch_number"] = batchNumber,
+                            ["expiry_date"] = string.IsNullOrWhiteSpace(expiry)
+                                ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
+                                : expiry.Trim(),
+                            ["quantity"] = actual
+                        }, conn, tx);
+                    }
+
+                    var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) + diff);
+                    await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
                 }
                 else
                 {
-                    await Db.InsertAsync("batches", new Dictionary<string, object?>
+                    decimal previous = StocktakeService.GetProductQty(product);
+                    decimal diff = actual - previous;
+                    decimal worth = Math.Abs(diff) * unitCost;
+
+                    await Db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
                     {
+                        ["stock_adjustment_id"] = adjId,
                         ["product_id"] = productId,
-                        ["batch_number"] = batchNumber,
-                        ["expiry_date"] = string.IsNullOrWhiteSpace(expiry)
-                            ? DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd")
-                            : expiry.Trim(),
-                        ["quantity"] = actual
+                        ["previous_qty"] = previous,
+                        ["actual_qty"] = actual,
+                        ["diff_qty"] = diff,
+                        ["unit_purchase_price"] = unitCost,
+                        ["worth_adjusted"] = worth
                     }, conn, tx);
+
+                    totalWorth += worth;
+                    netSignedValue += (diff * unitCost);
+
+                    await stocktakeSvc.UpdateProductQtyInDbAsync(product, actual, conn, tx);
                 }
-
-                var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) + diff);
-                await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
             }
-            else
+
+            await Db.UpdateAsync("stock_adjustments", adjId, new Dictionary<string, object?>
             {
-                decimal previous = StocktakeService.GetProductQty(product);
-                decimal diff = actual - previous;
-                decimal worth = Math.Abs(diff) * unitCost;
+                ["total_worth"] = totalWorth
+            }, "id", conn, tx);
 
-                await Db.InsertAsync("stock_adjustment_items", new Dictionary<string, object?>
-                {
-                    ["stock_adjustment_id"] = adjId,
-                    ["product_id"] = productId,
-                    ["previous_qty"] = previous,
-                    ["actual_qty"] = actual,
-                    ["diff_qty"] = diff,
-                    ["unit_purchase_price"] = unitCost,
-                    ["worth_adjusted"] = worth
-                }, conn, tx);
-
-                totalWorth += worth;
-                netSignedValue += (diff * unitCost);
-
-                await stocktakeSvc.UpdateProductQtyInDbAsync(product, actual, conn, tx);
-            }
+            await tx.CommitAsync();
         }
-
-        await Db.UpdateAsync("stock_adjustments", adjId, new Dictionary<string, object?>
+        catch
         {
-            ["total_worth"] = totalWorth
-        }, "id", conn, tx);
-
-        await tx.CommitAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
 
         await SyncShrinkageExpenseAsync(postedNumber, postedDate, note, netSignedValue, CurrentUserId);
 
@@ -334,94 +349,190 @@ public class StockAdjustmentController : ApiControllerBase
             return Forbidden();
         }
 
-        var adj = await GetAdjustmentByIdAsync(id);
-        if (adj == null)
-        {
-            return NotFound(new { message = "Stock adjustment not found." });
-        }
+        var hasDisposalsTable = await Db.HasTableAsync("stock_disposals");
+        var hasStocktakeTable = await Db.HasTableAsync("stocktake_sessions");
+        var hasExpensesTable = await Db.HasTableAsync("expenses");
+        var hasBatchesTable = await Db.HasTableAsync("batches");
+        var stocktakeSvc = new StocktakeService(Db);
 
-        if (await Db.HasTableAsync("stock_disposals"))
+        Dictionary<string, object?> adjSnapshot;
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        try
         {
-            var linkedDisp = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM stock_disposals WHERE stock_adjustment_id = @id",
-                new { id });
-            if (linkedDisp > 0)
+            var adj = await Db.QuerySingleOrDefaultAsync("SELECT * FROM stock_adjustments WHERE id = @id", new { id }, conn, tx);
+            if (adj == null)
             {
-                return Unprocessable("Cannot delete a stock adjustment that is linked to a stock disposal voucher.");
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Stock adjustment not found." });
             }
-        }
 
-        if (await Db.HasTableAsync("stocktake_sessions"))
-        {
-            var linkedSt = await Db.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM stocktake_sessions WHERE stock_adjustment_id = @id",
-                new { id });
-            if (linkedSt > 0)
+            if (hasDisposalsTable)
             {
-                return Unprocessable("Cannot delete a stock adjustment that is linked to a finalized stocktake session.");
+                var linkedDisp = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM stock_disposals WHERE stock_adjustment_id = @id",
+                    new { id },
+                    tx);
+                if (linkedDisp > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot delete a stock adjustment that is linked to a stock disposal voucher.");
+                }
             }
+
+            if (hasStocktakeTable)
+            {
+                var linkedSt = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM stocktake_sessions WHERE stock_adjustment_id = @id",
+                    new { id },
+                    tx);
+                if (linkedSt > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Cannot delete a stock adjustment that is linked to a finalized stocktake session.");
+                }
+            }
+
+            var items = await Db.QueryListAsync(
+                "SELECT * FROM stock_adjustment_items WHERE stock_adjustment_id = @id ORDER BY id ASC",
+                new { id },
+                conn,
+                tx);
+
+            adjSnapshot = new Dictionary<string, object?>(adj, StringComparer.OrdinalIgnoreCase)
+            {
+                ["items"] = items
+            };
+
+            var postedNumber = adj.GetValueOrDefault("posted_number")?.ToString();
+            if (!string.IsNullOrEmpty(postedNumber) && hasExpensesTable)
+            {
+                await conn.ExecuteAsync("DELETE FROM expenses WHERE reference_number = @postedNumber", new { postedNumber }, tx);
+            }
+
+            foreach (var item in items)
+            {
+                var productId = Convert.ToInt64(item["product_id"]);
+                var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
+                if (product == null) continue;
+
+                var diffQty = item.TryGetValue("diff_qty", out var dq) && dq != null
+                    ? StocktakeService.ToDecimal(dq)
+                    : (StocktakeService.ToDecimal(item.GetValueOrDefault("actual_qty")) - StocktakeService.ToDecimal(item.GetValueOrDefault("previous_qty")));
+
+                var batchNumber = item.GetValueOrDefault("batch_number")?.ToString();
+                if (!string.IsNullOrWhiteSpace(batchNumber) && hasBatchesTable)
+                {
+                    var batch = await Db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
+                        new { productId, batchNumber }, conn, tx);
+                    if (batch != null)
+                    {
+                        var newBatchQty = Math.Max(0m, StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) - diffQty);
+                        await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
+                        {
+                            ["quantity"] = newBatchQty
+                        }, "id", conn, tx);
+                    }
+                }
+
+                var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) - diffQty);
+                await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+            }
+
+            await conn.ExecuteAsync("DELETE FROM stock_adjustment_items WHERE stock_adjustment_id = @id", new { id }, tx);
+            await conn.ExecuteAsync("DELETE FROM stock_adjustments WHERE id = @id", new { id }, tx);
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
         await new DocumentAuditService(Db).RecordReversalAsync(
             "stock_adjustment",
             id,
-            adj,
+            adjSnapshot,
             CurrentUserId,
             "Stock adjustment deleted");
 
-        var postedNumber = adj.GetValueOrDefault("posted_number")?.ToString();
-        if (!string.IsNullOrEmpty(postedNumber) && await Db.HasTableAsync("expenses"))
-        {
-            await Db.ExecuteAsync("DELETE FROM expenses WHERE reference_number = @postedNumber", new { postedNumber });
-        }
-
-        var items = await Db.QueryListAsync(
-            "SELECT * FROM stock_adjustment_items WHERE stock_adjustment_id = @id ORDER BY id ASC",
-            new { id });
-
-        var hasBatchesTable = await Db.HasTableAsync("batches");
-        var stocktakeSvc = new StocktakeService(Db);
-
-        await using var conn = await Db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
-
-        foreach (var item in items)
-        {
-            var productId = Convert.ToInt64(item["product_id"]);
-            var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx);
-            if (product == null) continue;
-
-            var diffQty = item.TryGetValue("diff_qty", out var dq) && dq != null
-                ? StocktakeService.ToDecimal(dq)
-                : (StocktakeService.ToDecimal(item.GetValueOrDefault("actual_qty")) - StocktakeService.ToDecimal(item.GetValueOrDefault("previous_qty")));
-
-            var batchNumber = item.GetValueOrDefault("batch_number")?.ToString();
-            if (!string.IsNullOrWhiteSpace(batchNumber) && hasBatchesTable)
-            {
-                var batch = await Db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM batches WHERE product_id = @productId AND batch_number = @batchNumber LIMIT 1",
-                    new { productId, batchNumber }, conn, tx);
-                if (batch != null)
-                {
-                    var newBatchQty = Math.Max(0m, StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) - diffQty);
-                    await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
-                    {
-                        ["quantity"] = newBatchQty
-                    }, "id", conn, tx);
-                }
-            }
-
-            var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) - diffQty);
-            await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
-        }
-
-        await conn.ExecuteAsync("DELETE FROM stock_adjustment_items WHERE stock_adjustment_id = @id", new { id }, tx);
-        await conn.ExecuteAsync("DELETE FROM stock_adjustments WHERE id = @id", new { id }, tx);
-
-        await tx.CommitAsync();
-
         SyncPulseService.Bump("stock");
         return NoContent();
+    }
+
+    private static async Task<string> AllocateAdjustmentNumberInTxAsync(SqliteConnection conn, SqliteTransaction tx)
+    {
+        const string sequenceKey = "stock_adjustment";
+        const string prefix = "STADJ-";
+        const int padding = 5;
+
+        var row = await conn.QueryFirstOrDefaultAsync<dynamic>(
+            "SELECT * FROM document_sequences WHERE sequence_key = @key",
+            new { key = sequenceKey },
+            tx);
+
+        long existingMax = 0;
+        var values = await conn.QueryAsync<string?>(
+            "SELECT posted_number FROM stock_adjustments WHERE posted_number LIKE @like ORDER BY id DESC LIMIT 25",
+            new { like = prefix + "%" },
+            tx);
+        var regex = new Regex("^" + Regex.Escape(prefix) + @"(\d+)$", RegexOptions.IgnoreCase);
+        foreach (var val in values)
+        {
+            if (string.IsNullOrEmpty(val)) continue;
+            var m = regex.Match(val);
+            if (m.Success && long.TryParse(m.Groups[1].Value, out var num) && num > existingMax)
+            {
+                existingMax = num;
+            }
+        }
+
+        if (row == null)
+        {
+            var nowStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            await conn.ExecuteAsync(@"
+                INSERT OR IGNORE INTO document_sequences (sequence_key, prefix, padding, last_number, created_at, updated_at)
+                VALUES (@key, @prefix, @padding, @lastNum, @now, @now)",
+                new { key = sequenceKey, prefix, padding, lastNum = existingMax, now = nowStr },
+                tx);
+
+            row = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT * FROM document_sequences WHERE sequence_key = @key",
+                new { key = sequenceKey },
+                tx);
+        }
+
+        long storedLast = row != null ? Convert.ToInt64(row.last_number ?? 0) : 0;
+        long nextNumber = Math.Max(storedLast, existingMax) + 1;
+
+        while (true)
+        {
+            var candidate = prefix + nextNumber.ToString().PadLeft(padding, '0');
+            var exists = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM stock_adjustments WHERE posted_number = @cand",
+                new { cand = candidate },
+                tx);
+            if (exists == 0) break;
+            nextNumber++;
+        }
+
+        await conn.ExecuteAsync(@"
+            UPDATE document_sequences
+            SET last_number = @nextNum, prefix = @prefix, padding = @padding, updated_at = @now
+            WHERE sequence_key = @key",
+            new
+            {
+                nextNum = nextNumber,
+                prefix,
+                padding,
+                now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                key = sequenceKey
+            },
+            tx);
+
+        return prefix + nextNumber.ToString().PadLeft(padding, '0');
     }
 
     private async Task SyncShrinkageExpenseAsync(

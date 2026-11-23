@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Karobar.Host;
 
 /// <summary>
@@ -74,20 +76,83 @@ public static class KarobarPreloadScript
         "karobar:trigger-update-check"
     ];
 
-    public static string GetPreloadScript(bool isOffscreenPrintWorker = false)
+    public static string GetPreloadScript(
+        bool isOffscreenPrintWorker = false,
+        string? ipcToken = null,
+        string? trustedOrigin = null)
     {
-        var offscreenFlag = isOffscreenPrintWorker ? "true" : "false";
+        if (isOffscreenPrintWorker)
+        {
+            return """
+                (function () {
+                  try {
+                    var __nativeWindowPrint = typeof window.print === "function" ? window.print.bind(window) : null;
+                    if (__nativeWindowPrint && !window.__karobarNativeWindowPrint) {
+                      window.__karobarNativeWindowPrint = __nativeWindowPrint;
+                    }
+                    window.__karobarSilentPrintWorker = true;
+                    window.print = function () {};
+                    window.close = function () {};
+                  } catch (_) {}
+                })();
+                """;
+        }
+
+        var normalizedTrustedOrigin = "";
+        var expectedTrustedPort = "";
+        if (!string.IsNullOrWhiteSpace(trustedOrigin) &&
+            Uri.TryCreate(trustedOrigin.Trim(), UriKind.Absolute, out var parsedOrigin) &&
+            (string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            normalizedTrustedOrigin = $"{parsedOrigin.Scheme.ToLowerInvariant()}://{parsedOrigin.Authority.ToLowerInvariant()}";
+            if (parsedOrigin.Port > 0)
+            {
+                expectedTrustedPort = parsedOrigin.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        var serializedToken = JsonSerializer.Serialize(ipcToken ?? string.Empty);
+        var serializedTrustedOrigin = JsonSerializer.Serialize(normalizedTrustedOrigin);
+        var serializedTrustedPort = JsonSerializer.Serialize(expectedTrustedPort);
+
         return $$"""
         (function () {
+          const __ipcToken = {{serializedToken}};
+          const __trustedOrigin = {{serializedTrustedOrigin}};
+          const __trustedPort = {{serializedTrustedPort}};
+
+          try {
+            const __loc = typeof window !== "undefined" ? window.location : null;
+            const __protocol = (__loc && __loc.protocol ? String(__loc.protocol) : "").toLowerCase();
+            const __origin = (__loc && __loc.origin ? String(__loc.origin) : "").toLowerCase();
+            const __hostname = (__loc && __loc.hostname ? String(__loc.hostname) : "").toLowerCase();
+            const __locPort = __loc && __loc.port !== undefined && __loc.port !== null ? String(__loc.port) : "";
+            const __effectivePort = __locPort || (__protocol === "https:" ? "443" : (__protocol === "http:" ? "80" : ""));
+            const __pathname = (__loc && __loc.pathname ? String(__loc.pathname) : "").toLowerCase();
+            const __isLoopbackHost = __hostname === "127.0.0.1" || __hostname === "localhost" || __hostname === "[::1]" || __hostname === "::1";
+            const __isLoopbackPortTrusted = !__trustedPort || __effectivePort === __trustedPort;
+            const __isLoopbackOrigin = (__protocol === "http:" || __protocol === "https:") &&
+              __isLoopbackHost &&
+              __isLoopbackPortTrusted;
+            const __isTrustedConfiguredOrigin = Boolean(__trustedOrigin) && __origin === __trustedOrigin;
+            const __isTerminalOfflineFile = __protocol === "file:" && __pathname.endsWith("/terminal-offline.html");
+            if (!__isLoopbackOrigin && !__isTrustedConfiguredOrigin && !__isTerminalOfflineFile) {
+              return;
+            }
+          } catch (_) {
+            return;
+          }
+
           if (window.karobarDesktop && window.__karobarDesktopBridgeInitialized) {
             return;
           }
           window.__karobarDesktopBridgeInitialized = true;
 
-          const isOffscreenPrintWorker = {{offscreenFlag}} ||
-            (typeof window !== "undefined" &&
-              window.location &&
-              /[?&](?:silent_print=1|__karobar_offscreen_print=1)/i.test(String(window.location.search || "")));
+          const isOffscreenPrintWorker =
+            typeof window !== "undefined" &&
+            window.location &&
+            /[?&](?:silent_print=1|__karobar_offscreen_print=1)/i.test(String(window.location.search || ""));
 
           const eventListeners = {
             "karobar:navigate": new Set(),
@@ -145,11 +210,15 @@ public static class KarobarPreloadScript
           }
 
           async function invokeViaHttpFallback(channel, payload) {
+            if (!__ipcToken) {
+              throw new Error("Desktop IPC HTTP fallback requires a valid local IPC token.");
+            }
             const response = await fetch("/__karobar_ipc/invoke", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Accept": "application/json"
+                "Accept": "application/json",
+                "X-Karobar-Ipc-Token": __ipcToken
               },
               body: JSON.stringify({ channel: channel, payload: payload ?? {} })
             });

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -382,15 +383,16 @@ public class BrandController : ApiControllerBase
         }
 
         string? imagePath = null;
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { Length: > 0 } file)
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { } file)
         {
-            var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? ".jpg";
-            var dir = Db.StoragePath("app/public/brands");
-            Directory.CreateDirectory(dir);
-            var fileName = $"{Guid.NewGuid()}{ext}";
-            await using var fs = new FileStream(Path.Combine(dir, fileName), FileMode.Create);
-            await file.CopyToAsync(fs);
-            imagePath = $"brands/{fileName}";
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "brands", allowPdf: false);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid brand image.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["image"] = new[] { errMsg } });
+            }
+            imagePath = relPath;
         }
 
         var rawPayload = new Dictionary<string, object?>
@@ -405,7 +407,16 @@ public class BrandController : ApiControllerBase
         var normalized = NormalizeExpiryPolicyPayload(rawPayload);
         if (imagePath != null) normalized["image"] = imagePath;
 
-        var id = await Db.InsertAsync("brands", normalized);
+        long id;
+        try
+        {
+            id = await Db.InsertAsync("brands", normalized);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, imagePath, "brands");
+            throw;
+        }
         var brand = await Db.QuerySingleOrDefaultAsync("SELECT * FROM brands WHERE id = @id", new { id });
         if (brand != null) AttachPolicyLabel(brand);
 
@@ -505,18 +516,36 @@ public class BrandController : ApiControllerBase
             foreach (var kv in norm) updateData[kv.Key] = kv.Value;
         }
 
-        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { Length: > 0 } file)
+        var oldImagePath = brand.GetValueOrDefault("image")?.ToString();
+        string? newImagePath = null;
+        if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { } file)
         {
-            var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? ".jpg";
-            var dir = Db.StoragePath("app/public/brands");
-            Directory.CreateDirectory(dir);
-            var fileName = $"{Guid.NewGuid()}{ext}";
-            await using var fs = new FileStream(Path.Combine(dir, fileName), FileMode.Create);
-            await file.CopyToAsync(fs);
-            updateData["image"] = $"brands/{fileName}";
+            var (ok, relPath, uploadErr) = await SafeFileStorageHelper.SaveValidatedUploadAsync(
+                Db, file, "brands", allowPdf: false);
+            if (!ok)
+            {
+                var errMsg = uploadErr ?? "Invalid brand image.";
+                return Unprocessable(errMsg, new Dictionary<string, string[]> { ["image"] = new[] { errMsg } });
+            }
+            newImagePath = relPath;
+            updateData["image"] = newImagePath;
         }
 
-        await Db.UpdateAsync("brands", id, updateData);
+        try
+        {
+            await Db.UpdateAsync("brands", id, updateData);
+        }
+        catch
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newImagePath, "brands");
+            throw;
+        }
+
+        if (!string.IsNullOrWhiteSpace(newImagePath) &&
+            !string.Equals(oldImagePath, newImagePath, StringComparison.OrdinalIgnoreCase))
+        {
+            SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, oldImagePath, "brands");
+        }
         var fresh = await Db.QuerySingleOrDefaultAsync("SELECT * FROM brands WHERE id = @id", new { id });
         if (fresh != null) AttachPolicyLabel(fresh);
 
@@ -538,6 +567,7 @@ public class BrandController : ApiControllerBase
         }
 
         await Db.ExecuteAsync("DELETE FROM brands WHERE id = @id", new { id });
+        SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, brand.GetValueOrDefault("image")?.ToString(), "brands");
         return NoContent();
     }
 

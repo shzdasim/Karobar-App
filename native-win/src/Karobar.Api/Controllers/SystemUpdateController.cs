@@ -138,6 +138,21 @@ public class SystemUpdateController : ApiControllerBase
         var body = await ReadJsonBodyAsync();
         var mode = GetString(body, "mode") ?? "download_and_install";
 
+        var urlKeys = new[] { "download_url", "downloadUrl", "patch_url", "patchUrl" };
+        foreach (var uk in urlKeys)
+        {
+            var candidateUrl = GetString(body, uk);
+            if (!string.IsNullOrWhiteSpace(candidateUrl) && !IsTrustedOfficialReleaseUrl(candidateUrl))
+            {
+                return StatusCode(422, new
+                {
+                    ok = false,
+                    message = "Untrusted release URL. Updates are pinned to the official shzdasim/Karobar-App repository."
+                });
+            }
+            body.Remove(uk);
+        }
+
         var bridge = ResolveDesktopBridge();
         if (bridge != null)
         {
@@ -166,6 +181,81 @@ public class SystemUpdateController : ApiControllerBase
             ok = false,
             message = "Desktop updater bridge is unavailable in this environment."
         });
+    }
+
+    private static bool HasUnsafeRawPathTraversal(string raw)
+    {
+        if (raw.Contains('\\') ||
+            raw.Contains("..", StringComparison.Ordinal) ||
+            raw.Contains("%2e%2e", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains(".%2e", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("%2e.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var schemeIdx = raw.IndexOf("://", StringComparison.Ordinal);
+        var pathStart = schemeIdx >= 0 ? raw.IndexOf('/', schemeIdx + 3) : raw.IndexOf('/');
+        if (pathStart < 0)
+        {
+            return false;
+        }
+
+        var pathEnd = raw.IndexOfAny(['?', '#'], pathStart);
+        var rawPathPart = pathEnd >= 0 ? raw[pathStart..pathEnd] : raw[pathStart..];
+        foreach (var seg in rawPathPart.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var unescaped = Uri.UnescapeDataString(seg);
+            if (seg is "." or ".." || unescaped is "." or "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsTrustedOfficialReleaseUrl(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl)) return false;
+        var trimmed = rawUrl.Trim();
+        if (HasUnsafeRawPathTraversal(trimmed))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed) ||
+            !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !parsed.IsDefaultPort ||
+            !string.IsNullOrEmpty(parsed.UserInfo))
+        {
+            return false;
+        }
+
+        var rawPath = parsed.AbsolutePath;
+        var segments = rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var seg in segments)
+        {
+            var unescaped = Uri.UnescapeDataString(seg);
+            if (seg is "." or ".." || unescaped is "." or "..")
+            {
+                return false;
+            }
+        }
+
+        if (string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith("/shzdasim/Karobar-App/releases/download/", StringComparison.OrdinalIgnoreCase) ||
+                   rawPath.StartsWith("/shzdasim/Karobar-App/releases/latest/download/", StringComparison.OrdinalIgnoreCase) ||
+                   rawPath.StartsWith("/shzdasim/Karobar-App/releases/tag/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(parsed.Host, "api.github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith("/repos/shzdasim/Karobar-App/releases/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private object? ResolveDesktopBridge()
@@ -204,7 +294,7 @@ public class SystemUpdateController : ApiControllerBase
                 if (root.TryGetProperty("version", out var v)) defaults["version"] = (v.GetString() ?? "2.0.1").TrimStart('v', 'V');
                 if (root.TryGetProperty("build_number", out var bn) && bn.TryGetInt32(out var bni)) defaults["build_number"] = bni;
                 if (root.TryGetProperty("commit_sha", out var cs)) defaults["commit_sha"] = cs.GetString() ?? "native";
-                if (root.TryGetProperty("repository", out var rp)) defaults["repository"] = rp.GetString() ?? "shzdasim/Karobar-App";
+                defaults["repository"] = "shzdasim/Karobar-App";
                 if (root.TryGetProperty("released_at", out var ra)) defaults["released_at"] = ra.GetString() ?? "2026-04-17T00:00:00Z";
                 if (root.TryGetProperty("runtime", out var rt) && rt.ValueKind == JsonValueKind.String) defaults["runtime"] = rt.GetString() ?? "dotnet-native";
                 if (root.TryGetProperty("runtime_layout", out var rl) && rl.ValueKind == JsonValueKind.String) defaults["runtime_layout"] = rl.GetString() ?? "split-v2";

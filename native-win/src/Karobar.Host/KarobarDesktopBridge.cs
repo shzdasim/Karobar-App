@@ -93,6 +93,28 @@ public sealed class LocalVersionMeta
 /// </summary>
 public sealed class KarobarDesktopBridge
 {
+    public const string OfficialRepositorySlug = "shzdasim/Karobar-App";
+    public const string OfficialReleaseTag = "native-latest";
+
+    private static readonly HashSet<string> TrustedReleaseRedirectHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "github-releases.githubusercontent.com"
+    };
+
+    private sealed record VerifiedUpdateArtifact(
+        string Version,
+        bool IsPatch,
+        string DownloadUrl,
+        string ExpectedSha256,
+        string LocalFilePath,
+        DateTimeOffset VerifiedAtUtc);
+
+    private VerifiedUpdateArtifact? _verifiedArtifact;
+    [JsonIgnore]
+    public Func<HttpMessageHandler>? ReleaseHttpHandlerFactory { get; set; }
+
     private static readonly Regex VirtualPrinterNameOrDriverRegex = new(
         @"(microsoft print to pdf|microsoft xps|xps document writer|onenote|send to onenote|fax|anydesk|teamviewer|adobe pdf|foxit|cutepdf|dopdf|bullzip|nitro pdf|pdfcreator|pdffactory|clawpdf|pdf24|wondershare|wps pdf|fineprint|snagit|paperport|priprinter|universal document|canva|save as pdf)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -1435,20 +1457,184 @@ public sealed class KarobarDesktopBridge
         return false;
     }
 
+    private static bool HasUnsafeRawPathTraversal(string raw)
+    {
+        if (raw.Contains('\\') ||
+            raw.Contains("..", StringComparison.Ordinal) ||
+            raw.Contains("%2e%2e", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains(".%2e", StringComparison.OrdinalIgnoreCase) ||
+            raw.Contains("%2e.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var schemeIdx = raw.IndexOf("://", StringComparison.Ordinal);
+        var pathStart = schemeIdx >= 0 ? raw.IndexOf('/', schemeIdx + 3) : raw.IndexOf('/');
+        if (pathStart < 0)
+        {
+            return false;
+        }
+
+        var pathEnd = raw.IndexOfAny(['?', '#'], pathStart);
+        var rawPathPart = pathEnd >= 0 ? raw[pathStart..pathEnd] : raw[pathStart..];
+        foreach (var seg in rawPathPart.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var unescaped = Uri.UnescapeDataString(seg);
+            if (seg is "." or ".." || unescaped is "." or "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool IsTrustedReleaseUrl(string? rawUrl)
     {
-        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var parsed))
+        if (string.IsNullOrWhiteSpace(rawUrl))
         {
             return false;
         }
 
-        if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        var trimmed = rawUrl.Trim();
+        if (HasUnsafeRawPathTraversal(trimmed))
         {
             return false;
         }
 
-        var host = parsed.Host.ToLowerInvariant();
-        return host == "github.com" || host.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed) ||
+            !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !parsed.IsDefaultPort ||
+            !string.IsNullOrEmpty(parsed.UserInfo))
+        {
+            return false;
+        }
+
+        var rawPath = parsed.AbsolutePath;
+        var segments = rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var seg in segments)
+        {
+            var unescaped = Uri.UnescapeDataString(seg);
+            if (seg is "." or ".." || unescaped is "." or "..")
+            {
+                return false;
+            }
+        }
+
+        var host = parsed.Host;
+        if (string.Equals(host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith($"/{OfficialRepositorySlug}/releases/download/", StringComparison.OrdinalIgnoreCase) ||
+                   rawPath.StartsWith($"/{OfficialRepositorySlug}/releases/latest/download/", StringComparison.OrdinalIgnoreCase) ||
+                   rawPath.StartsWith($"/{OfficialRepositorySlug}/releases/tag/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(host, "api.github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith($"/repos/{OfficialRepositorySlug}/releases/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    public static bool IsTrustedReleaseDownloadUrl(string? rawUrl)
+    {
+        if (!IsTrustedReleaseUrl(rawUrl) || !Uri.TryCreate(rawUrl!.Trim(), UriKind.Absolute, out var parsed))
+        {
+            return false;
+        }
+
+        var rawPath = parsed.AbsolutePath;
+        if (string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith($"/{OfficialRepositorySlug}/releases/download/", StringComparison.OrdinalIgnoreCase) ||
+                   rawPath.StartsWith($"/{OfficialRepositorySlug}/releases/latest/download/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(parsed.Host, "api.github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawPath.StartsWith($"/repos/{OfficialRepositorySlug}/releases/assets/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    internal static bool IsTrustedReleaseHopUri(Uri? uri)
+    {
+        if (uri == null ||
+            !uri.IsAbsoluteUri ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        var raw = uri.OriginalString;
+        if (HasUnsafeRawPathTraversal(raw))
+        {
+            return false;
+        }
+
+        foreach (var seg in uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var unescaped = Uri.UnescapeDataString(seg);
+            if (seg is "." or ".." || unescaped is "." or "..")
+            {
+                return false;
+            }
+        }
+
+        return IsTrustedReleaseUrl(uri.AbsoluteUri) || TrustedReleaseRedirectHosts.Contains(uri.Host);
+    }
+
+    private static async Task<HttpResponseMessage> SendPinnedReleaseGetAsync(
+        HttpClient client,
+        string initialUrl,
+        Action<HttpRequestMessage>? configureHeaders,
+        HttpCompletionOption completionOption,
+        CancellationToken cancellationToken,
+        int maxRedirects = 6)
+    {
+        if (!IsTrustedReleaseUrl(initialUrl))
+        {
+            throw new InvalidOperationException("Untrusted release URL. Updates are pinned to the official shzdasim/Karobar-App repository.");
+        }
+
+        var currentUri = new Uri(initialUrl.Trim(), UriKind.Absolute);
+        for (var hop = 0; hop <= maxRedirects; hop++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, currentUri);
+            if (hop == 0 || IsTrustedReleaseUrl(currentUri.AbsoluteUri))
+            {
+                configureHeaders?.Invoke(req);
+            }
+
+            var resp = await client.SendAsync(req, completionOption, cancellationToken);
+            var code = (int)resp.StatusCode;
+            if (code is 301 or 302 or 303 or 307 or 308)
+            {
+                var location = resp.Headers.Location;
+                resp.Dispose();
+                if (location == null)
+                {
+                    throw new InvalidOperationException("Release server returned a redirect without a Location header.");
+                }
+
+                var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+                if (!IsTrustedReleaseHopUri(nextUri))
+                {
+                    throw new InvalidOperationException($"Blocked untrusted release redirect target: {nextUri.Host}");
+                }
+
+                currentUri = nextUri;
+                continue;
+            }
+
+            return resp;
+        }
+
+        throw new InvalidOperationException("Exceeded maximum redirect hops while contacting official GitHub release channel.");
     }
 
     public static (bool CanPatch, string? Reason) EvaluatePatchEligibility(
@@ -1541,6 +1727,36 @@ public sealed class KarobarDesktopBridge
         var patchUrl = remote.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
             ? puProp.GetString()
             : null;
+        if (!string.IsNullOrWhiteSpace(patchUrl) && !IsTrustedReleaseDownloadUrl(patchUrl))
+        {
+            patchUrl = null;
+        }
+
+        var pinnedRepo = OfficialRepositorySlug;
+        var defaultDownloadUrl = $"https://github.com/{pinnedRepo}/releases/download/{OfficialReleaseTag}/Karobar-Native-Setup.exe";
+        var defaultBundleUrl = $"https://github.com/{pinnedRepo}/releases/download/{OfficialReleaseTag}/Karobar-Native-Setup-Bundle.zip";
+        var defaultReleaseUrl = $"https://github.com/{pinnedRepo}/releases/tag/{OfficialReleaseTag}";
+
+        var rawDownloadUrl = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
+            ? du.GetString()
+            : null;
+        var trustedDownloadUrl = !string.IsNullOrWhiteSpace(rawDownloadUrl) && IsTrustedReleaseDownloadUrl(rawDownloadUrl)
+            ? rawDownloadUrl
+            : defaultDownloadUrl;
+
+        var rawBundleUrl = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
+            ? bu.GetString()
+            : null;
+        var trustedBundleUrl = !string.IsNullOrWhiteSpace(rawBundleUrl) && IsTrustedReleaseDownloadUrl(rawBundleUrl)
+            ? rawBundleUrl
+            : defaultBundleUrl;
+
+        var rawReleaseUrl = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
+            ? ru.GetString()
+            : null;
+        var trustedReleaseUrl = !string.IsNullOrWhiteSpace(rawReleaseUrl) && IsTrustedReleaseUrl(rawReleaseUrl)
+            ? rawReleaseUrl
+            : defaultReleaseUrl;
 
         var remoteLayout = remote.TryGetProperty("runtime_layout", out var rlProp) && rlProp.ValueKind == JsonValueKind.String
             ? rlProp.GetString() ?? ""
@@ -1594,13 +1810,9 @@ public sealed class KarobarDesktopBridge
             notes = remote.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String
                 ? nt.GetString()
                 : "Performance improvements, bug fixes, and new features.",
-            download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
-                ? du.GetString()
-                : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe",
+            download_url = trustedDownloadUrl,
             installer_size = remote.TryGetProperty("installer_size", out var isz) && isz.TryGetInt64(out var iSize) ? (long?)iSize : null,
-            bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
-                ? bu.GetString()
-                : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
+            bundle_url = trustedBundleUrl,
             patch_url = canPatch ? patchUrl : null,
             patch_size = canPatch && remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
             patch_sha256 = canPatch && remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
@@ -1612,9 +1824,7 @@ public sealed class KarobarDesktopBridge
             deps_fingerprint = remoteDeps,
             local_deps_fingerprint = local.DepsFingerprint,
             min_patch_version = minPatchVer,
-            release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
-                ? ru.GetString()
-                : $"https://github.com/{repo}/releases/tag/native-latest",
+            release_url = trustedReleaseUrl,
             zero_data_loss = true
         };
     }
@@ -1622,7 +1832,7 @@ public sealed class KarobarDesktopBridge
     public async Task<object> CheckForUpdatesAsync(JsonElement? payload = null, CancellationToken cancellationToken = default)
     {
         var local = ReadLocalVersionMeta();
-        var repo = string.IsNullOrWhiteSpace(local.Repository) ? "shzdasim/Karobar-App" : local.Repository;
+        const string repo = OfficialRepositorySlug;
         var cacheBust = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
@@ -1631,10 +1841,9 @@ public sealed class KarobarDesktopBridge
             (File.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "node", "node.exe")) &&
              Directory.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys")));
 
-        using var handler = new HttpClientHandler
+        using var handler = ReleaseHttpHandlerFactory?.Invoke() ?? new HttpClientHandler
         {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 6,
+            AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.All
         };
         using var client = new HttpClient(handler)
@@ -1650,10 +1859,17 @@ public sealed class KarobarDesktopBridge
 
         // 1. Primary manifest: dedicated `native-latest` rolling channel (never collides with Electron `latest`)
         // Include a cache-buster query param so intermediate proxies/WinINET do not serve a stale 302 redirect.
-        var primaryManifestUrl = $"https://github.com/{repo}/releases/download/native-latest/latest-native-release.json?t={cacheBust}";
+        var primaryManifestUrl = $"https://github.com/{repo}/releases/download/{OfficialReleaseTag}/latest-native-release.json?t={cacheBust}";
         try
         {
-            var jsonText = await client.GetStringAsync(primaryManifestUrl, cancellationToken);
+            using var manifestResp = await SendPinnedReleaseGetAsync(
+                client,
+                primaryManifestUrl,
+                configureHeaders: null,
+                HttpCompletionOption.ResponseContentRead,
+                cancellationToken);
+            manifestResp.EnsureSuccessStatusCode();
+            var jsonText = await manifestResp.Content.ReadAsStringAsync(cancellationToken);
             var parsed = BuildUpdateResultFromManifest(local, repo, jsonText, hasBundledWaRuntime);
             if (parsed != null)
             {
@@ -1668,10 +1884,16 @@ public sealed class KarobarDesktopBridge
         // 2. Fallback: GitHub Releases REST API (strictly `native-latest` tag so Electron `latest` is never returned)
         try
         {
-            using var apiReq = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/tags/native-latest");
-            apiReq.Headers.Accept.Clear();
-            apiReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            using var apiResp = await client.SendAsync(apiReq, cancellationToken);
+            using var apiResp = await SendPinnedReleaseGetAsync(
+                client,
+                $"https://api.github.com/repos/{repo}/releases/tags/{OfficialReleaseTag}",
+                req =>
+                {
+                    req.Headers.Accept.Clear();
+                    req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                },
+                HttpCompletionOption.ResponseContentRead,
+                cancellationToken);
             apiResp.EnsureSuccessStatusCode();
             var apiText = await apiResp.Content.ReadAsStringAsync(cancellationToken);
             using var doc = JsonDocument.Parse(apiText.TrimStart('\uFEFF'));
@@ -1683,8 +1905,8 @@ public sealed class KarobarDesktopBridge
                 // so fast differential patch metadata & verified SHA-256 checksums are preserved even when
                 // github.com/releases/download timed out or failed.
                 string? manifestAssetApiUrl = null;
-                var downloadUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe";
-                var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
+                var downloadUrl = $"https://github.com/{repo}/releases/download/{OfficialReleaseTag}/Karobar-Native-Setup.exe";
+                var bundleUrl = $"https://github.com/{repo}/releases/download/{OfficialReleaseTag}/Karobar-Native-Setup-Bundle.zip";
                 long? installerSize = null;
                 string? installerSha256 = null;
 
@@ -1698,18 +1920,19 @@ public sealed class KarobarDesktopBridge
                         var digest = asset.TryGetProperty("digest", out var dgProp) && dgProp.ValueKind == JsonValueKind.String ? dgProp.GetString() : null;
 
                         if (string.Equals(name, "latest-native-release.json", StringComparison.OrdinalIgnoreCase) &&
-                            !string.IsNullOrWhiteSpace(apiAssetUrl))
+                            !string.IsNullOrWhiteSpace(apiAssetUrl) &&
+                            IsTrustedReleaseUrl(apiAssetUrl))
                         {
                             manifestAssetApiUrl = apiAssetUrl;
                         }
-                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup.exe")
+                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup.exe" && IsTrustedReleaseDownloadUrl(url))
                         {
                             downloadUrl = url;
                             if (asset.TryGetProperty("size", out var isProp) && isProp.TryGetInt64(out var iSz))
                                 installerSize = iSz;
                             installerSha256 = ExtractSha256FromGitHubDigest(digest);
                         }
-                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip")
+                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip" && IsTrustedReleaseDownloadUrl(url))
                             bundleUrl = url;
                     }
                 }
@@ -1718,10 +1941,16 @@ public sealed class KarobarDesktopBridge
                 {
                     try
                     {
-                        using var assetReq = new HttpRequestMessage(HttpMethod.Get, manifestAssetApiUrl);
-                        assetReq.Headers.Accept.Clear();
-                        assetReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
-                        using var assetResp = await client.SendAsync(assetReq, cancellationToken);
+                        using var assetResp = await SendPinnedReleaseGetAsync(
+                            client,
+                            manifestAssetApiUrl,
+                            req =>
+                            {
+                                req.Headers.Accept.Clear();
+                                req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+                            },
+                            HttpCompletionOption.ResponseContentRead,
+                            cancellationToken);
                         if (assetResp.IsSuccessStatusCode)
                         {
                             var assetJson = await assetResp.Content.ReadAsStringAsync(cancellationToken);
@@ -1798,9 +2027,9 @@ public sealed class KarobarDesktopBridge
                     patch_sha256 = (string?)null,
                     installer_sha256 = installerSha256,
                     min_patch_version = "2.0.0",
-                    release_url = apiData.TryGetProperty("html_url", out var hu) && hu.ValueKind == JsonValueKind.String
+                    release_url = apiData.TryGetProperty("html_url", out var hu) && hu.ValueKind == JsonValueKind.String && IsTrustedReleaseUrl(hu.GetString())
                         ? hu.GetString()
-                        : $"https://github.com/{repo}/releases/tag/native-latest",
+                        : $"https://github.com/{repo}/releases/tag/{OfficialReleaseTag}",
                     zero_data_loss = true
                 };
             }
@@ -1880,9 +2109,27 @@ public sealed class KarobarDesktopBridge
             mode = "download";
         }
 
-        var isPatch = isPatchFlag && !forceFull && !string.IsNullOrWhiteSpace(candidatePatchUrl);
-        var expectedSha256 = isPatch ? candidatePatchSha256 : candidateInstallerSha256;
-        if (string.IsNullOrWhiteSpace(expectedSha256) || !Regex.IsMatch(expectedSha256.Trim(), "^[0-9a-fA-F]{64}$"))
+        if (!string.IsNullOrWhiteSpace(candidatePatchUrl) && !IsTrustedReleaseDownloadUrl(candidatePatchUrl))
+        {
+            return new
+            {
+                ok = false,
+                message = "Untrusted release URL. Updates are pinned to the official shzdasim/Karobar-App repository."
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidateDownloadUrl) && !IsTrustedReleaseDownloadUrl(candidateDownloadUrl))
+        {
+            return new
+            {
+                ok = false,
+                message = "Untrusted release URL. Updates are pinned to the official shzdasim/Karobar-App repository."
+            };
+        }
+
+        var preferPatch = isPatchFlag && !forceFull;
+        var callerExpectedSha = preferPatch ? candidatePatchSha256 : candidateInstallerSha256;
+        if (string.IsNullOrWhiteSpace(callerExpectedSha) || !Regex.IsMatch(callerExpectedSha.Trim(), "^[0-9a-fA-F]{64}$"))
         {
             return new
             {
@@ -1891,16 +2138,23 @@ public sealed class KarobarDesktopBridge
             };
         }
 
-        var versionLabel = Regex.Replace(rawVersion, @"[^a-zA-Z0-9._-]", "");
-        if (string.IsNullOrWhiteSpace(versionLabel)) versionLabel = "latest";
+        var callerShaNorm = callerExpectedSha.Trim().ToLowerInvariant();
+        var (resolvedOk, resolvedError, isPatch, downloadUrl, expectedSha256, authoritativeVersion) =
+            await ResolveVerifiedUpdatePackageAsync(preferPatch, mode, callerShaNorm, cancellationToken);
+        if (!resolvedOk || string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            return new
+            {
+                ok = false,
+                message = resolvedError ?? "Unable to verify update package against official shzdasim/Karobar-App release manifest."
+            };
+        }
 
-        var downloadUrl = isPatch
-            ? (IsTrustedReleaseUrl(candidatePatchUrl)
-                ? candidatePatchUrl!
-                : "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Patch.zip")
-            : (IsTrustedReleaseUrl(candidateDownloadUrl)
-                ? candidateDownloadUrl!
-                : "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Setup.exe");
+        var versionLabel = Regex.Replace(authoritativeVersion ?? "latest", @"[^a-zA-Z0-9._-]", "");
+        if (string.IsNullOrWhiteSpace(versionLabel) || versionLabel is "." or ".." || versionLabel.Contains("..", StringComparison.Ordinal))
+        {
+            versionLabel = "latest";
+        }
 
         var fileExt = isPatch ? "zip" : "exe";
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"Karobar-Native-Update-{versionLabel}.{fileExt}");
@@ -1952,6 +2206,14 @@ public sealed class KarobarDesktopBridge
                     throw;
                 }
             }
+
+            _verifiedArtifact = new VerifiedUpdateArtifact(
+                versionLabel,
+                isPatch,
+                downloadUrl,
+                expectedSha256,
+                tempFilePath,
+                DateTimeOffset.UtcNow);
 
             if (mode == "download")
             {
@@ -2035,6 +2297,80 @@ public sealed class KarobarDesktopBridge
         {
             _updateGate.Release();
         }
+    }
+
+    private async Task<(bool Ok, string? Error, bool IsPatch, string? DownloadUrl, string? ExpectedSha256, string? Version)>
+        ResolveVerifiedUpdatePackageAsync(bool preferPatch, string mode, string callerShaNorm, CancellationToken cancellationToken)
+    {
+        if (string.Equals(mode, "install", StringComparison.OrdinalIgnoreCase) &&
+            _verifiedArtifact is { } cached &&
+            cached.IsPatch == preferPatch &&
+            File.Exists(cached.LocalFilePath) &&
+            VerifyFileSha256(cached.LocalFilePath, cached.ExpectedSha256))
+        {
+            if (!string.Equals(callerShaNorm, cached.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Update SHA-256 checksum does not match the official release manifest. Please refresh and retry.", preferPatch, null, null, null);
+            }
+
+            return (true, null, cached.IsPatch, cached.DownloadUrl, cached.ExpectedSha256, cached.Version);
+        }
+
+        var manifestObj = await CheckForUpdatesAsync(null, cancellationToken);
+        var root = JsonSerializer.SerializeToElement(manifestObj);
+        var manifestOk = root.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.True;
+        if (!manifestOk)
+        {
+            var errMsg = root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String
+                ? msgProp.GetString()
+                : null;
+            return (false, errMsg ?? "Unable to fetch official shzdasim/Karobar-App release manifest.", preferPatch, null, null, null);
+        }
+
+        var latestVersion = root.TryGetProperty("latest_version", out var lvProp) && lvProp.ValueKind == JsonValueKind.String
+            ? lvProp.GetString()
+            : "latest";
+        var manifestIsPatch = root.TryGetProperty("is_patch", out var mpProp) && mpProp.ValueKind == JsonValueKind.True;
+        var manifestDownloadUrl = root.TryGetProperty("download_url", out var duProp) && duProp.ValueKind == JsonValueKind.String
+            ? duProp.GetString()
+            : null;
+        var manifestPatchUrl = root.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
+            ? puProp.GetString()
+            : null;
+        var manifestPatchSha = root.TryGetProperty("patch_sha256", out var psProp) && psProp.ValueKind == JsonValueKind.String
+            ? psProp.GetString()
+            : null;
+        var manifestInstallerSha = root.TryGetProperty("installer_sha256", out var isProp) && isProp.ValueKind == JsonValueKind.String
+            ? isProp.GetString()
+            : null;
+
+        var actualIsPatch = preferPatch &&
+                            manifestIsPatch &&
+                            IsTrustedReleaseDownloadUrl(manifestPatchUrl) &&
+                            !string.IsNullOrWhiteSpace(manifestPatchSha) &&
+                            Regex.IsMatch(manifestPatchSha.Trim(), "^[0-9a-fA-F]{64}$");
+
+        if (preferPatch && !actualIsPatch)
+        {
+            return (false, "Differential patch metadata is unavailable or unverified in the official release manifest. Please use full installer update.", false, null, null, null);
+        }
+
+        var authoritativeUrl = actualIsPatch ? manifestPatchUrl : manifestDownloadUrl;
+        var authoritativeSha = (actualIsPatch ? manifestPatchSha : manifestInstallerSha)?.Trim().ToLowerInvariant();
+
+        if (!IsTrustedReleaseDownloadUrl(authoritativeUrl) ||
+            string.IsNullOrWhiteSpace(authoritativeSha) ||
+            !Regex.IsMatch(authoritativeSha, "^[0-9a-fA-F]{64}$"))
+        {
+            return (false, "Official release manifest is missing a valid download URL or SHA-256 checksum.", actualIsPatch, null, null, null);
+        }
+
+        if (!string.Equals(callerShaNorm, authoritativeSha, StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Update SHA-256 checksum does not match the official release manifest. Please refresh and retry.", actualIsPatch, null, null, null);
+        }
+
+        return (true, null, actualIsPatch, authoritativeUrl, authoritativeSha, latestVersion);
     }
 
     public static readonly string[] ProtectedPatchExclusionPrefixes =
@@ -2151,14 +2487,78 @@ public sealed class KarobarDesktopBridge
                 }
                 Start-Sleep -Milliseconds 350
 
-                # 2. Extract patch zip cleanly using .NET ZipFile (fast, reliable across PowerShell 5.1 & 7)
+                # 2. Extract patch zip safely with Zip-Slip and Zip-Bomb protections
                 if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue }
                 if (Test-Path $rollbackDir) { Remove-Item -Recurse -Force $rollbackDir -ErrorAction SilentlyContinue }
                 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
                 New-Item -ItemType Directory -Force -Path $rollbackDir | Out-Null
                 Add-Type -AssemblyName System.IO.Compression.FileSystem
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $stageDir)
-                Write-Log "Extracted patch archive into $stageDir"
+                $maxEntries = 5000
+                $maxEntryBytes = [int64](256 * 1024 * 1024)
+                $maxTotalBytes = [int64](512 * 1024 * 1024)
+                $stageRootFull = [System.IO.Path]::GetFullPath($stageDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                $installRootFull = [System.IO.Path]::GetFullPath($installDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                $totalExtractedBytes = [int64]0
+                $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+                try {
+                    if ($archive.Entries.Count -gt $maxEntries) {
+                        throw "Patch archive exceeds maximum entry count ($maxEntries)."
+                    }
+                    $copyBuffer = New-Object byte[] 81920
+                    foreach ($entry in $archive.Entries) {
+                        $rawName = [string]$entry.FullName
+                        if ($rawName.IndexOf([char]0) -ge 0) {
+                            throw "Patch archive entry contains null byte."
+                        }
+                        $normName = $rawName.Replace('\', '/')
+                        if ($normName.StartsWith('/') -or $normName -match '^[A-Za-z]:') {
+                            throw "Patch archive entry uses an unsafe rooted path: $rawName"
+                        }
+                        $segments = $normName.Split('/', [System.StringSplitOptions]::RemoveEmptyEntries)
+                        foreach ($seg in $segments) {
+                            if ($seg -eq '.' -or $seg -eq '..') {
+                                throw "Patch archive entry contains path traversal: $rawName"
+                            }
+                        }
+                        if ($segments.Length -eq 0) { continue }
+                        $entryRel = $segments -join [System.IO.Path]::DirectorySeparatorChar
+                        $entryDest = [System.IO.Path]::GetFullPath((Join-Path $stageRootFull $entryRel))
+                        if (-not $entryDest.StartsWith($stageRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            throw "Patch archive entry escapes staging directory: $rawName"
+                        }
+                        if ([string]::IsNullOrEmpty($entry.Name) -and ($rawName.EndsWith('/') -or $rawName.EndsWith('\'))) {
+                            if (-not (Test-Path $entryDest)) { New-Item -ItemType Directory -Force -Path $entryDest | Out-Null }
+                            continue
+                        }
+                        if ($entry.Length -gt $maxEntryBytes) {
+                            throw "Patch archive entry exceeds single-entry size limit: $rawName"
+                        }
+                        $entryDir = Split-Path -Parent $entryDest
+                        if (-not (Test-Path $entryDir)) { New-Item -ItemType Directory -Force -Path $entryDir | Out-Null }
+                        $entryBytes = [int64]0
+                        $inStream = $entry.Open()
+                        $outStream = [System.IO.File]::Open($entryDest, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        try {
+                            while (($bytesRead = $inStream.Read($copyBuffer, 0, $copyBuffer.Length)) -gt 0) {
+                                $entryBytes += $bytesRead
+                                $totalExtractedBytes += $bytesRead
+                                if ($entryBytes -gt $maxEntryBytes) {
+                                    throw "Patch archive entry exceeded single-entry size limit during extraction: $rawName"
+                                }
+                                if ($totalExtractedBytes -gt $maxTotalBytes) {
+                                    throw "Patch archive total decompressed size exceeded limit ($maxTotalBytes bytes)."
+                                }
+                                $outStream.Write($copyBuffer, 0, $bytesRead)
+                            }
+                        } finally {
+                            if ($null -ne $outStream) { $outStream.Dispose() }
+                            if ($null -ne $inStream) { $inStream.Dispose() }
+                        }
+                    }
+                } finally {
+                    if ($null -ne $archive) { $archive.Dispose() }
+                }
+                Write-Log "Extracted patch archive into $stageDir ($totalExtractedBytes bytes)"
 
                 $protected = @(
                     'database\database.sqlite',
@@ -2179,6 +2579,7 @@ public sealed class KarobarDesktopBridge
                 $copied = 0
                 $files = Get-ChildItem -Path $stageDir -Recurse -File
                 foreach ($f in $files) {
+                    if (($f.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
                     $rel = $f.FullName.Substring($stageDir.Length).TrimStart('\', '/')
                     $skip = $false
                     foreach ($p in $protected) {
@@ -2189,7 +2590,10 @@ public sealed class KarobarDesktopBridge
                     }
                     if ($skip) { continue }
 
-                    $dest = Join-Path $installDir $rel
+                    $dest = [System.IO.Path]::GetFullPath((Join-Path $installRootFull $rel))
+                    if (-not $dest.StartsWith($installRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        throw "Blocked copy escaping install directory: $rel"
+                    }
                     $destDir = Split-Path -Parent $dest
                     if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
 
@@ -2450,10 +2854,9 @@ public sealed class KarobarDesktopBridge
         bool isPatch,
         CancellationToken cancellationToken)
     {
-        using var handler = new HttpClientHandler
+        using var handler = ReleaseHttpHandlerFactory?.Invoke() ?? new HttpClientHandler
         {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 10
+            AllowAutoRedirect = false
         };
         using var client = new HttpClient(handler)
         {
@@ -2461,7 +2864,12 @@ public sealed class KarobarDesktopBridge
         };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Karobar-App-Desktop-Updater/2.0");
 
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await SendPinnedReleaseGetAsync(
+            client,
+            url,
+            configureHeaders: null,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var totalBytes = response.Content.Headers.ContentLength ?? 0L;

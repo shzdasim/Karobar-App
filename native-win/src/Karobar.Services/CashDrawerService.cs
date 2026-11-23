@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.Json;
 using Dapper;
 using Karobar.Services.Infrastructure;
@@ -1338,6 +1339,440 @@ public class CashDrawerService
             }
         }
         record["user"] = null;
+    }
+
+    private async Task<bool> HasTableInTxAsync(string tableName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                new { name = tableName },
+                tx);
+            return count > 0;
+        }
+        return await _db.HasTableAsync(tableName);
+    }
+
+    private async Task<bool> HasColumnInTxAsync(string tableName, string columnName, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (conn != null)
+        {
+            var escaped = tableName.Replace("\"", "\"\"");
+            var rows = await conn.QueryAsync($"PRAGMA table_info(\"{escaped}\")", transaction: tx);
+            foreach (var r in rows)
+            {
+                var dict = (IDictionary<string, object>)r;
+                if (dict.TryGetValue("name", out var nameObj) &&
+                    nameObj != null &&
+                    string.Equals(nameObj.ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return await _db.HasColumnAsync(tableName, columnName);
+    }
+
+    public async Task<int> GetActiveTerminalCountInTxAsync(IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (!await HasTableInTxAsync("terminals", conn, tx))
+        {
+            return 0;
+        }
+
+        string whereClause = "";
+        if (await HasColumnInTxAsync("terminals", "is_authorized", conn, tx))
+        {
+            whereClause = "WHERE is_authorized = 1";
+        }
+        else if (await HasColumnInTxAsync("terminals", "is_active", conn, tx))
+        {
+            whereClause = "WHERE is_active = 1";
+        }
+
+        var rows = await _db.QueryListAsync($"SELECT id, hostname, ip_address, mode FROM terminals {whereClause}", null, conn, tx);
+        if (rows.Count <= 1)
+        {
+            return rows.Count;
+        }
+
+        var distinctMachines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            var host = (r.GetValueOrDefault("hostname")?.ToString() ?? "").Trim();
+            var ip = (r.GetValueOrDefault("ip_address")?.ToString() ?? "").Trim();
+            var isLoopback = ip is "127.0.0.1" or "::1" or "::ffff:127.0.0.1" or "localhost";
+            if (!string.IsNullOrEmpty(host))
+            {
+                distinctMachines.Add($"host:{host}");
+            }
+            else if (isLoopback)
+            {
+                distinctMachines.Add("loopback:local");
+            }
+            else
+            {
+                distinctMachines.Add($"id:{AccountService.ToLong(r.GetValueOrDefault("id"))}");
+            }
+        }
+
+        return distinctMachines.Count;
+    }
+
+    private async Task AttachUserInTxAsync(Dictionary<string, object?> record, IDbConnection? conn, IDbTransaction? tx)
+    {
+        if (record.TryGetValue("user_id", out var uidObj) && uidObj != null)
+        {
+            var uid = AccountService.ToLong(uidObj);
+            if (uid > 0 && await HasTableInTxAsync("users", conn, tx))
+            {
+                var u = await _db.QuerySingleOrDefaultAsync("SELECT id, name, email FROM users WHERE id = @uid", new { uid }, conn, tx);
+                record["user"] = u;
+                return;
+            }
+        }
+        record["user"] = null;
+    }
+
+    public async Task<Dictionary<string, object?>?> GetCurrentSessionInTxAsync(
+        long? userId,
+        bool strictUser,
+        long? terminalId,
+        IDbConnection? conn,
+        IDbTransaction? tx)
+    {
+        if (!await HasTableInTxAsync("cash_drawer_sessions", conn, tx))
+        {
+            return null;
+        }
+
+        var hasTerminalCol = await HasColumnInTxAsync("cash_drawer_sessions", "terminal_id", conn, tx);
+        var activeTerminals = await GetActiveTerminalCountInTxAsync(conn, tx);
+
+        if (hasTerminalCol && terminalId.HasValue && terminalId.Value > 0)
+        {
+            var termSession = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id = @tid ORDER BY opened_at DESC, id DESC LIMIT 1",
+                new { tid = terminalId.Value },
+                conn,
+                tx);
+            if (termSession != null)
+            {
+                await AttachUserInTxAsync(termSession, conn, tx);
+                return termSession;
+            }
+
+            if (userId.HasValue && userId.Value > 0)
+            {
+                var unassignedUserSession = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid AND terminal_id IS NULL ORDER BY opened_at DESC, id DESC LIMIT 1",
+                    new { uid = userId.Value },
+                    conn,
+                    tx);
+                if (unassignedUserSession != null)
+                {
+                    await AttachUserInTxAsync(unassignedUserSession, conn, tx);
+                    return unassignedUserSession;
+                }
+            }
+
+            if (activeTerminals <= 1)
+            {
+                var singlePcOpen = await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1",
+                    null,
+                    conn,
+                    tx);
+                if (singlePcOpen != null)
+                {
+                    await AttachUserInTxAsync(singlePcOpen, conn, tx);
+                    return singlePcOpen;
+                }
+            }
+
+            if (strictUser)
+            {
+                return null;
+            }
+        }
+
+        if (userId.HasValue && userId.Value > 0)
+        {
+            var userSession = await _db.QuerySingleOrDefaultAsync(
+                "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND user_id = @uid ORDER BY opened_at DESC, id DESC LIMIT 1",
+                new { uid = userId.Value },
+                conn,
+                tx);
+            if (userSession != null)
+            {
+                await AttachUserInTxAsync(userSession, conn, tx);
+                return userSession;
+            }
+
+            var sharedOpen = activeTerminals <= 1
+                ? await _db.QuerySingleOrDefaultAsync(
+                    "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1",
+                    null,
+                    conn,
+                    tx)
+                : (hasTerminalCol
+                    ? await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' AND terminal_id IS NULL ORDER BY opened_at DESC, id DESC LIMIT 1",
+                        null,
+                        conn,
+                        tx)
+                    : await _db.QuerySingleOrDefaultAsync(
+                        "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1",
+                        null,
+                        conn,
+                        tx));
+            if (sharedOpen != null)
+            {
+                await AttachUserInTxAsync(sharedOpen, conn, tx);
+                return sharedOpen;
+            }
+
+            if (strictUser)
+            {
+                return null;
+            }
+        }
+
+        var latest = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM cash_drawer_sessions WHERE status = 'open' ORDER BY opened_at DESC, id DESC LIMIT 1",
+            null,
+            conn,
+            tx);
+        if (latest != null)
+        {
+            await AttachUserInTxAsync(latest, conn, tx);
+        }
+        return latest;
+    }
+
+    public async Task<decimal> RecalculateExpectedBalanceInTxAsync(
+        long sessionId,
+        IDbConnection? conn,
+        IDbTransaction? tx,
+        bool syncAccount = true)
+    {
+        var session = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM cash_drawer_sessions WHERE id = @id",
+            new { id = sessionId },
+            conn,
+            tx);
+        if (session == null) return 0m;
+
+        var cashIn = await _db.ExecuteScalarAsync<decimal?>(
+            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_sale', 'customer_payment', 'purchase_return', 'cash_in')",
+            new { sessionId },
+            conn,
+            tx) ?? 0m;
+
+        var cashOut = await _db.ExecuteScalarAsync<decimal?>(
+            "SELECT COALESCE(SUM(amount), 0) FROM cash_drawer_transactions WHERE session_id = @sessionId AND type IN ('cash_purchase', 'cash_return', 'cash_refund', 'supplier_payment', 'expense', 'cash_out')",
+            new { sessionId },
+            conn,
+            tx) ?? 0m;
+
+        var opening = AccountService.ToDecimal(session.GetValueOrDefault("opening_balance"));
+        var expected = Math.Round(opening + cashIn - cashOut, 2);
+
+        await _db.UpdateAsync("cash_drawer_sessions", sessionId, new Dictionary<string, object?>
+        {
+            ["closing_balance_expected"] = expected
+        }, "id", conn, tx);
+
+        if (syncAccount && await HasTableInTxAsync("accounts", conn, tx))
+        {
+            var accountService = new AccountService(_db);
+            await accountService.SyncCashDrawerBalanceInTxAsync(session, conn, tx);
+        }
+
+        return expected;
+    }
+
+    public async Task<Dictionary<string, object?>?> RecordTransactionInTxAsync(
+        Dictionary<string, object?>? session,
+        string type,
+        decimal amount,
+        string? refType,
+        long? refId,
+        string? notes,
+        long? userId,
+        long? terminalId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        ArgumentNullException.ThrowIfNull(tx);
+
+        if (!await HasTableInTxAsync("cash_drawer_sessions", conn, tx) ||
+            !await HasTableInTxAsync("cash_drawer_transactions", conn, tx))
+        {
+            return null;
+        }
+
+        session ??= await GetCurrentSessionInTxAsync(userId, false, terminalId, conn, tx);
+        if (session == null || !string.Equals(session.GetValueOrDefault("status")?.ToString(), "open", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var sessionId = AccountService.ToLong(session["id"]);
+        var lockedSession = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM cash_drawer_sessions WHERE id = @id",
+            new { id = sessionId },
+            conn,
+            tx);
+        if (lockedSession == null || !string.Equals(lockedSession.GetValueOrDefault("status")?.ToString(), "open", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        amount = Math.Round(Math.Abs(amount), 2);
+        if (amount <= 0m)
+        {
+            return null;
+        }
+
+        var txnPayload = new Dictionary<string, object?>
+        {
+            ["session_id"] = sessionId,
+            ["user_id"] = userId ?? AccountService.ToLong(lockedSession.GetValueOrDefault("user_id")),
+            ["type"] = type,
+            ["amount"] = amount,
+            ["reference_type"] = refType,
+            ["reference_id"] = refId,
+            ["notes"] = notes
+        };
+
+        if (await HasColumnInTxAsync("cash_drawer_transactions", "terminal_id", conn, tx))
+        {
+            txnPayload["terminal_id"] = terminalId ?? lockedSession.GetValueOrDefault("terminal_id");
+        }
+
+        var txnId = await _db.InsertAsync("cash_drawer_transactions", txnPayload, conn, tx);
+        await RecalculateExpectedBalanceInTxAsync(sessionId, conn, tx);
+
+        if ((refType == "manual" || refType == null) && await HasTableInTxAsync("accounts", conn, tx))
+        {
+            var accountService = new AccountService(_db);
+            var cashAccount = await accountService.SyncCashDrawerBalanceInTxAsync(lockedSession, conn, tx);
+            if (cashAccount != null)
+            {
+                var desc = !string.IsNullOrWhiteSpace(notes) ? notes : (type == "cash_in" ? "Manual Cash In" : "Manual Cash Out");
+                if (CashInTypes.Contains(type, StringComparer.OrdinalIgnoreCase))
+                {
+                    await accountService.DepositInTxAsync(
+                        cashAccount,
+                        amount,
+                        "cash_drawer_manual",
+                        txnId,
+                        refType == "manual" ? $"Manual Cash In: {desc}" : desc,
+                        userId,
+                        conn,
+                        tx);
+                }
+                else if (CashOutTypes.Contains(type, StringComparer.OrdinalIgnoreCase))
+                {
+                    await accountService.WithdrawInTxAsync(
+                        cashAccount,
+                        amount,
+                        "cash_drawer_manual",
+                        txnId,
+                        refType == "manual" ? $"Manual Cash Out: {desc}" : desc,
+                        userId,
+                        conn,
+                        tx);
+                }
+            }
+        }
+
+        var created = await _db.QuerySingleOrDefaultAsync(
+            "SELECT * FROM cash_drawer_transactions WHERE id = @id",
+            new { id = txnId },
+            conn,
+            tx);
+        if (created != null)
+        {
+            await AttachUserInTxAsync(created, conn, tx);
+        }
+        return created;
+    }
+
+    public async Task<Dictionary<string, object?>?> HandlePaymentReversalInTxAsync(
+        Dictionary<string, object?> payment,
+        string reason,
+        long? userId,
+        bool? updateDrawerIfClosedShift,
+        long? terminalId,
+        IDbConnection conn,
+        IDbTransaction tx)
+    {
+        ArgumentNullException.ThrowIfNull(conn);
+        ArgumentNullException.ThrowIfNull(tx);
+
+        if (!await HasTableInTxAsync("cash_drawer_sessions", conn, tx) ||
+            !await HasTableInTxAsync("cash_drawer_transactions", conn, tx))
+        {
+            return null;
+        }
+
+        var grossAmount = AccountService.ToDecimal(payment.GetValueOrDefault("amount"));
+        var whtAmount = AccountService.ToDecimal(payment.GetValueOrDefault("wht_amount"));
+        var netCashDisbursed = AccountService.ToDecimal(payment.GetValueOrDefault("net_cash_disbursed"));
+        var partyTypeRaw = payment.GetValueOrDefault("party_type")?.ToString() ?? "customer";
+        var amount = partyTypeRaw.Equals("supplier", StringComparison.OrdinalIgnoreCase)
+            ? (netCashDisbursed > 0m ? netCashDisbursed : Math.Max(0m, grossAmount - whtAmount))
+            : grossAmount;
+        if (amount <= 0m) return null;
+
+        var payId = AccountService.ToLong(payment.GetValueOrDefault("id"));
+        var existingTxn = await _db.QuerySingleOrDefaultAsync(
+            @"SELECT cdt.*
+              FROM cash_drawer_transactions cdt
+              INNER JOIN cash_drawer_sessions cds ON cds.id = cdt.session_id
+              WHERE cdt.reference_type = 'payment' AND cdt.reference_id = @payId AND cds.status = 'open'
+              LIMIT 1",
+            new { payId },
+            conn,
+            tx);
+
+        if (existingTxn != null)
+        {
+            var openSessId = AccountService.ToLong(existingTxn["session_id"]);
+            await _db.ExecuteAsync("DELETE FROM cash_drawer_transactions WHERE id = @id", new { id = existingTxn["id"] }, conn, tx);
+            await RecalculateExpectedBalanceInTxAsync(openSessId, conn, tx);
+            return null;
+        }
+
+        if (updateDrawerIfClosedShift == false)
+        {
+            return null;
+        }
+
+        var session = await GetCurrentSessionInTxAsync(userId, false, terminalId, conn, tx);
+        if (session == null) return null;
+
+        var partyType = payment.GetValueOrDefault("party_type")?.ToString() ?? "customer";
+        var reversalType = partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) ? "cash_out" : "cash_in";
+        var partyLabel = partyType.Equals("customer", StringComparison.OrdinalIgnoreCase) ? "Customer" : "Supplier";
+        var payNo = payment.GetValueOrDefault("payment_number")?.ToString() ?? $"#{payId}";
+
+        return await RecordTransactionInTxAsync(
+            session,
+            reversalType,
+            amount,
+            "payment",
+            payId,
+            $"Reversal of {partyLabel} Payment {payNo}: {reason}",
+            userId,
+            terminalId,
+            conn,
+            tx);
     }
 
     private static bool IsType(Dictionary<string, object?> txn, string type)

@@ -529,8 +529,12 @@ public sealed class KarobarCliCommandRunner
             };
         }
 
-        var bytes = await File.ReadAllBytesAsync(patchZip, cancellationToken);
-        var actualSha = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        string actualSha;
+        await using (var fs = new FileStream(patchZip, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+        {
+            var hashBytes = await SHA256.HashDataAsync(fs, cancellationToken);
+            actualSha = Convert.ToHexStringLower(hashBytes);
+        }
         if (!string.Equals(actualSha, expectedSha.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             return new CliCommandResult
@@ -543,18 +547,36 @@ public sealed class KarobarCliCommandRunner
 
         // Pre-patch safety backup (WAL-safe SQLite Online Backup API)
         var dbPath = Path.Combine(_appRoot, "database", "database.sqlite");
-        if (File.Exists(dbPath))
+        if (File.Exists(dbPath) && IsSqliteDatabaseCandidate(dbPath))
         {
             var backupDir = Path.Combine(_appRoot, "storage", "backups");
             Directory.CreateDirectory(backupDir);
-            var backupFile = Path.Combine(backupDir, $"pre-patch-{DateTime.Now:yyyyMMdd-HHmmss}.sqlite");
+            var backupFile = Path.Combine(
+                backupDir,
+                $"pre-patch-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.sqlite");
             try
             {
                 await BackupSqliteOnlineAsync(dbPath, backupFile, cancellationToken);
+                if (!File.Exists(backupFile) || new FileInfo(backupFile).Length <= 0)
+                {
+                    throw new InvalidOperationException("Pre-patch database backup produced an empty file.");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                try { File.Copy(dbPath, backupFile, overwrite: true); } catch { }
+                try { if (File.Exists(backupFile)) File.Delete(backupFile); } catch { }
+                _logger?.LogError(ex, "Pre-patch online SQLite backup failed for {DbPath}", dbPath);
+                return new CliCommandResult
+                {
+                    ExitCode = 1,
+                    Output = $"Pre-patch database backup failed: {ex.Message}",
+                    Data = new Dictionary<string, object?>
+                    {
+                        ["ok"] = false,
+                        ["patch_applied"] = false,
+                        ["message"] = $"Pre-patch database backup failed: {ex.Message}"
+                    }
+                };
             }
         }
 
@@ -563,10 +585,31 @@ public sealed class KarobarCliCommandRunner
 
         try
         {
-            ZipFile.ExtractToDirectory(patchZip, stagingDir, overwriteFiles: true);
+            try
+            {
+                ExtractPatchZipSafely(patchZip, stagingDir);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
+            {
+                return new CliCommandResult
+                {
+                    ExitCode = 1,
+                    Output = ex.Message,
+                    Data = new Dictionary<string, object?>
+                    {
+                        ["ok"] = false,
+                        ["patch_applied"] = false,
+                        ["message"] = ex.Message
+                    }
+                };
+            }
+
             var appliedFiles = 0;
 
-            var fullRoot = Path.GetFullPath(_appRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var fullRoot = Path.GetFullPath(_appRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var rootComparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
             foreach (var file in Directory.GetFiles(stagingDir, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(stagingDir, file).Replace('\\', '/');
@@ -581,7 +624,7 @@ public sealed class KarobarCliCommandRunner
                 }
 
                 var targetPath = Path.GetFullPath(Path.Combine(_appRoot, rel.Replace('/', Path.DirectorySeparatorChar)));
-                if (!targetPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                if (!targetPath.StartsWith(fullRoot, rootComparison))
                 {
                     continue;
                 }
@@ -612,6 +655,107 @@ public sealed class KarobarCliCommandRunner
         finally
         {
             try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, recursive: true); } catch { }
+        }
+    }
+
+    public static void ExtractPatchZipSafely(
+        string patchZipPath,
+        string stagingDir,
+        long maxTotalDecompressedBytes = 512L * 1024L * 1024L,
+        int maxEntries = 5000,
+        long maxSingleEntryBytes = 256L * 1024L * 1024L)
+    {
+        if (string.IsNullOrWhiteSpace(patchZipPath) || !File.Exists(patchZipPath))
+        {
+            throw new InvalidOperationException("Patch archive file does not exist.");
+        }
+
+        Directory.CreateDirectory(stagingDir);
+        var fullStageRoot = Path.GetFullPath(stagingDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var pathComparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        using var archive = ZipFile.OpenRead(patchZipPath);
+        if (archive.Entries.Count > maxEntries)
+        {
+            throw new InvalidOperationException($"Patch archive exceeds maximum allowed entry count ({maxEntries}).");
+        }
+
+        long totalExtractedBytes = 0;
+        var buffer = new byte[81920];
+
+        foreach (var entry in archive.Entries)
+        {
+            var rawName = entry.FullName ?? string.Empty;
+            if (rawName.Contains('\0'))
+            {
+                throw new InvalidOperationException("Patch archive entry contains null byte.");
+            }
+
+            var trimmedName = rawName.Replace('\\', '/');
+            if (trimmedName.StartsWith('/') ||
+                Regex.IsMatch(trimmedName, "^[A-Za-z]:"))
+            {
+                throw new InvalidOperationException($"Patch archive entry uses an unsafe rooted path: {rawName}");
+            }
+
+            var segments = trimmedName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var seg in segments)
+            {
+                if (seg == "." || seg == "..")
+                {
+                    throw new InvalidOperationException($"Patch archive entry contains unsafe path traversal segment: {rawName}");
+                }
+            }
+
+            var normalizedRel = string.Join(Path.DirectorySeparatorChar, segments);
+            if (string.IsNullOrEmpty(normalizedRel))
+            {
+                continue;
+            }
+
+            var destPath = Path.GetFullPath(Path.Combine(fullStageRoot, normalizedRel));
+            if (!destPath.StartsWith(fullStageRoot, pathComparison))
+            {
+                throw new InvalidOperationException($"Patch archive entry escapes staging root: {rawName}");
+            }
+
+            if (string.IsNullOrEmpty(entry.Name) && (rawName.EndsWith('/') || rawName.EndsWith('\\')))
+            {
+                Directory.CreateDirectory(destPath);
+                continue;
+            }
+
+            if (entry.Length > maxSingleEntryBytes)
+            {
+                throw new InvalidOperationException($"Patch archive entry '{rawName}' exceeds maximum allowed uncompressed size.");
+            }
+
+            var destDir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+            }
+
+            long entryBytes = 0;
+            using var entryStream = entry.Open();
+            using var outStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+            int read;
+            while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                entryBytes += read;
+                totalExtractedBytes += read;
+                if (entryBytes > maxSingleEntryBytes)
+                {
+                    throw new InvalidOperationException($"Patch archive entry '{rawName}' exceeded uncompressed size limit during extraction.");
+                }
+                if (totalExtractedBytes > maxTotalDecompressedBytes)
+                {
+                    throw new InvalidOperationException($"Patch archive total uncompressed size exceeded limit ({maxTotalDecompressedBytes} bytes).");
+                }
+                outStream.Write(buffer, 0, read);
+            }
         }
     }
 
@@ -768,6 +912,27 @@ public sealed class KarobarCliCommandRunner
         }
     }
 
+    private static bool IsSqliteDatabaseCandidate(string dbPath)
+    {
+        if (File.Exists(dbPath + "-wal") || File.Exists(dbPath + "-shm"))
+        {
+            return true;
+        }
+
+        try
+        {
+            ReadOnlySpan<byte> magic = "SQLite format 3\0"u8;
+            var header = new byte[magic.Length];
+            using var fs = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var read = fs.Read(header, 0, header.Length);
+            return read == magic.Length && header.AsSpan().SequenceEqual(magic);
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
+
     private static async Task BackupSqliteOnlineAsync(string sourceDb, string destinationDb, CancellationToken cancellationToken)
     {
         await using var srcConn = new SqliteConnection($"Data Source={sourceDb};Mode=ReadOnly;Pooling=False;");
@@ -800,10 +965,25 @@ public sealed class KarobarCliCommandRunner
             try
             {
                 await BackupSqliteOnlineAsync(sourceDb, outPath, cancellationToken);
+                if (!File.Exists(outPath) || new FileInfo(outPath).Length <= 0)
+                {
+                    throw new InvalidOperationException("SQLite export produced an empty file.");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                File.Copy(sourceDb, outPath, overwrite: true);
+                try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
+                _logger?.LogError(ex, "Online SQLite export failed for {SourceDb}", sourceDb);
+                return new CliCommandResult
+                {
+                    ExitCode = 1,
+                    Output = $"SQLite export failed: {ex.Message}",
+                    Data = new Dictionary<string, object?>
+                    {
+                        ["ok"] = false,
+                        ["message"] = $"SQLite export failed: {ex.Message}"
+                    }
+                };
             }
         }
         else
@@ -1588,128 +1768,171 @@ public sealed class KarobarCliCommandRunner
             ? parsed.Date
             : DateTime.Today;
 
-        var dueTemplates = await db.Expenses
-            .Where(e => e.IsRecurring &&
-                        e.RecurringFrequency != null &&
-                        e.Date <= asOfDate)
-            .ToListAsync(cancellationToken);
-
         var processedCount = 0;
 
-        foreach (var template in dueTemplates)
+        var conn = db.Database.GetDbConnection();
+        var wasOpen = conn.State == System.Data.ConnectionState.Open;
+        if (!wasOpen)
         {
-            var runDate = template.Date.Date;
-            var freq = (template.RecurringFrequency ?? "monthly").Trim().ToLowerInvariant();
-            var nextDate = freq switch
+            await db.Database.OpenConnectionAsync(cancellationToken);
+        }
+
+        SqliteTransaction? ownedTx = null;
+        try
+        {
+            if (db.Database.CurrentTransaction == null && conn is SqliteConnection sqliteConn)
             {
-                "daily" => runDate.AddDays(1),
-                "weekly" => runDate.AddDays(7),
-                "yearly" => runDate.AddYears(1),
-                _ => runDate.AddMonths(1)
-            };
+                await SqliteConnectionInterceptor.ApplyPragmasAsync(sqliteConn, cancellationToken);
+                ownedTx = sqliteConn.BeginTransaction(deferred: false);
+                await db.Database.UseTransactionAsync(ownedTx, cancellationToken);
+            }
 
-            if (nextDate <= asOfDate)
+            var dueTemplates = await db.Expenses
+                .Where(e => e.IsRecurring &&
+                            e.RecurringFrequency != null &&
+                            e.Date <= asOfDate)
+                .ToListAsync(cancellationToken);
+
+            foreach (var template in dueTemplates)
             {
-                var payMethod = string.IsNullOrWhiteSpace(template.PaymentMethod) ? "cash" : template.PaymentMethod.Trim();
-                Account? account = null;
-                if (template.AccountId.HasValue && template.AccountId.Value > 0)
+                var runDate = template.Date.Date;
+                var freq = (template.RecurringFrequency ?? "monthly").Trim().ToLowerInvariant();
+                var nextDate = freq switch
                 {
-                    account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == template.AccountId.Value, cancellationToken);
-                }
-                else if (payMethod.Equals("cash", StringComparison.OrdinalIgnoreCase))
-                {
-                    account = await db.Accounts
-                        .Where(a => a.IsActive && a.Type == "cash")
-                        .OrderByDescending(a => a.IsDefault)
-                        .ThenBy(a => a.Id)
-                        .FirstOrDefaultAsync(cancellationToken);
-                }
-
-                var isDefaultCashDrawer = account != null &&
-                    string.Equals(account.Type, "cash", StringComparison.OrdinalIgnoreCase) &&
-                    (account.IsDefault ||
-                     string.Equals(account.Code, "cash_drawer", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(account.Code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase));
-
-                CashDrawerSession? openSession = null;
-                if (isDefaultCashDrawer && template.Amount > 0m)
-                {
-                    openSession = await db.CashDrawerSessions
-                        .Where(s => s.Status == "open")
-                        .OrderByDescending(s => s.OpenedAt)
-                        .ThenByDescending(s => s.Id)
-                        .FirstOrDefaultAsync(cancellationToken);
-                }
-
-                var newExp = new Expense
-                {
-                    ExpenseNumber = $"EXP-REC-{DateTime.UtcNow:yyyyMMddHHmmss}-{template.Id}",
-                    ExpenseCategoryId = template.ExpenseCategoryId,
-                    AccountId = account?.Id ?? template.AccountId,
-                    CashDrawerSessionId = openSession?.Id,
-                    UserId = template.UserId,
-                    Amount = template.Amount,
-                    Date = nextDate,
-                    PaymentMethod = payMethod,
-                    ReferenceNumber = template.ReferenceNumber,
-                    Payee = template.Payee,
-                    Description = template.Description,
-                    IsRecurring = true,
-                    RecurringFrequency = template.RecurringFrequency,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    "daily" => runDate.AddDays(1),
+                    "weekly" => runDate.AddDays(7),
+                    "yearly" => runDate.AddYears(1),
+                    _ => runDate.AddMonths(1)
                 };
-                db.Expenses.Add(newExp);
-                template.IsRecurring = false;
-                await db.SaveChangesAsync(cancellationToken);
 
-                // Debit the linked financial account & sync active Cash Drawer so both stay reconciled
-                if (account != null && template.Amount > 0m)
+                if (nextDate <= asOfDate)
                 {
-                    var recDesc = $"Recurring Expense ({newExp.ExpenseNumber}): {template.Description ?? template.Payee ?? "Scheduled"}";
-                    account.CurrentBalance = Math.Round(account.CurrentBalance - template.Amount, 2);
-                    account.UpdatedAt = DateTime.UtcNow;
-                    db.AccountTransactions.Add(new AccountTransaction
+                    var payMethod = string.IsNullOrWhiteSpace(template.PaymentMethod) ? "cash" : template.PaymentMethod.Trim();
+                    Account? account = null;
+                    if (template.AccountId.HasValue && template.AccountId.Value > 0)
                     {
-                        AccountId = account.Id,
-                        Type = "withdrawal",
-                        Amount = template.Amount,
-                        BalanceAfter = account.CurrentBalance,
-                        ReferenceType = "expense",
-                        ReferenceId = newExp.Id,
-                        Description = recDesc,
+                        account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == template.AccountId.Value, cancellationToken);
+                    }
+                    else if (payMethod.Equals("cash", StringComparison.OrdinalIgnoreCase))
+                    {
+                        account = await db.Accounts
+                            .Where(a => a.IsActive && a.Type == "cash")
+                            .OrderByDescending(a => a.IsDefault)
+                            .ThenBy(a => a.Id)
+                            .FirstOrDefaultAsync(cancellationToken);
+                    }
+
+                    var isDefaultCashDrawer = account != null &&
+                        string.Equals(account.Type, "cash", StringComparison.OrdinalIgnoreCase) &&
+                        (account.IsDefault ||
+                         string.Equals(account.Code, "cash_drawer", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(account.Code, "CASH-DRAWER", StringComparison.OrdinalIgnoreCase));
+
+                    CashDrawerSession? openSession = null;
+                    if (isDefaultCashDrawer && template.Amount > 0m)
+                    {
+                        openSession = await db.CashDrawerSessions
+                            .Where(s => s.Status == "open")
+                            .OrderByDescending(s => s.OpenedAt)
+                            .ThenByDescending(s => s.Id)
+                            .FirstOrDefaultAsync(cancellationToken);
+                    }
+
+                    var newExp = new Expense
+                    {
+                        ExpenseNumber = $"EXP-REC-{DateTime.UtcNow:yyyyMMddHHmmss}-{template.Id}",
+                        ExpenseCategoryId = template.ExpenseCategoryId,
+                        AccountId = account?.Id ?? template.AccountId,
+                        CashDrawerSessionId = openSession?.Id,
                         UserId = template.UserId,
+                        Amount = template.Amount,
+                        Date = nextDate,
+                        PaymentMethod = payMethod,
+                        ReferenceNumber = template.ReferenceNumber,
+                        Payee = template.Payee,
+                        Description = template.Description,
+                        IsRecurring = true,
+                        RecurringFrequency = template.RecurringFrequency,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
-                    });
+                    };
+                    db.Expenses.Add(newExp);
+                    template.IsRecurring = false;
+                    await db.SaveChangesAsync(cancellationToken);
 
-                    if (openSession != null)
+                    // Debit the linked financial account & sync active Cash Drawer so both stay reconciled
+                    if (account != null && template.Amount > 0m)
                     {
-                        openSession.ClosingBalanceExpected = Math.Round(openSession.ClosingBalanceExpected - template.Amount, 2);
-                        openSession.UpdatedAt = DateTime.UtcNow;
-                        db.CashDrawerTransactions.Add(new CashDrawerTransaction
+                        var recDesc = $"Recurring Expense ({newExp.ExpenseNumber}): {template.Description ?? template.Payee ?? "Scheduled"}";
+                        account.CurrentBalance = Math.Round(account.CurrentBalance - template.Amount, 2);
+                        account.UpdatedAt = DateTime.UtcNow;
+                        db.AccountTransactions.Add(new AccountTransaction
                         {
-                            SessionId = openSession.Id,
-                            UserId = template.UserId ?? openSession.UserId,
-                            Type = "expense",
+                            AccountId = account.Id,
+                            Type = "withdrawal",
                             Amount = template.Amount,
+                            BalanceAfter = account.CurrentBalance,
                             ReferenceType = "expense",
                             ReferenceId = newExp.Id,
-                            Notes = recDesc,
-                            TerminalId = openSession.TerminalId,
+                            Description = recDesc,
+                            UserId = template.UserId,
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         });
-                    }
-                }
 
-                processedCount++;
+                        if (openSession != null)
+                        {
+                            openSession.ClosingBalanceExpected = Math.Round(openSession.ClosingBalanceExpected - template.Amount, 2);
+                            openSession.UpdatedAt = DateTime.UtcNow;
+                            db.CashDrawerTransactions.Add(new CashDrawerTransaction
+                            {
+                                SessionId = openSession.Id,
+                                UserId = template.UserId ?? openSession.UserId,
+                                Type = "expense",
+                                Amount = template.Amount,
+                                ReferenceType = "expense",
+                                ReferenceId = newExp.Id,
+                                Notes = recDesc,
+                                TerminalId = openSession.TerminalId,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            });
+                        }
+                    }
+
+                    processedCount++;
+                }
+            }
+
+            if (processedCount > 0)
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            if (ownedTx != null)
+            {
+                await ownedTx.CommitAsync(cancellationToken);
             }
         }
-
-        if (processedCount > 0)
+        catch
         {
-            await db.SaveChangesAsync(cancellationToken);
+            if (ownedTx != null)
+            {
+                try { await ownedTx.RollbackAsync(CancellationToken.None); } catch { }
+            }
+            throw;
+        }
+        finally
+        {
+            if (ownedTx != null)
+            {
+                try { await db.Database.UseTransactionAsync(null, CancellationToken.None); } catch { }
+                await ownedTx.DisposeAsync();
+            }
+            if (!wasOpen)
+            {
+                await db.Database.CloseConnectionAsync();
+            }
         }
 
         return new CliCommandResult

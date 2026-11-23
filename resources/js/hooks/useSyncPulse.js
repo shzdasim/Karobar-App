@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { clearApiCache } from "../context/axiosSetup.js";
+import { syncDesktopNetworkStorage } from "../utils/securityHelpers.js";
 
 const PULSE_CHANNEL_NAME = "karobar_sync_pulse_bus";
 const PULSE_LEADER_KEY = "karobar_sync_pulse_leader";
@@ -72,29 +73,21 @@ export function useSyncPulse({ enabled = true, intervalMs = 4000 } = {}) {
     const winId = getWindowId();
 
     // Sync desktop network config into localStorage for axios header injection
+    // (never persist karobar_pairing_token in localStorage under desktop mode)
     if (window.karobarDesktop?.getNetworkConfig) {
+      try {
+        localStorage.removeItem("karobar_pairing_token");
+      } catch {
+        // ignore storage errors
+      }
       window.karobarDesktop
         .getNetworkConfig()
         .then((cfg) => {
-          if (cfg?.terminalId) {
-            localStorage.setItem("karobar_terminal_uid", cfg.terminalId);
-          }
-          if (cfg?.terminalName) {
-            localStorage.setItem("karobar_terminal_name", cfg.terminalName);
-          }
-          if (cfg?.mode) {
-            localStorage.setItem("karobar_terminal_mode", cfg.mode);
-          }
-          if (cfg?.hostname) {
-            localStorage.setItem("karobar_terminal_hostname", cfg.hostname);
-          }
-          if (typeof cfg?.pairingToken === "string") {
-            if (cfg.pairingToken.trim()) {
-              localStorage.setItem("karobar_pairing_token", cfg.pairingToken.trim());
-            } else {
-              localStorage.removeItem("karobar_pairing_token");
-            }
-          }
+          syncDesktopNetworkStorage({
+            isDesktop: true,
+            cfg,
+            storage: localStorage,
+          });
         })
         .catch(() => {});
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -80,6 +81,28 @@ public sealed class TargetTableSchema
 public sealed class WaseelaAndSqliteImportEngine
 {
     private const long MaxDecompressedBytes = 2L * 1024 * 1024 * 1024; // 2 GB cap
+    private const long MaxTextImportBytes = 256L * 1024 * 1024; // 256 MB cap for in-memory CSV/SQL text parsing
+
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ImportLocks =
+        new(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal);
+
+    private static SemaphoreSlim GetImportLock(string targetSqlitePath)
+    {
+        var key = string.IsNullOrWhiteSpace(targetSqlitePath)
+            ? "__default__"
+            : Path.GetFullPath(targetSqlitePath);
+        return ImportLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+    }
+
+    private static bool IsMacOsMetadataZipEntry(string fullName)
+    {
+        var segments = fullName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return true;
+        if (segments.Any(seg => seg.Equals("__MACOSX", StringComparison.OrdinalIgnoreCase))) return true;
+        return segments[^1].StartsWith("._", StringComparison.Ordinal);
+    }
 
     public static readonly string[] ProtectedTables =
     [
@@ -791,14 +814,19 @@ public sealed class WaseelaAndSqliteImportEngine
             {
                 using var archive = ZipFile.OpenRead(sourceFilePath);
                 var entry = archive.Entries
-                    .Where(e => e.Length > 0 && (
-                        e.Name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".db3", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".sql.gz", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) ||
-                        e.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)))
+                    .Where(e =>
+                        !string.IsNullOrEmpty(e.Name) &&
+                        !e.FullName.EndsWith('/') &&
+                        !e.FullName.EndsWith('\\') &&
+                        e.Length > 0 &&
+                        !IsMacOsMetadataZipEntry(e.FullName) && (
+                            e.Name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".db3", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".sql.gz", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) ||
+                            e.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)))
                     .OrderByDescending(e => e.Length)
                     .FirstOrDefault();
 
@@ -821,10 +849,15 @@ public sealed class WaseelaAndSqliteImportEngine
             }
             else
             {
+                if (srcInfo.Length > MaxDecompressedBytes)
+                {
+                    throw new InvalidOperationException("Database file exceeds the maximum allowed size limit (2 GB).");
+                }
+
                 await using (var inFs = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, true))
                 await using (var outFs = new FileStream(workingTempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
                 {
-                    await inFs.CopyToAsync(outFs, cancellationToken);
+                    await CopyBoundedAsync(inFs, outFs, MaxDecompressedBytes, cancellationToken);
                 }
                 copiedDirectFromDisk = true;
             }
@@ -885,8 +918,10 @@ public sealed class WaseelaAndSqliteImportEngine
                 }
                 else
                 {
-                    var allBytes = await File.ReadAllBytesAsync(workingTempPath, cancellationToken);
-                    await File.WriteAllBytesAsync(stagedSqlitePath, allBytes[magicPos..], cancellationToken);
+                    await using var inFs = new FileStream(workingTempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+                    inFs.Seek(magicPos, SeekOrigin.Begin);
+                    await using var outFs = new FileStream(stagedSqlitePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                    await CopyBoundedAsync(inFs, outFs, MaxDecompressedBytes, cancellationToken);
                 }
 
                 // Copy sibling -wal and -shm when staging a raw SQLite file from disk so uncheckpointed rows merge cleanly
@@ -930,11 +965,25 @@ public sealed class WaseelaAndSqliteImportEngine
             }
             else if (lowerName.EndsWith(".csv", StringComparison.Ordinal))
             {
+                var workingInfo = new FileInfo(workingTempPath);
+                if (workingInfo.Length > MaxTextImportBytes)
+                {
+                    throw new InvalidOperationException(
+                        $"Text/SQL/CSV import file exceeds the maximum allowed size limit ({MaxTextImportBytes / (1024 * 1024)} MB). Please import a SQLite database file directly for larger datasets.");
+                }
+
                 var csvContent = await File.ReadAllTextAsync(workingTempPath, Encoding.UTF8, cancellationToken);
                 await BuildSqliteFromWaseelaCsvAsync(csvContent, Path.GetFileNameWithoutExtension(effectiveEntryName), stagedSqlitePath, cancellationToken);
             }
             else
             {
+                var workingInfo = new FileInfo(workingTempPath);
+                if (workingInfo.Length > MaxTextImportBytes)
+                {
+                    throw new InvalidOperationException(
+                        $"Text/SQL/CSV import file exceeds the maximum allowed size limit ({MaxTextImportBytes / (1024 * 1024)} MB). Please import a SQLite database file directly for larger datasets.");
+                }
+
                 var sqlContent = await File.ReadAllTextAsync(workingTempPath, Encoding.UTF8, cancellationToken);
                 if (Regex.IsMatch(sqlContent, @"\b(CREATE\s+TABLE|INSERT\s+(?:INTO\b|\[))", RegexOptions.IgnoreCase))
                 {
@@ -2927,10 +2976,19 @@ public sealed class WaseelaAndSqliteImportEngine
             ?? $"Data Source={Path.Combine(_appRoot, "database", "database.sqlite")};";
         await using var conn = new SqliteConnection(connStr);
         await conn.OpenAsync(cancellationToken);
-        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(cancellationToken);
-        var result = await RunPostImportReconciliationCoreAsync(conn, tx, cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-        return result;
+        await SqliteConnectionInterceptor.ApplyPragmasAsync(conn, cancellationToken);
+        await using var tx = conn.BeginTransaction(deferred: false);
+        try
+        {
+            var result = await RunPostImportReconciliationCoreAsync(conn, tx, cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<Dictionary<string, int>> RunPostImportReconciliationCoreAsync(
@@ -3138,17 +3196,24 @@ public sealed class WaseelaAndSqliteImportEngine
         var importMode = string.Equals(options.Mode, "replace", StringComparison.OrdinalIgnoreCase) ? "replace" : "merge";
         var conflictPolicy = string.Equals(options.ConflictPolicy, "skip", StringComparison.OrdinalIgnoreCase) ? "skip" : "upsert";
 
-        await using var srcConn = await OpenStagedSourceConnectionAsync(stagedPath, cancellationToken);
-        await using var dstConn = new SqliteConnection($"Data Source={targetSqlitePath};Pooling=False;");
-        await dstConn.OpenAsync(cancellationToken);
-
-        await using (var pragmaCmd = dstConn.CreateCommand())
+        var importLock = GetImportLock(targetSqlitePath);
+        await importLock.WaitAsync(cancellationToken);
+        try
         {
-            pragmaCmd.CommandText = "PRAGMA busy_timeout=30000; PRAGMA foreign_keys = OFF;";
-            await pragmaCmd.ExecuteNonQueryAsync(cancellationToken);
-        }
+            await using var srcConn = await OpenStagedSourceConnectionAsync(stagedPath, cancellationToken);
+            await using var dstConn = new SqliteConnection($"Data Source={targetSqlitePath};Pooling=False;");
+            await dstConn.OpenAsync(cancellationToken);
 
-        var targetCatalog = await BuildTargetSchemaCatalogAsync(dstConn, cancellationToken);
+            await SqliteConnectionInterceptor.ApplyPragmasAsync(dstConn, cancellationToken);
+            await using (var pragmaCmd = dstConn.CreateCommand())
+            {
+                pragmaCmd.CommandText = "PRAGMA busy_timeout=30000; PRAGMA foreign_keys = OFF;";
+                await pragmaCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            try
+            {
+                var targetCatalog = await BuildTargetSchemaCatalogAsync(dstConn, cancellationToken);
 
         // Build user remapping lookup & valid target user set
         var userPreview = await InspectUserRemappingAsync(srcConn, dstConn, options.CurrentUserId, cancellationToken);
@@ -3294,7 +3359,7 @@ public sealed class WaseelaAndSqliteImportEngine
             ["products_quantity_reconciled"] = 0
         };
 
-        await using var tx = (SqliteTransaction)await dstConn.BeginTransactionAsync(cancellationToken);
+        await using var tx = dstConn.BeginTransaction(deferred: false);
         try
         {
             var preExistingFkViolations = await ReadForeignKeyViolationsAsync(dstConn, tx, cancellationToken);
@@ -3357,46 +3422,52 @@ public sealed class WaseelaAndSqliteImportEngine
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            await tx.RollbackAsync(CancellationToken.None);
             throw;
+        }
+
+                return new Dictionary<string, object?>
+                {
+                    ["ok"] = true,
+                    ["mode"] = importMode,
+                    ["conflict_policy"] = conflictPolicy,
+                    ["tables_imported"] = tableReports.Count,
+                    ["total_rows_inserted"] = totalInserted,
+                    ["total_inserted"] = totalInserted,
+                    ["total_updated"] = totalUpdated,
+                    ["total_skipped"] = totalSkipped,
+                    ["per_table"] = tableReports
+                        .GroupBy(r => r["target_table"]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => new Dictionary<string, int>
+                            {
+                                ["source_rows"] = g.Sum(r => Convert.ToInt32(r["source_rows"] ?? 0, CultureInfo.InvariantCulture)),
+                                ["inserted"] = g.Sum(r => Convert.ToInt32(r["inserted"] ?? 0, CultureInfo.InvariantCulture)),
+                                ["updated"] = g.Sum(r => Convert.ToInt32(r["updated"] ?? 0, CultureInfo.InvariantCulture)),
+                                ["skipped"] = g.Sum(r => Convert.ToInt32(r["skipped"] ?? 0, CultureInfo.InvariantCulture))
+                            },
+                            StringComparer.OrdinalIgnoreCase),
+                    ["tables"] = tableReports,
+                    ["tables_by_source"] = tablesBySource,
+                    ["reconciliation"] = reconciliation
+                };
+            }
+            finally
+            {
+                try
+                {
+                    await using var fkCmd = dstConn.CreateCommand();
+                    fkCmd.CommandText = "PRAGMA foreign_keys = ON;";
+                    await fkCmd.ExecuteNonQueryAsync(CancellationToken.None);
+                }
+                catch { }
+            }
         }
         finally
         {
-            try
-            {
-                await using var fkCmd = dstConn.CreateCommand();
-                fkCmd.CommandText = "PRAGMA foreign_keys = ON;";
-                await fkCmd.ExecuteNonQueryAsync(cancellationToken);
-            }
-            catch { }
+            importLock.Release();
         }
-
-        return new Dictionary<string, object?>
-        {
-            ["ok"] = true,
-            ["mode"] = importMode,
-            ["conflict_policy"] = conflictPolicy,
-            ["tables_imported"] = tableReports.Count,
-            ["total_rows_inserted"] = totalInserted,
-            ["total_inserted"] = totalInserted,
-            ["total_updated"] = totalUpdated,
-            ["total_skipped"] = totalSkipped,
-            ["per_table"] = tableReports
-                .GroupBy(r => r["target_table"]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(
-                    g => g.Key,
-                    g => new Dictionary<string, int>
-                    {
-                        ["source_rows"] = g.Sum(r => Convert.ToInt32(r["source_rows"] ?? 0, CultureInfo.InvariantCulture)),
-                        ["inserted"] = g.Sum(r => Convert.ToInt32(r["inserted"] ?? 0, CultureInfo.InvariantCulture)),
-                        ["updated"] = g.Sum(r => Convert.ToInt32(r["updated"] ?? 0, CultureInfo.InvariantCulture)),
-                        ["skipped"] = g.Sum(r => Convert.ToInt32(r["skipped"] ?? 0, CultureInfo.InvariantCulture))
-                    },
-                    StringComparer.OrdinalIgnoreCase),
-            ["tables"] = tableReports,
-            ["tables_by_source"] = tablesBySource,
-            ["reconciliation"] = reconciliation
-        };
     }
 
     private sealed class FkViolationComparer : IEqualityComparer<(string Table, long RowId, string Parent, long FkId)>
@@ -5279,6 +5350,7 @@ public sealed class WaseelaAndSqliteImportEngine
         "payroll_items" => ["payroll_run_id", "employee_id"],
         "purchase_order_items" => ["purchase_order_id", "product_id"],
         "batches" => ["product_id", "batch_number", "expiry_date"],
+        "purchase_invoices" => ["supplier_id", "invoice_number"],
         _ => null
     };
 

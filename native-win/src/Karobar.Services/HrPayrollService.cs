@@ -26,6 +26,14 @@ public class HrPayrollService
         _db = db;
     }
 
+    public static void RedactEmployeePin(Dictionary<string, object?>? employee)
+    {
+        if (employee == null) return;
+        var hasPin = !string.IsNullOrWhiteSpace(employee.GetValueOrDefault("pin_code")?.ToString());
+        employee.Remove("pin_code");
+        employee["has_pin"] = hasPin;
+    }
+
     public async Task EnsureTablesAsync()
     {
         if (await _db.HasTableAsync("employees") &&
@@ -691,7 +699,9 @@ public class HrPayrollService
         var advRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM employee_advances WHERE id = @id", new { id = advanceId });
         if (advRow != null)
         {
-            advRow["employee"] = await _db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = employeeId });
+            var emp = await _db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = employeeId });
+            RedactEmployeePin(emp);
+            advRow["employee"] = emp;
             advRow["account"] = account;
         }
         return advRow!;
@@ -950,6 +960,7 @@ public class HrPayrollService
         var updated = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payroll_items WHERE id = @id", new { id = itemId });
         if (updated != null)
         {
+            RedactEmployeePin(employee);
             updated["employee"] = employee;
             updated["payroll_run"] = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payroll_runs WHERE id = @id", new { id = runId });
         }
@@ -1155,7 +1166,9 @@ public class HrPayrollService
         var refreshed = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payroll_items WHERE id = @id", new { id = itemId });
         if (refreshed != null)
         {
-            refreshed["employee"] = await _db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = empId });
+            var emp = await _db.QuerySingleOrDefaultAsync("SELECT * FROM employees WHERE id = @id", new { id = empId });
+            RedactEmployeePin(emp);
+            refreshed["employee"] = emp;
             refreshed["payroll_run"] = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payroll_runs WHERE id = @id", new { id = runId });
             refreshed["account"] = accountId.HasValue && await _db.HasTableAsync("accounts")
                 ? await _db.QuerySingleOrDefaultAsync("SELECT * FROM accounts WHERE id = @id", new { id = accountId.Value })
@@ -1279,7 +1292,11 @@ public class HrPayrollService
         if (empIds.Count > 0)
         {
             var eRows = await _db.QueryListAsync("SELECT * FROM employees WHERE id IN @ids", new { ids = empIds });
-            foreach (var e in eRows) empMap[Convert.ToInt64(e["id"])] = e;
+            foreach (var e in eRows)
+            {
+                RedactEmployeePin(e);
+                empMap[Convert.ToInt64(e["id"])] = e;
+            }
         }
 
         var accMap = new Dictionary<long, Dictionary<string, object?>>();
