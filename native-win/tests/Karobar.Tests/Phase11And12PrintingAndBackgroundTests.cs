@@ -95,23 +95,30 @@ public class Phase11And12PrintingAndBackgroundTests
             ]
         };
 
-        // 1. Base thermal + 6 named thermal templates (7 views)
+        // 1. Base thermal + 6 named thermal templates (7 views) — strictly Black & White with 4-col table & developer credit
         var baseThermal = renderer.RenderThermalSaleInvoice("base", invoice, setting);
         baseThermal.Should().Contain("SI-00042").And.Contain("Tab. Panadol 500mg").And.Contain("fbr-fiscal-block");
+        baseThermal.Should().Contain("Software by Engr. M Asim Shahzad").And.Contain("Phone: 923047674787");
 
         foreach (var tpl in Expected6InvoiceTemplates)
         {
             var html = renderer.RenderThermalSaleInvoice(tpl, invoice, setting);
             html.Should().Contain("SI-00042", $"Thermal template '{tpl}' must render invoice number");
             html.Should().Contain("Tab. Panadol 500mg", $"Thermal template '{tpl}' must render item");
+            html.Should().Contain(">Name</th>").And.Contain(">Qty</th>").And.Contain(">Disc</th>").And.Contain(">Subt.</th>");
+            html.Should().Contain("B:B101").And.Contain("Exp:12/2027");
+            html.Should().Contain("Software by Engr. M Asim Shahzad").And.Contain("Phone: 923047674787");
+            // Thermal print must remain strictly Black & White (no colorful accents)
+            html.Should().NotContain("#1e3a8a").And.NotContain("#064e3b").And.NotContain("#0f766e").And.NotContain("#b91c1c");
         }
 
-        // 2. 6 A4 templates (6 views)
+        // 2. 6 A4 templates (6 views) — unified designs with discounts & developer credit
         foreach (var tpl in Expected6InvoiceTemplates)
         {
             var html = renderer.RenderA4SaleInvoice(tpl, invoice, setting);
             html.Should().Contain("SI-00042", $"A4 template '{tpl}' must render invoice number");
             html.Should().Contain("Tab. Panadol 500mg", $"A4 template '{tpl}' must render item");
+            html.Should().Contain("Software by Engr. M Asim Shahzad").And.Contain("Phone: 923047674787");
         }
 
         // 3. Patient Urdu/English Dosage Sticker template across 4 styles (1 view, 4 presets)
@@ -144,11 +151,89 @@ public class Phase11And12PrintingAndBackgroundTests
         renderer.RenderPartyLedger("supplier", "thermal", "Getz Pharma", ledgerRows, ledgerSummary, setting)
             .Should().Contain("Getz Pharma").And.Contain("SI-00042");
 
-        // 6. All 4 preview endpoints
-        renderer.RenderThermalPreview("standard", setting).Should().Contain("INV-001");
-        renderer.RenderA4Preview("standard", setting).Should().Contain("INV-001");
+        // 6. All 4 preview endpoints (including colorful share previews for A4 & Thermal across all 6 templates)
+        renderer.RenderThermalPreview("standard", setting).Should().Contain("INV-001").And.Contain("Item Discounts");
+        renderer.RenderA4Preview("standard", setting).Should().Contain("INV-001").And.Contain("Total Discount Savings");
         renderer.RenderStickerPreview("urdu_focus", setting).Should().Contain("SI-00042");
-        renderer.RenderSharePreview("a4", "standard", setting).Should().Contain("INV-00104");
+        renderer.RenderSharePreview("a4", "standard", setting).Should().Contain("INV-00104").And.Contain("Software by Engr. M Asim Shahzad");
+        renderer.RenderSharePreview("thermal", "bold", setting).Should().Contain("INV-00104").And.Contain("#064e3b").And.Contain("Phone: 923047674787");
+    }
+
+    [Fact]
+    public void PdfDocumentGenerator_Renders_All_6_Designs_In_Both_A4_And_80mm_Thermal_With_Rich_Metadata_And_Discounts()
+    {
+        var generator = new PdfDocumentGenerator();
+        foreach (var paperSize in new[] { "a4", "thermal" })
+        {
+            foreach (var design in Expected6InvoiceTemplates)
+            {
+                var pdfBytes = generator.GenerateSharedDocumentPdf(new SharedDocumentPdfRequest
+                {
+                    DocumentType = "sale_invoice",
+                    DocumentTitle = "SALE INVOICE",
+                    DocumentNumber = "SI-2026-0148",
+                    DocumentDate = "23 Nov 2026",
+                    DocumentTime = "04:35 PM",
+                    PaperSize = paperSize,
+                    PdfDesign = design,
+                    PartyHeading = "Billed To",
+                    PartyName = "Allied Medical & Clinic",
+                    PartyPhone = "0301-7654321",
+                    PartyAddress = "Model Town, Lahore",
+                    DoctorName = "Dr. Tariq Mahmood",
+                    PatientName = "Muhammad Usman",
+                    StatusBadge = "PARTIAL PAID",
+                    StatusTone = "warning",
+                    TotalSavingsText = "Rs. 365.00",
+                    NetTotalHighlight = "Rs. 4,565.00",
+                    Remarks = "Keep Insulin refrigerated.",
+                    MetaDetails =
+                    [
+                        new PdfKeyValuePair("Mode", "Retail (Credit)"),
+                        new PdfKeyValuePair("Payment", "Cash"),
+                        new PdfKeyValuePair("Cashier", "Bilal Ahmed"),
+                        new PdfKeyValuePair("Items", "2 (5 u)")
+                    ],
+                    Columns = paperSize == "thermal"
+                        ? [
+                            new PdfTableColumnDef { Header = "Name", RelativeWidth = 4.6f },
+                            new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1.3f, AlignCenter = true },
+                            new PdfTableColumnDef { Header = "Disc", RelativeWidth = 1.7f, AlignRight = true, IsDiscountColumn = true },
+                            new PdfTableColumnDef { Header = "Subt.", RelativeWidth = 2.4f, AlignRight = true, IsTotalColumn = true }
+                        ]
+                        : [
+                            new PdfTableColumnDef { Header = "#", RelativeWidth = 0.55f, AlignCenter = true },
+                            new PdfTableColumnDef { Header = "Item Description", RelativeWidth = 4.2f },
+                            new PdfTableColumnDef { Header = "Qty", RelativeWidth = 0.95f, AlignRight = true },
+                            new PdfTableColumnDef { Header = "Rate (Rs.)", RelativeWidth = 1.3f, AlignRight = true },
+                            new PdfTableColumnDef { Header = "Discount", RelativeWidth = 1.45f, AlignRight = true, IsDiscountColumn = true },
+                            new PdfTableColumnDef { Header = "Net Total", RelativeWidth = 1.55f, AlignRight = true, IsTotalColumn = true }
+                        ],
+                    Rows = paperSize == "thermal"
+                        ? [
+                            ["Augmentin 625mg\n@480.00 • Pk:6 • B:AUG26B • Exp:08/2027", "3", "10%\n-144.00", "1,296.00"],
+                            ["Panadol Extra 500mg\n@65.00 • B:PND91A • Exp:11/2027", "2\n+1B", "—", "130.00"]
+                        ]
+                        : [
+                            ["1", "Augmentin 625mg\nPack: 1×6 • Batch: AUG26B • Exp: 08/2027", "3", "480.00", "10%\n-144.00", "1,296.00"],
+                            ["2", "Panadol Extra 500mg\nBatch: PND91A • Exp: 11/2027", "2\n+1B", "65.00", "—", "130.00"]
+                        ],
+                    Totals =
+                    [
+                        new PdfKeyValuePair("Gross Amount", "Rs. 1,570.00"),
+                        new PdfKeyValuePair("Item Discounts", "- Rs. 144.00", tone: "discount"),
+                        new PdfKeyValuePair("Invoice Discount (5%)", "- Rs. 71.30", tone: "discount"),
+                        new PdfKeyValuePair("NET PAYABLE TOTAL", "Rs. 1,354.70", isGrandTotal: true),
+                        new PdfKeyValuePair("Amount Received", "Rs. 1,000.00", tone: "success"),
+                        new PdfKeyValuePair("Balance Due (This Invoice)", "Rs. 354.70", tone: "warning"),
+                        new PdfKeyValuePair("Total Account Balance Due", "Rs. 2,354.70", tone: "danger")
+                    ]
+                });
+
+                pdfBytes.Length.Should().BeGreaterThan(500, $"{paperSize}/{design} should produce a rich PDF");
+                Encoding.ASCII.GetString(pdfBytes, 0, 5).Should().Be("%PDF-");
+            }
+        }
     }
 
     [Fact]

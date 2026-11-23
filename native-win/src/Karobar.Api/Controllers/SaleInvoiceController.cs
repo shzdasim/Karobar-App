@@ -2879,6 +2879,7 @@ public class SaleInvoiceController : ApiControllerBase
             Date = invDate,
             SaleType = invoice.GetValueOrDefault("sale_type")?.ToString() ?? "retail",
             InvoiceType = invoice.GetValueOrDefault("invoice_type")?.ToString() ?? "debit",
+            PaymentMethod = invoice.GetValueOrDefault("payment_method")?.ToString() ?? "cash",
             UserName = user?.GetValueOrDefault("name")?.ToString() ?? invoice.GetValueOrDefault("user_name")?.ToString(),
             CustomerId = ToLong(invoice.GetValueOrDefault("customer_id")) > 0 ? (int)ToLong(invoice.GetValueOrDefault("customer_id")) : null,
             CustomerName = cust?.GetValueOrDefault("name")?.ToString() ?? "Walk-In Customer",
@@ -2888,6 +2889,7 @@ public class SaleInvoiceController : ApiControllerBase
             PatientName = invoice.GetValueOrDefault("patient_name")?.ToString(),
             Remarks = invoice.GetValueOrDefault("remarks")?.ToString(),
             GrossAmount = (decimal)ToDouble(invoice.GetValueOrDefault("gross_amount")),
+            ItemDiscountTotal = (decimal)ToDouble(invoice.GetValueOrDefault("item_discount")),
             DiscountAmount = (decimal)ToDouble(invoice.GetValueOrDefault("discount_amount")),
             DiscountPercentage = (decimal)ToDouble(invoice.GetValueOrDefault("discount_percentage")),
             TaxAmount = (decimal)ToDouble(invoice.GetValueOrDefault("tax_amount")),
@@ -2903,21 +2905,30 @@ public class SaleInvoiceController : ApiControllerBase
         foreach (var it in items)
         {
             var prod = it.GetValueOrDefault("product") as Dictionary<string, object?>;
+            var qty = (decimal)ToDouble(it.GetValueOrDefault("quantity"));
+            var price = (decimal)ToDouble(it.GetValueOrDefault("price"));
+            var discPct = (decimal)ToDouble(it.GetValueOrDefault("item_discount_percentage"));
+            var subTotal = (decimal)ToDouble(it.GetValueOrDefault("sub_total"));
+            var lineGross = Math.Round(qty * price, 2);
+            var discAmt = discPct > 0
+                ? Math.Round(lineGross * discPct / 100m, 2)
+                : Math.Max(0m, Math.Round(lineGross - subTotal, 2));
             vm.Items.Add(new PrintInvoiceItemViewModel
             {
                 ProductName = prod?.GetValueOrDefault("name")?.ToString() ?? $"Product #{it.GetValueOrDefault("product_id")}",
                 Barcode = prod?.GetValueOrDefault("barcode")?.ToString(),
                 ProductCode = prod?.GetValueOrDefault("product_code")?.ToString(),
                 PackSize = Math.Max(1, (int)ToLong(it.GetValueOrDefault("pack_size"))),
-                Quantity = (decimal)ToDouble(it.GetValueOrDefault("quantity")),
+                Quantity = qty,
                 PackQuantity = (decimal)ToDouble(it.GetValueOrDefault("pack_quantity")),
                 UnitQuantity = (decimal)ToDouble(it.GetValueOrDefault("unit_quantity")),
                 Bonus = (int)ToLong(it.GetValueOrDefault("bonus")),
                 PackBonus = (decimal)ToDouble(it.GetValueOrDefault("pack_bonus")),
-                Price = (decimal)ToDouble(it.GetValueOrDefault("price")),
+                Price = price,
                 PackPrice = (decimal)ToDouble(it.GetValueOrDefault("pack_price")),
-                ItemDiscountPercentage = (decimal)ToDouble(it.GetValueOrDefault("item_discount_percentage")),
-                SubTotal = (decimal)ToDouble(it.GetValueOrDefault("sub_total")),
+                ItemDiscountPercentage = discPct,
+                ItemDiscountAmount = discAmt,
+                SubTotal = subTotal,
                 BatchNumber = it.GetValueOrDefault("batch_number")?.ToString(),
                 Expiry = it.GetValueOrDefault("expiry")?.ToString(),
                 DosageInstruction = it.GetValueOrDefault("dosage_instruction")?.ToString()
@@ -2934,6 +2945,17 @@ public class SaleInvoiceController : ApiControllerBase
             : null;
         var settingVm = PrintViewModelMapper.MapPrintSetting(settingRow);
         var invVm = MapToPrintInvoiceVm(invoice);
+        if (invVm.CustomerId.HasValue && await Db.HasTableAsync("customer_ledgers"))
+        {
+            var balRow = await Db.QuerySingleOrDefaultAsync(
+                "SELECT COALESCE(SUM(invoice_total), 0) - COALESCE(SUM(total_received), 0) - COALESCE(SUM(credited_amount), 0) AS net_bal FROM customer_ledgers WHERE customer_id = @cId",
+                new { cId = invVm.CustomerId.Value });
+            var netBal = (decimal)ToDouble(balRow?.GetValueOrDefault("net_bal"));
+            if (netBal > 0.009m)
+            {
+                invVm.CustomerTotalDue = Math.Round(netBal, 2);
+            }
+        }
         var queryOverrides = PrintViewModelMapper.QueryToDict(Request.Query);
 
         var defaultPrinterType = settingRow?.GetValueOrDefault("printer_type")?.ToString()?.Trim().ToLowerInvariant() ?? "thermal";

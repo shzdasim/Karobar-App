@@ -114,28 +114,28 @@ const SHARED_PDF_DESIGNS = [
     id: "compact",
     name: "Compact High-Density",
     badge: "Multi-Item",
-    accent: "#334155",
-    headerBg: "#334155",
+    accent: "#0f766e",
+    headerBg: "#0f766e",
     headerText: "#ffffff",
-    desc: "Condensed margins and typography engineered to fit maximum line items per page.",
+    desc: "Condensed slate-teal header and tight spacing engineered to fit maximum items per page.",
   },
   {
     id: "bold",
-    name: "Bold Modern",
+    name: "Bold Emerald Modern",
     badge: "High Contrast",
-    accent: "#047857",
+    accent: "#10b981",
     headerBg: "#064e3b",
     headerText: "#ffffff",
-    desc: "Full-bleed emerald header banner with high-contrast totals callout.",
+    desc: "Full-bleed emerald header banner with Net Total KPI box and vivid discount savings callout.",
   },
   {
     id: "barcode",
     name: "Barcode & Reference",
     badge: "SKU + Ref",
-    accent: "#27272a",
-    headerBg: "#27272a",
+    accent: "#d97706",
+    headerBg: "#18181b",
     headerText: "#ffffff",
-    desc: "Includes SKU/barcode column and monospaced document verification reference strip.",
+    desc: "Graphite & amber verification theme with Code128 invoice barcode, SKU/barcodes, and QR strip.",
   },
 ];
 
@@ -457,7 +457,7 @@ export default function DocumentSharingSetting({
       label: "PDF Design & Message Format",
       desc: "Select shared PDF size, layout, logo & closing note",
       icon: SwatchIcon,
-      badge: `${activePaperSize === "thermal" ? "Thermal (58mm × 80mm)" : "A4"} • ${
+      badge: `${activePaperSize === "thermal" ? "Thermal (80mm Roll)" : "A4"} • ${
         SHARED_PDF_DESIGNS.find((d) => d.id === selectedTemplate)?.name || "Standard"
       }`,
     },
@@ -705,7 +705,7 @@ export default function DocumentSharingSetting({
                   Active:{" "}
                   <strong className="text-gray-900 dark:text-slate-100">
                     {activePaperSize === "thermal"
-                      ? "Thermal Size (58mm × 80mm)"
+                      ? "Thermal Receipt (80mm Roll)"
                       : "A4 Size (Full Page)"}
                   </strong>
                 </span>
@@ -726,9 +726,9 @@ export default function DocumentSharingSetting({
                   },
                   {
                     id: "thermal",
-                    title: "Thermal Size (58mm × 80mm)",
+                    title: "Thermal Receipt (80mm Roll)",
                     subtitle:
-                      "Compact 58mm × 80mm thermal receipt layout ideal for fast mobile viewing on WhatsApp & retail counters.",
+                      "Crisp 80mm 4-column thermal receipt (Name, Qty, Disc, Subt.) with batch/expiry details — ideal for WhatsApp mobile viewing.",
                     badge: `Template: ${
                       SHARED_PDF_DESIGNS.find(
                         (d) => d.id === (form.thermal_template || "standard")
@@ -1399,7 +1399,7 @@ export default function DocumentSharingSetting({
                 <h3 className="text-sm sm:text-base font-bold truncate">
                   Template Preview —{" "}
                   {SHARED_PDF_DESIGNS.find((d) => d.id === previewTemplate)?.name} (
-                  {activePaperSize === "thermal" ? "Thermal Size 58mm × 80mm" : "A4 Size"})
+                  {activePaperSize === "thermal" ? "Thermal Receipt 80mm" : "A4 Size"})
                 </h3>
                 <p className="text-xs text-gray-500 dark:text-slate-400">
                   Exact shared PDF layout preview ({showLogo ? "Store Logo Enabled" : "Store Logo Hidden"})

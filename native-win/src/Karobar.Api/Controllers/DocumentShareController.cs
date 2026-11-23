@@ -192,7 +192,7 @@ public class DocumentShareController : ApiControllerBase
             ["document_title"] = ctx.Title,
             ["filename"] = ctx.Filename,
             ["paper_size"] = paperSize,
-            ["paper_size_label"] = paperSize == "thermal" ? "Thermal (58mm × 80mm)" : "A4 Size",
+            ["paper_size_label"] = paperSize == "thermal" ? "Thermal (80mm Roll)" : "A4 Size",
             ["pdf_template"] = pdfDesign,
             ["pdf_template_label"] = templateLabel,
             ["show_logo"] = showLogo,
@@ -775,12 +775,16 @@ public class DocumentShareController : ApiControllerBase
                 return new ResolvedDocContext
                 {
                     Title = $"{label} {docNo}",
+                    DocumentNumber = docNo,
+                    DocumentDate = dateStr,
                     Filename = $"{prefix}{SanitizeFile(docNo)}.pdf",
                     PartyType = cust != null ? "customer" : null,
                     PartyId = cId,
+                    PartyHeading = isChallan ? "Deliver To" : "Billed To",
                     RecipientName = custName,
                     RecipientPhone = GetVal(cust, "phone", ""),
                     RecipientEmail = GetVal(cust, "email", ""),
+                    RecipientAddress = GetVal(cust, "address", ""),
                     WhatsappTextEn = waEn,
                     WhatsappTextUr = waUr,
                     EmailSubjectEn = $"{label} {docNo} — {storeName}",
@@ -1317,39 +1321,310 @@ public class DocumentShareController : ApiControllerBase
             var inv = await Db.QuerySingleOrDefaultAsync("SELECT * FROM sale_invoices WHERE id = @id", new { id = docId });
             if (inv != null)
             {
+                var isThermalSize = string.Equals(paperSize, "thermal", StringComparison.OrdinalIgnoreCase);
+                var isDetailedOrBarcode = pdfDesign is "detailed" or "barcode";
+                var isBarcodeDesign = pdfDesign == "barcode";
+
                 req.DocumentNumber = GetVal(inv, "posted_number", $"SI-{docId}");
-                req.DocumentDate = GetVal(inv, "date", req.DocumentDate);
+                var rawDateStr = GetVal(inv, "date", req.DocumentDate);
+                var rawCreatedStr = GetVal(inv, "created_at", "");
+                if (DateTime.TryParse(rawDateStr, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedInvDate))
+                {
+                    req.DocumentDate = parsedInvDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+                    if (parsedInvDate.TimeOfDay != TimeSpan.Zero)
+                    {
+                        req.DocumentTime = parsedInvDate.ToString("hh:mm tt", CultureInfo.InvariantCulture);
+                    }
+                    else if (DateTime.TryParse(rawCreatedStr, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedCreated))
+                    {
+                        req.DocumentTime = parsedCreated.ToString("hh:mm tt", CultureInfo.InvariantCulture);
+                    }
+                }
+                else
+                {
+                    req.DocumentDate = rawDateStr;
+                }
+
                 req.FbrInvoiceNumber = GetVal(inv, "fbr_invoice_number", "");
                 req.FbrQrData = GetVal(inv, "fbr_qr_data", "");
+                req.FbrPosFee = (decimal)ToDouble(inv, "fbr_pos_fee");
                 req.Remarks = GetVal(inv, "remarks", "");
+                req.DoctorName = GetVal(inv, "doctor_name", "");
+                req.PatientName = GetVal(inv, "patient_name", "");
+
+                var cashierName = "";
+                var uId = ToNullableLong(inv, "user_id");
+                if (uId.HasValue && await Db.HasTableAsync("users"))
+                {
+                    var uRow = await Db.QuerySingleOrDefaultAsync("SELECT name FROM users WHERE id = @uId", new { uId = uId.Value });
+                    cashierName = GetVal(uRow, "name", "");
+                }
+
+                var saleTypeLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(GetVal(inv, "sale_type", "retail").ToLowerInvariant());
+                var invTypeRaw = GetVal(inv, "invoice_type", "debit").Trim().ToLowerInvariant();
+                var invTypeLabel = invTypeRaw == "credit" ? "Credit" : (invTypeRaw == "cash" ? "Cash" : "Debit");
+                var payMethodRaw = GetVal(inv, "payment_method", "cash").Replace("_", " ");
+                var payMethodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(payMethodRaw.ToLowerInvariant());
+
                 var items = await Db.QueryListAsync(@"
-                    SELECT i.*, p.name AS product_name
+                    SELECT i.*, p.name AS product_name, p.barcode AS product_barcode, p.product_code AS product_code
                     FROM sale_invoice_items i
                     LEFT JOIN products p ON p.id = i.product_id
                     WHERE i.sale_invoice_id = @id", new { id = docId });
-                req.Columns =
-                [
-                    new PdfTableColumnDef { Header = "Item", RelativeWidth = 4f },
-                    new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1f, AlignRight = true },
-                    new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.5f, AlignRight = true },
-                    new PdfTableColumnDef { Header = "Total", RelativeWidth = 1.5f, AlignRight = true }
-                ];
+
+                double rawGrossSum = 0;
+                double itemDiscSum = 0;
+                double totalUnitsSum = 0;
+                var computedRows = new List<(string Name, string Sku, string Barcode, int Pack, string Batch, string Expiry, double Qty, int Bonus, double Rate, double DiscPct, double DiscAmt, double LineNet)>();
+
                 foreach (var it in items)
                 {
-                    req.Rows.Add([
-                        GetVal(it, "product_name", "Item"),
-                        ToDouble(it, "quantity").ToString("0.##", CultureInfo.InvariantCulture),
-                        ToDouble(it, "price").ToString("N2", CultureInfo.InvariantCulture),
-                        ToDouble(it, "sub_total").ToString("N2", CultureInfo.InvariantCulture)
-                    ]);
+                    var pName = GetVal(it, "product_name", "Item");
+                    var sku = GetVal(it, "product_code", "");
+                    var barcode = GetVal(it, "product_barcode", "");
+                    var packSize = Math.Max(1, (int)Math.Round(ToDouble(it, "pack_size")));
+                    var batch = GetVal(it, "batch_number", "");
+                    var expiryRaw = GetVal(it, "expiry", "");
+                    var expiryShort = DateTime.TryParse(expiryRaw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var expDt)
+                        ? expDt.ToString("MM/yyyy", CultureInfo.InvariantCulture)
+                        : expiryRaw;
+                    var qty = ToDouble(it, "quantity");
+                    var bonus = (int)Math.Round(ToDouble(it, "bonus"));
+                    var rate = ToDouble(it, "price");
+                    var discPct = ToDouble(it, "item_discount_percentage");
+                    var lineGross = Math.Round(qty * rate, 2);
+                    var subTot = ToDouble(it, "sub_total");
+                    var discAmt = discPct > 0
+                        ? Math.Round(lineGross * discPct / 100.0, 2)
+                        : Math.Max(0, Math.Round(lineGross - subTot, 2));
+                    if (subTot <= 0 && lineGross > 0) subTot = Math.Max(0, Math.Round(lineGross - discAmt, 2));
+
+                    rawGrossSum += lineGross;
+                    itemDiscSum += discAmt;
+                    totalUnitsSum += qty + bonus;
+
+                    computedRows.Add((pName, sku, barcode, packSize, batch, expiryShort, qty, bonus, rate, discPct, discAmt, subTot));
                 }
-                req.Totals =
+
+                req.MetaDetails =
                 [
-                    new PdfKeyValuePair("Gross Amount", $"Rs. {ToDouble(inv, "gross_amount"):N2}"),
-                    new PdfKeyValuePair("Discount", $"- Rs. {ToDouble(inv, "discount_amount"):N2}"),
-                    new PdfKeyValuePair("Tax", $"Rs. {ToDouble(inv, "tax_amount"):N2}"),
-                    new PdfKeyValuePair("Net Total", $"Rs. {ToDouble(inv, "total"):N2}", isGrandTotal: true)
+                    new PdfKeyValuePair("Mode", $"{saleTypeLabel} ({invTypeLabel})"),
+                    new PdfKeyValuePair("Payment", payMethodLabel)
                 ];
+                if (!string.IsNullOrWhiteSpace(cashierName))
+                    req.MetaDetails.Add(new PdfKeyValuePair("Cashier", cashierName));
+                req.MetaDetails.Add(new PdfKeyValuePair("Items", $"{computedRows.Count} ({totalUnitsSum:0.##} u)"));
+
+                if (isThermalSize)
+                {
+                    // Thermal 4-column table: Name | Qty | Disc | Subt. (with Rate/Pack/Batch/Expiry/SKU under Name)
+                    req.Columns =
+                    [
+                        new PdfTableColumnDef { Header = "Name", RelativeWidth = 4.6f },
+                        new PdfTableColumnDef { Header = "Qty", RelativeWidth = 1.3f, AlignCenter = true },
+                        new PdfTableColumnDef { Header = "Disc", RelativeWidth = 1.7f, AlignRight = true, IsDiscountColumn = true },
+                        new PdfTableColumnDef { Header = "Subt.", RelativeWidth = 2.4f, AlignRight = true, IsTotalColumn = true }
+                    ];
+
+                    foreach (var r in computedRows)
+                    {
+                        var subParts = new List<string> { $"@{r.Rate:N2}" };
+                        if (r.Pack > 1) subParts.Add($"Pk:{r.Pack}");
+                        if (!string.IsNullOrWhiteSpace(r.Batch)) subParts.Add($"B:{r.Batch}");
+                        if (!string.IsNullOrWhiteSpace(r.Expiry)) subParts.Add($"Exp:{r.Expiry}");
+
+                        var nameCell = $"{r.Name}\n{string.Join(" • ", subParts)}";
+                        if (isBarcodeDesign)
+                        {
+                            var codeStr = string.Join(" • ", new[] { r.Sku, r.Barcode }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                            if (!string.IsNullOrWhiteSpace(codeStr)) nameCell += $"\n{codeStr}";
+                        }
+
+                        var qtyCell = r.Bonus > 0
+                            ? $"{r.Qty:0.##}\n+{r.Bonus}B"
+                            : r.Qty.ToString("0.##", CultureInfo.InvariantCulture);
+
+                        var discCell = (r.DiscPct > 0 || r.DiscAmt > 0)
+                            ? (r.DiscPct > 0 ? $"{r.DiscPct:0.#}%\n-{r.DiscAmt:N2}" : $"-{r.DiscAmt:N2}")
+                            : "—";
+
+                        req.Rows.Add([nameCell, qtyCell, discCell, r.LineNet.ToString("N2", CultureInfo.InvariantCulture)]);
+                    }
+                }
+                else if (isDetailedOrBarcode)
+                {
+                    // A4 Detailed / Barcode 8-column table
+                    req.Columns =
+                    [
+                        new PdfTableColumnDef { Header = "#", RelativeWidth = 0.55f, AlignCenter = true },
+                        new PdfTableColumnDef { Header = isBarcodeDesign ? "Product & SKU" : "Product Description", RelativeWidth = 3.5f },
+                        new PdfTableColumnDef { Header = "Pack", RelativeWidth = 0.85f, AlignCenter = true },
+                        new PdfTableColumnDef { Header = "Batch / Exp", RelativeWidth = 1.55f },
+                        new PdfTableColumnDef { Header = "Qty", RelativeWidth = 0.9f, AlignRight = true },
+                        new PdfTableColumnDef { Header = "Rate", RelativeWidth = 1.2f, AlignRight = true },
+                        new PdfTableColumnDef { Header = "Discount", RelativeWidth = 1.35f, AlignRight = true, IsDiscountColumn = true },
+                        new PdfTableColumnDef { Header = "Net Total", RelativeWidth = 1.45f, AlignRight = true, IsTotalColumn = true }
+                    ];
+
+                    for (var idx = 0; idx < computedRows.Count; idx++)
+                    {
+                        var r = computedRows[idx];
+                        var codeParts = isBarcodeDesign
+                            ? string.Join(" • ", new[] { r.Sku, r.Barcode }.Where(x => !string.IsNullOrWhiteSpace(x)))
+                            : (!string.IsNullOrWhiteSpace(r.Sku) ? $"Code: {r.Sku}" : "");
+                        var prodCell = !string.IsNullOrWhiteSpace(codeParts) ? $"{r.Name}\n{codeParts}" : r.Name;
+                        var batchCell = !string.IsNullOrWhiteSpace(r.Batch) || !string.IsNullOrWhiteSpace(r.Expiry)
+                            ? $"{(string.IsNullOrWhiteSpace(r.Batch) ? "—" : r.Batch)}\n{(string.IsNullOrWhiteSpace(r.Expiry) ? "" : $"Exp: {r.Expiry}")}".TrimEnd()
+                            : "—";
+                        var qtyCell = r.Bonus > 0 ? $"{r.Qty:0.##}\n+{r.Bonus} Bns" : r.Qty.ToString("0.##", CultureInfo.InvariantCulture);
+                        var discCell = (r.DiscPct > 0 || r.DiscAmt > 0)
+                            ? (r.DiscPct > 0 ? $"{r.DiscPct:0.#}%\n-Rs. {r.DiscAmt:N2}" : $"-Rs. {r.DiscAmt:N2}")
+                            : "—";
+
+                        req.Rows.Add([
+                            (idx + 1).ToString(CultureInfo.InvariantCulture),
+                            prodCell,
+                            r.Pack > 1 ? $"1×{r.Pack}" : "1",
+                            batchCell,
+                            qtyCell,
+                            r.Rate.ToString("N2", CultureInfo.InvariantCulture),
+                            discCell,
+                            r.LineNet.ToString("N2", CultureInfo.InvariantCulture)
+                        ]);
+                    }
+                }
+                else
+                {
+                    // A4 Standard / Minimal / Compact / Bold 6-column table
+                    req.Columns =
+                    [
+                        new PdfTableColumnDef { Header = "#", RelativeWidth = 0.55f, AlignCenter = true },
+                        new PdfTableColumnDef { Header = "Item Description", RelativeWidth = 4.2f },
+                        new PdfTableColumnDef { Header = "Qty", RelativeWidth = 0.95f, AlignRight = true },
+                        new PdfTableColumnDef { Header = "Rate (Rs.)", RelativeWidth = 1.3f, AlignRight = true },
+                        new PdfTableColumnDef { Header = "Discount", RelativeWidth = 1.45f, AlignRight = true, IsDiscountColumn = true },
+                        new PdfTableColumnDef { Header = "Net Total", RelativeWidth = 1.55f, AlignRight = true, IsTotalColumn = true }
+                    ];
+
+                    for (var idx = 0; idx < computedRows.Count; idx++)
+                    {
+                        var r = computedRows[idx];
+                        var subParts = new List<string>();
+                        if (r.Pack > 1) subParts.Add($"Pack: 1×{r.Pack}");
+                        if (!string.IsNullOrWhiteSpace(r.Batch)) subParts.Add($"Batch: {r.Batch}");
+                        if (!string.IsNullOrWhiteSpace(r.Expiry)) subParts.Add($"Exp: {r.Expiry}");
+                        var nameCell = subParts.Count > 0 ? $"{r.Name}\n{string.Join(" • ", subParts)}" : r.Name;
+                        var qtyCell = r.Bonus > 0 ? $"{r.Qty:0.##}\n+{r.Bonus}B" : r.Qty.ToString("0.##", CultureInfo.InvariantCulture);
+                        var discCell = (r.DiscPct > 0 || r.DiscAmt > 0)
+                            ? (r.DiscPct > 0 ? $"{r.DiscPct:0.#}%\n-{r.DiscAmt:N2}" : $"-{r.DiscAmt:N2}")
+                            : "—";
+
+                        req.Rows.Add([
+                            (idx + 1).ToString(CultureInfo.InvariantCulture),
+                            nameCell,
+                            qtyCell,
+                            r.Rate.ToString("N2", CultureInfo.InvariantCulture),
+                            discCell,
+                            r.LineNet.ToString("N2", CultureInfo.InvariantCulture)
+                        ]);
+                    }
+                }
+
+                // Financial & Discount Summary
+                var storedGross = ToDouble(inv, "gross_amount");
+                var storedItemDisc = ToDouble(inv, "item_discount");
+                var effectiveItemDisc = storedItemDisc > 0 ? storedItemDisc : Math.Round(itemDiscSum, 2);
+                var displayGross = rawGrossSum > 0
+                    ? Math.Round(rawGrossSum, 2)
+                    : (storedGross > 0 ? Math.Round(storedGross + effectiveItemDisc, 2) : 0);
+                var billDiscAmt = ToDouble(inv, "discount_amount");
+                var billDiscPct = ToDouble(inv, "discount_percentage");
+                var taxAmt = ToDouble(inv, "tax_amount");
+                var taxPct = ToDouble(inv, "tax_percentage");
+                var fbrFee = ToDouble(inv, "fbr_pos_fee");
+                var netTotal = ToDouble(inv, "total");
+                var received = ToDouble(inv, "total_receive");
+                var balanceThis = Math.Max(0, Math.Round(netTotal - received, 2));
+                var changeDue = Math.Max(0, Math.Round(received - netTotal, 2));
+                var totalSaved = Math.Round(effectiveItemDisc + billDiscAmt, 2);
+
+                double customerLedgerDue = 0;
+                var custIdForBal = ToNullableLong(inv, "customer_id");
+                if (custIdForBal.HasValue && await Db.HasTableAsync("customer_ledgers"))
+                {
+                    var balRow = await Db.QuerySingleOrDefaultAsync(
+                        "SELECT COALESCE(SUM(invoice_total), 0) - COALESCE(SUM(total_received), 0) - COALESCE(SUM(credited_amount), 0) AS net_bal FROM customer_ledgers WHERE customer_id = @cId",
+                        new { cId = custIdForBal.Value });
+                    customerLedgerDue = Math.Max(0, Math.Round(ToDouble(balRow, "net_bal"), 2));
+                }
+
+                if (balanceThis <= 0.009)
+                {
+                    req.StatusBadge = "PAID IN FULL";
+                    req.StatusTone = "success";
+                }
+                else if (received > 0.009)
+                {
+                    req.StatusBadge = "PARTIAL PAID";
+                    req.StatusTone = "warning";
+                }
+                else
+                {
+                    req.StatusBadge = "CREDIT DUE";
+                    req.StatusTone = "danger";
+                }
+
+                req.NetTotalHighlight = $"Rs. {netTotal:N2}";
+                if (totalSaved > 0.009)
+                {
+                    req.TotalSavingsText = $"Rs. {totalSaved:N2}";
+                }
+
+                var totals = new List<PdfKeyValuePair>
+                {
+                    new("Gross Amount", $"Rs. {displayGross:N2}")
+                };
+                if (effectiveItemDisc > 0.009)
+                {
+                    totals.Add(new PdfKeyValuePair("Item Discounts", $"- Rs. {effectiveItemDisc:N2}", tone: "discount"));
+                }
+                if (billDiscAmt > 0.009)
+                {
+                    var discLbl = billDiscPct > 0 ? $"Invoice Discount ({billDiscPct:0.##}%)" : "Invoice Discount";
+                    totals.Add(new PdfKeyValuePair(discLbl, $"- Rs. {billDiscAmt:N2}", tone: "discount"));
+                }
+                if (taxAmt > 0.009)
+                {
+                    var taxLbl = taxPct > 0 ? $"Sales Tax / GST ({taxPct:0.##}%)" : "Sales Tax / GST";
+                    totals.Add(new PdfKeyValuePair(taxLbl, $"Rs. {taxAmt:N2}"));
+                }
+                if (fbrFee > 0.009)
+                {
+                    totals.Add(new PdfKeyValuePair("FBR POS Service Fee", $"Rs. {fbrFee:N2}"));
+                }
+
+                totals.Add(new PdfKeyValuePair("NET PAYABLE TOTAL", $"Rs. {netTotal:N2}", isGrandTotal: true));
+                totals.Add(new PdfKeyValuePair("Amount Received", $"Rs. {received:N2}", tone: "success"));
+
+                if (balanceThis > 0.009)
+                {
+                    totals.Add(new PdfKeyValuePair("Balance Due (This Invoice)", $"Rs. {balanceThis:N2}", tone: "warning"));
+                }
+                else if (changeDue > 0.009)
+                {
+                    totals.Add(new PdfKeyValuePair("Change Returned", $"Rs. {changeDue:N2}", tone: "success"));
+                }
+                else
+                {
+                    totals.Add(new PdfKeyValuePair("Payment Status", "SETTLED", tone: "success"));
+                }
+
+                if (customerLedgerDue > 0.009)
+                {
+                    totals.Add(new PdfKeyValuePair("Total Account Balance Due", $"Rs. {customerLedgerDue:N2}", tone: "danger"));
+                }
+
+                req.Totals = totals;
             }
         }
         else if (type == "purchase_invoice" && docId > 0)

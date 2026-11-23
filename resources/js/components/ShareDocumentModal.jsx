@@ -637,7 +637,7 @@ export default function ShareDocumentModal({
     PDF_DESIGN_OPTIONS.find((d) => d.id === selectedDesign)?.name ||
     "Standard Corporate";
   const activeSizeLabel =
-    selectedPaperSize === "thermal" ? "Thermal (58mm × 80mm)" : "A4 Size";
+    selectedPaperSize === "thermal" ? "Thermal (80mm Roll)" : "A4 Size";
 
   return (
     <div

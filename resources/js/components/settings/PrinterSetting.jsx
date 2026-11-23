@@ -746,95 +746,95 @@ export default function PrinterSetting({
     });
   };
 
-  // Thermal templates data
+  // Thermal templates data (Pure B&W optimized for 203 DPI monochrome POS printers)
   const thermalTemplates = [
     {
       id: "standard",
-      name: "Standard",
-      description: "Classic layout with logo support",
+      name: "Standard Corporate",
+      description: "Pure B&W classic layout with 4-column Name/Qty/Disc/Subt. table",
       icon: "DocumentTextIcon",
-      preview: "Standard thermal layout with store branding",
+      preview: "Crisp monochrome receipt with batch/expiry, discounts & balances",
     },
     {
       id: "minimal",
-      name: "Minimal",
-      description: "Clean 58mm receipt with essential invoice details",
+      name: "Minimal Clean",
+      description: "Ultra-clean hairline monochrome layout for fast ink-light printing",
       icon: "DocumentIcon",
-      preview: "Customer, invoice type, remarks and item count",
+      preview: "Clean B&W 4-column receipt with complete invoice details",
     },
     {
       id: "detailed",
-      name: "Detailed",
-      description: "Roomy 80mm receipt with a complete customer header",
+      name: "Executive Detailed",
+      description: "Solid black header banner with complete clinical & payment details",
       icon: "ClipboardDocumentListIcon",
-      preview: "Full invoice details, remarks and payment balance",
+      preview: "Full invoice info, doctor/patient, discounts & ledger balance",
     },
     {
       id: "compact",
-      name: "Compact",
-      description: "Space-saving 58mm receipt with a compact detail grid",
+      name: "Compact High-Density",
+      description: "Tight monochrome spacing engineered for multi-item thermal bills",
       icon: "ScaleIcon",
-      preview: "All invoice header fields in a tight layout",
+      preview: "High-density 4-column layout with batch, rate & discounts",
     },
     {
       id: "bold",
-      name: "Bold",
-      description: "High-contrast 80mm receipt with bold invoice details",
+      name: "Bold Modern",
+      description: "High-contrast inverted black header & bold totals for thermal heads",
       icon: "BoltIcon",
-      preview: "Prominent invoice type, customer and total",
+      preview: "Prominent B&W banner, discount savings & net payable total",
     },
     {
       id: "barcode",
-      name: "Barcode",
-      description: "Verification-focused layout with product barcodes",
+      name: "Barcode & Reference",
+      description: "Monochrome verification layout with Code128 barcode, SKU & QR",
       icon: "QrCodeIcon",
-      preview: "Invoice details, remarks, product barcodes and QR",
+      preview: "Scannable invoice barcode, product SKUs, discounts & QR",
     },
   ];
 
-  // A4 templates data
+  // A4 templates data (Matches Document Sharing PDF designs 1-to-1)
   const a4Templates = [
     {
       id: "standard",
-      name: "Standard",
-      description: "Classic layout with logo support",
+      name: "Standard Corporate",
+      description: "Classic navy header bar, dual-card metadata & discount breakdown",
       icon: "DocumentTextIcon",
-      preview: "Standard A4 layout with store branding",
+      preview: "Structured corporate A4 layout with store logo & balances",
     },
     {
       id: "minimal",
-      name: "Minimal",
-      description: "Clean and simple design",
+      name: "Minimal Clean",
+      description: "Pure white ink-saving editorial layout with crisp hairline rules",
       icon: "DocumentIcon",
-      preview: "Minimal A4 receipt",
+      preview: "Uncluttered A4 invoice with full item & bill discounts",
     },
     {
       id: "detailed",
-      name: "Detailed",
-      description: "Extended customer & payment info",
+      name: "Executive Detailed",
+      description: "Royal blue header, 3-card clinical metadata & 8-column ERP table",
       icon: "ClipboardDocumentListIcon",
-      preview: "Complete with customer balance details",
+      preview: "Pack, Batch, Expiry, Discount columns & signature lines",
     },
     {
       id: "compact",
-      name: "Compact",
-      description: "Space-efficient layout",
+      name: "Compact High-Density",
+      description: "Condensed slate-teal header engineered for 25+ items per page",
       icon: "ScaleIcon",
-      preview: "Compact A4 format",
+      preview: "Space-efficient multi-item wholesale & retail A4 format",
     },
     {
       id: "bold",
-      name: "Bold",
-      description: "Large fonts, high emphasis",
+      name: "Bold Emerald Modern",
+      description: "Full-bleed emerald banner with Net Total KPI box & savings pill",
       icon: "BoltIcon",
-      preview: "Bold fonts with high contrast",
+      preview: "High-impact modern invoice with vivid discount highlights",
     },
     {
       id: "barcode",
-      name: "Barcode",
-      description: "With barcodes & QR code",
+      name: "Barcode & Reference",
+      description: "Graphite & amber theme with Code128 barcode, SKUs & QR strip",
       icon: "QrCodeIcon",
-      preview: "Includes barcodes and verification QR",
+      preview: "Includes scannable barcodes, SKU details & verification QR",
     },
   ];
 
