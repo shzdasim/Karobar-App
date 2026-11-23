@@ -2,9 +2,11 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Karobar.Background;
 using Karobar.Host;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Karobar.Tests;
@@ -661,5 +663,123 @@ public class Milestone3WindowsAndOtaTests
 
         concCoord.IsDisposed.Should().BeTrue();
         concCoord.AreResourcesDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void M3_OtaManifestParser_HandlesBom_NewerBuild_SameBuild_And_GitHubDigestSha256()
+    {
+        var patchSha = new string('a', 64);
+        var installerSha = new string('b', 64);
+        var local = new LocalVersionMeta
+        {
+            AppName = "Karobar-App Native",
+            Version = "2.0.48",
+            BuildNumber = 48,
+            CommitSha = "old1234",
+            Repository = "shzdasim/Karobar-App",
+            RuntimeLayout = "split-v2",
+            DepsFingerprint = "deadbeef"
+        };
+
+        // 1. BOM-prefixed manifest with newer build must be parsed cleanly and preserve SHA-256 + patch eligibility
+        var bomManifest = "\uFEFF" + $$"""
+        {
+          "app_name": "Karobar-App Native",
+          "version": "2.0.50",
+          "build_number": 50,
+          "commit_sha": "5364aa6",
+          "release_name": "Karobar-App Native v2.0.50 (Build #50)",
+          "released_at": "2026-11-23T04:20:23Z",
+          "notes": "Print and update fixes",
+          "runtime_layout": "split-v2",
+          "deps_fingerprint": "deadbeef",
+          "compatible_deps_fingerprints": ["deadbeef"],
+          "download_url": "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Setup.exe",
+          "installer_size": 131241184,
+          "installer_sha256": "{{installerSha}}",
+          "patch_url": "https://github.com/shzdasim/Karobar-App/releases/download/native-latest/Karobar-Native-Patch.zip",
+          "patch_size": 4573507,
+          "patch_sha256": "{{patchSha}}",
+          "min_patch_version": "2.0.0"
+        }
+        """;
+
+        var newerObj = KarobarDesktopBridge.BuildUpdateResultFromManifest(local, "shzdasim/Karobar-App", bomManifest, hasBundledWaRuntime: true);
+        newerObj.Should().NotBeNull();
+        using (var doc = JsonDocument.Parse(JsonSerializer.Serialize(newerObj)))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("ok").GetBoolean().Should().BeTrue();
+            root.GetProperty("update_available").GetBoolean().Should().BeTrue();
+            root.GetProperty("is_patch").GetBoolean().Should().BeTrue();
+            root.GetProperty("latest_version").GetString().Should().Be("2.0.50");
+            root.GetProperty("latest_build").GetInt32().Should().Be(50);
+            root.GetProperty("patch_sha256").GetString().Should().Be(patchSha);
+            root.GetProperty("installer_sha256").GetString().Should().Be(installerSha);
+        }
+
+        // 2. Same version & build must report up-to-date
+        local.Version = "2.0.50";
+        local.BuildNumber = 50;
+        var sameObj = KarobarDesktopBridge.BuildUpdateResultFromManifest(local, "shzdasim/Karobar-App", bomManifest, hasBundledWaRuntime: true);
+        using (var doc = JsonDocument.Parse(JsonSerializer.Serialize(sameObj)))
+        {
+            doc.RootElement.GetProperty("ok").GetBoolean().Should().BeTrue();
+            doc.RootElement.GetProperty("update_available").GetBoolean().Should().BeFalse();
+        }
+
+        // 3. GitHub release asset digest extraction (`sha256:<64-hex>`)
+        KarobarDesktopBridge.ExtractSha256FromGitHubDigest($"sha256:{installerSha.ToUpperInvariant()}")
+            .Should().Be(installerSha);
+        KarobarDesktopBridge.ExtractSha256FromGitHubDigest("sha256:short").Should().BeNull();
+        KarobarDesktopBridge.ExtractSha256FromGitHubDigest(null).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task M3_SystemUpdateController_WithoutBridge_DoesNotReturnFakeOkUpToDate()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"karobar_m3_upd_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempRoot, "public"));
+        Directory.CreateDirectory(Path.Combine(tempRoot, "database"));
+        Directory.CreateDirectory(Path.Combine(tempRoot, "storage", "app"));
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(tempRoot, "public", "version.json"),
+                """{"app_name":"Karobar-App Native","version":"2.0.48","build_number":48}""");
+            var prevRoot = Environment.GetEnvironmentVariable("KAROBAR_ROOT_PATH");
+            Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", tempRoot);
+            try
+            {
+                var db = new Karobar.Services.Infrastructure.KarobarDb(
+                    explicitSqlitePath: Path.Combine(tempRoot, "database", "database.sqlite"));
+                var controller = new Karobar.Api.Controllers.SystemUpdateController(db)
+                {
+                    ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+                    {
+                        HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+                        {
+                            RequestServices = new ServiceCollection().BuildServiceProvider()
+                        }
+                    }
+                };
+
+                var actionResult = await controller.CheckUpdate("1");
+                var okResult = actionResult.Should().BeOfType<Microsoft.AspNetCore.Mvc.OkObjectResult>().Subject;
+                using var doc = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+                doc.RootElement.GetProperty("ok").GetBoolean().Should().BeFalse(
+                    "controller must return ok=false when desktop bridge is absent so the SPA falls back to GitHub Releases");
+                doc.RootElement.GetProperty("offline_fallback").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("current_version").GetString().Should().Be("2.0.48");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("KAROBAR_ROOT_PATH", prevRoot);
+            }
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
     }
 }

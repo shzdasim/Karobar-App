@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -12,7 +12,25 @@ import {
 import { GlassCard, GlassSectionHeader } from "./Glass.jsx";
 
 const UPDATE_DISMISSED_UNTIL_KEY = "karobar_update_dismissed_until";
+const MANUAL_CHECK_TOAST_ID = "karobar-manual-update-check";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function isPrintContext() {
+  if (typeof window === "undefined") return false;
+  if (window.karobarDesktop?.isOffscreenPrintWorker) return true;
+  const pathname = String(window.location?.pathname || "");
+  const search = String(window.location?.search || "");
+  return (
+    /\/(print|customer-ledger\/print|supplier-ledger\/print)(\/|$)/i.test(pathname) ||
+    /[?&](?:silent_print=1|__karobar_offscreen_print=1)/i.test(search)
+  );
+}
+
+function extractSha256FromDigest(digest) {
+  if (!digest || typeof digest !== "string") return null;
+  const clean = digest.trim().replace(/^sha256:/i, "").trim();
+  return /^[0-9a-fA-F]{64}$/.test(clean) ? clean.toLowerCase() : null;
+}
 
 function getDismissedUntilMs() {
   try {
@@ -44,6 +62,8 @@ export default function AppUpdateNotification() {
     totalMB: null,
     message: "",
   });
+  const checkingRef = useRef(false);
+  const pendingManualRef = useRef(false);
 
   const dismissForOneDay = useCallback(() => {
     const until = Date.now() + ONE_DAY_MS;
@@ -58,6 +78,8 @@ export default function AppUpdateNotification() {
   }, []);
 
   const checkForUpdates = useCallback(async ({ manual = false } = {}) => {
+    if (isPrintContext()) return;
+
     if (!manual && isDismissedForToday()) {
       setIsDismissed(true);
       return;
@@ -65,52 +87,89 @@ export default function AppUpdateNotification() {
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       if (manual) {
-        toast.error("You are currently offline. Connect to the internet to check for Karobar-App updates.");
+        toast.error(
+          "You are currently offline. Connect to the internet to check for Karobar-App updates.",
+          { id: MANUAL_CHECK_TOAST_ID, duration: 5000 }
+        );
       }
       return;
     }
 
+    if (checkingRef.current) {
+      if (manual) {
+        pendingManualRef.current = true;
+        toast.loading("Checking for Karobar-App updates…", { id: MANUAL_CHECK_TOAST_ID });
+      }
+      return;
+    }
+
+    checkingRef.current = true;
     setIsChecking(true);
+    if (manual) {
+      toast.loading("Checking for Karobar-App updates…", { id: MANUAL_CHECK_TOAST_ID });
+    }
+
+    let lastErrorMessage = "";
     try {
       let data = null;
+      let desktopBridgeResponded = false;
       const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
 
-      // 1. Try native Electron HTTPS updater first on Desktop (uses Chromium/Node CA store)
+      // 1. Try native desktop updater first (uses local .NET / Windows TLS & certificate store)
       if (desktop?.isDesktop && typeof desktop.checkForUpdates === "function") {
         try {
           const desktopRes = await desktop.checkForUpdates(manual);
-          if (desktopRes?.ok) {
-            data = desktopRes;
+          if (desktopRes && typeof desktopRes === "object") {
+            desktopBridgeResponded = true;
+            if (desktopRes.ok) {
+              data = desktopRes;
+            } else if (desktopRes.message) {
+              lastErrorMessage = String(desktopRes.message);
+            }
           }
-        } catch {
-          // Fall through to backend API
+        } catch (err) {
+          if (err?.message) lastErrorMessage = String(err.message);
         }
       }
 
-      // 2. Try Laravel backend /api/system/check-update
-      if (!data) {
+      // 2. Try backend /api/system/check-update ONLY when desktop IPC did not already run
+      // (avoids waiting twice on the exact same KarobarDesktopBridge method when offline/slow)
+      if (!data && !desktopBridgeResponded) {
         try {
           const resp = await axios.get("/api/system/check-update", {
-            params: manual ? { force: 1 } : {},
+            cache: false,
+            params: {
+              ...(manual ? { force: 1 } : {}),
+              _t: Date.now(),
+            },
           });
           if (resp.data?.ok) {
             data = resp.data;
+          } else if (resp.data?.message) {
+            lastErrorMessage = String(resp.data.message);
           }
-        } catch {
-          // Fall through to direct browser GitHub API check
+        } catch (err) {
+          if (err?.response?.data?.message) {
+            lastErrorMessage = String(err.response.data.message);
+          }
         }
       }
 
-      // 3. Direct browser fallback to GitHub Releases API (CORS enabled: access-control-allow-origin: *)
+      // 3. Direct browser fallback to GitHub Releases API (uses Chromium/WebView2 network & proxy stack)
       if (!data) {
         try {
-          const verRes = await axios.get("/api/system/version").catch(() => ({ data: { version: "2.0.1", build_number: 1 } }));
-          const isNativeRuntime = String(verRes.data?.app_name || "").toLowerCase().includes("native") ||
-            String(verRes.data?.runtime || "").toLowerCase().includes("dotnet");
+          const verRes = await axios
+            .get("/api/system/version", { cache: false, params: { _t: Date.now() } })
+            .catch(() => ({ data: { version: "2.0.1", build_number: 1 } }));
+          const runtimeStr = String(verRes.data?.runtime || "").toLowerCase();
+          const isLegacyElectron = runtimeStr.includes("electron");
+          const isNativeRuntime =
+            Boolean(desktop?.isNative || desktop?.isDesktop) || !isLegacyElectron;
           const ghEndpoint = isNativeRuntime
             ? "https://api.github.com/repos/shzdasim/Karobar-App/releases/tags/native-latest"
             : "https://api.github.com/repos/shzdasim/Karobar-App/releases/latest";
           const ghRes = await fetch(ghEndpoint, {
+            cache: "no-store",
             headers: { Accept: "application/vnd.github+json" },
           });
           if (ghRes.ok) {
@@ -149,9 +208,15 @@ export default function AppUpdateNotification() {
               ? "https://github.com/shzdasim/Karobar-App/releases/download/native-latest"
               : "https://github.com/shzdasim/Karobar-App/releases/latest/download";
 
+            const assets = Array.isArray(release.assets) ? release.assets : [];
+            const setupAsset = assets.find((a) => a?.name === setupName);
+            const bundleAsset = assets.find((a) => a?.name === bundleName);
+            const installerSha256 = extractSha256FromDigest(setupAsset?.digest);
+
             data = {
               ok: true,
               update_available: isNewer,
+              is_patch: false,
               app_name: isNativeRuntime ? "Karobar-App Native" : "Karobar-App",
               current_version: localVer,
               current_build: localBuild,
@@ -160,49 +225,71 @@ export default function AppUpdateNotification() {
               release_name: release.name || `${isNativeRuntime ? "Karobar-App Native" : "Karobar-App"} v${displayRemoteVer}`,
               released_at: release.published_at || "",
               notes: release.body || "New Karobar-App release available.",
-              download_url: `${dlBase}/${setupName}`,
-              bundle_url: `${dlBase}/${bundleName}`,
+              download_url: setupAsset?.browser_download_url || `${dlBase}/${setupName}`,
+              installer_size: typeof setupAsset?.size === "number" ? setupAsset.size : null,
+              installer_sha256: installerSha256,
+              bundle_url: bundleAsset?.browser_download_url || `${dlBase}/${bundleName}`,
               release_url: release.html_url || (isNativeRuntime
                 ? "https://github.com/shzdasim/Karobar-App/releases/tag/native-latest"
                 : "https://github.com/shzdasim/Karobar-App/releases/latest"),
               zero_data_loss: true,
             };
+          } else {
+            lastErrorMessage = `GitHub Releases returned HTTP ${ghRes.status}.`;
           }
-        } catch {
-          // Ignore
+        } catch (err) {
+          if (err?.message && !lastErrorMessage) {
+            lastErrorMessage = String(err.message);
+          }
         }
       }
 
+      const showManualFeedback = manual || pendingManualRef.current;
+
       if (!data || !data.ok) {
-        if (manual) {
-          toast.error("Could not reach GitHub Releases right now. Please check your internet connection.");
+        if (showManualFeedback) {
+          toast.error(
+            lastErrorMessage
+              ? `Could not check for updates: ${lastErrorMessage}`
+              : "Could not reach GitHub Releases right now. Please check your internet connection.",
+            { id: MANUAL_CHECK_TOAST_ID, duration: 5500 }
+          );
         }
         return;
       }
 
       if (data.update_available) {
         setUpdateInfo(data);
-        if (manual) {
+        if (showManualFeedback) {
           try {
             localStorage.removeItem(UPDATE_DISMISSED_UNTIL_KEY);
           } catch {
             // ignore
           }
           setIsDismissed(false);
+          toast.success(
+            `Update available: v${data.latest_version}${data.latest_build ? ` (#${data.latest_build})` : ""} — ready to download below.`,
+            { id: MANUAL_CHECK_TOAST_ID, duration: 5000 }
+          );
         } else {
           setIsDismissed(isDismissedForToday());
         }
-      } else if (manual) {
+      } else if (showManualFeedback) {
         toast.success(
           `Karobar-App is up to date (v${data.current_version} • Build #${data.current_build || 1})`,
-          { duration: 4000 }
+          { id: MANUAL_CHECK_TOAST_ID, duration: 4000 }
         );
       }
     } catch {
-      if (manual) {
-        toast.error("Unable to check for updates right now. Please verify your internet connection.");
+      if (manual || pendingManualRef.current) {
+        toast.error(
+          "Unable to check for updates right now. Please verify your internet connection.",
+          { id: MANUAL_CHECK_TOAST_ID, duration: 5000 }
+        );
       }
     } finally {
+      checkingRef.current = false;
+      pendingManualRef.current = false;
       setIsChecking(false);
     }
   }, []);
@@ -236,6 +323,8 @@ export default function AppUpdateNotification() {
   }, [isDismissed, checkForUpdates]);
 
   useEffect(() => {
+    if (isPrintContext()) return undefined;
+
     // Initial check shortly after startup when online
     const initialTimer = setTimeout(() => {
       if (typeof navigator === "undefined" || navigator.onLine) {
@@ -306,6 +395,19 @@ export default function AppUpdateNotification() {
     const downloadUrl = isPatch
       ? updateInfo.patch_url
       : updateInfo.download_url || defaultInstallerUrl;
+    const expectedSha = isPatch ? updateInfo.patch_sha256 : updateInfo.installer_sha256;
+
+    // If checksum metadata could not be retrieved from the manifest/API, open the verified GitHub Release page
+    // rather than failing with a raw SHA-256 rejection.
+    if (!expectedSha && updateInfo.release_url) {
+      if (desktop?.openExternalUrl) {
+        desktop.openExternalUrl(updateInfo.release_url);
+      } else {
+        window.open(updateInfo.release_url, "_blank", "noopener,noreferrer");
+      }
+      toast.success("Opened official Karobar-App Release page in your browser.");
+      return;
+    }
 
     setIsDownloading(true);
     setProgress({
@@ -468,7 +570,7 @@ export default function AppUpdateNotification() {
     }
   };
 
-  if (!updateInfo?.update_available || (isDismissed && !isDownloading && !isDownloaded && !isApplying)) {
+  if (isPrintContext() || !updateInfo?.update_available || (isDismissed && !isDownloading && !isDownloaded && !isApplying)) {
     return null;
   }
 

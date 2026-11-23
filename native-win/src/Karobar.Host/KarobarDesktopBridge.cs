@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -1365,7 +1366,7 @@ public sealed class KarobarDesktopBridge
             var versionFile = Path.Combine(_networkConfig.AppRoot, "public", "version.json");
             if (File.Exists(versionFile))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(versionFile, Encoding.UTF8));
+                using var doc = JsonDocument.Parse(File.ReadAllText(versionFile, Encoding.UTF8).TrimStart('\uFEFF'));
                 var root = doc.RootElement;
                 var runtimeLayout = root.TryGetProperty("runtime_layout", out var rl) && rl.ValueKind == JsonValueKind.String
                     ? rl.GetString() ?? ""
@@ -1496,147 +1497,247 @@ public sealed class KarobarDesktopBridge
         return (true, null);
     }
 
+    public static string? ExtractSha256FromGitHubDigest(string? digest)
+    {
+        if (string.IsNullOrWhiteSpace(digest)) return null;
+        var clean = digest.Trim();
+        if (clean.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+        {
+            clean = clean["sha256:".Length..].Trim();
+        }
+        return Regex.IsMatch(clean, "^[0-9a-fA-F]{64}$") ? clean.ToLowerInvariant() : null;
+    }
+
+    public static object? BuildUpdateResultFromManifest(
+        LocalVersionMeta local,
+        string repo,
+        string rawManifestJson,
+        bool hasBundledWaRuntime)
+    {
+        var trimmed = (rawManifestJson ?? "").TrimStart('\uFEFF').Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        using var doc = JsonDocument.Parse(trimmed);
+        var remote = doc.RootElement;
+        if (remote.ValueKind != JsonValueKind.Object ||
+            !remote.TryGetProperty("version", out var vProp) ||
+            vProp.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var remoteVer = (vProp.GetString() ?? "").TrimStart('v', 'V');
+        if (string.IsNullOrWhiteSpace(remoteVer)) return null;
+
+        var remoteBuild = remote.TryGetProperty("build_number", out var bProp) && bProp.TryGetInt32(out var bVal) ? bVal : 0;
+        var isNewer = remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
+            ? remoteBuild > local.BuildNumber
+            : CompareSemverNewer(remoteVer, local.Version);
+
+        var minPatchVer = (remote.TryGetProperty("min_patch_version", out var mpProp) && mpProp.ValueKind == JsonValueKind.String
+            ? mpProp.GetString() ?? "2.0.0"
+            : "2.0.0").TrimStart('v', 'V');
+
+        var patchUrl = remote.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
+            ? puProp.GetString()
+            : null;
+
+        var remoteLayout = remote.TryGetProperty("runtime_layout", out var rlProp) && rlProp.ValueKind == JsonValueKind.String
+            ? rlProp.GetString() ?? ""
+            : "";
+
+        var remoteDeps = remote.TryGetProperty("deps_fingerprint", out var rdProp) && rdProp.ValueKind == JsonValueKind.String
+            ? rdProp.GetString() ?? ""
+            : "";
+
+        List<string>? compatibleDeps = null;
+        if (remote.TryGetProperty("compatible_deps_fingerprints", out var cdfProp) && cdfProp.ValueKind == JsonValueKind.Array)
+        {
+            compatibleDeps = cdfProp.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString()))
+                .Select(e => e.GetString()!.Trim())
+                .ToList();
+        }
+
+        var (canPatch, patchIneligibleReason) = EvaluatePatchEligibility(
+            local,
+            patchUrl,
+            remoteLayout,
+            remoteDeps,
+            compatibleDeps,
+            minPatchVer,
+            hasBundledWaRuntime);
+
+        var remoteCommit = remote.TryGetProperty("commit_sha", out var rcProp) && rcProp.ValueKind == JsonValueKind.String
+            ? rcProp.GetString() ?? ""
+            : "";
+
+        return new
+        {
+            ok = true,
+            update_available = isNewer,
+            is_patch = canPatch,
+            patch_ineligible_reason = patchIneligibleReason,
+            app_name = "Karobar-App Native",
+            current_version = local.Version,
+            current_build = local.BuildNumber,
+            current_commit = local.CommitSha,
+            latest_version = remoteVer,
+            latest_build = remoteBuild,
+            latest_commit = remoteCommit,
+            release_name = remote.TryGetProperty("release_name", out var rn) && rn.ValueKind == JsonValueKind.String
+                ? rn.GetString()
+                : $"Karobar-App Native v{remoteVer}",
+            released_at = remote.TryGetProperty("released_at", out var ra) && ra.ValueKind == JsonValueKind.String
+                ? ra.GetString()
+                : "",
+            notes = remote.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String
+                ? nt.GetString()
+                : "Performance improvements, bug fixes, and new features.",
+            download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
+                ? du.GetString()
+                : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe",
+            installer_size = remote.TryGetProperty("installer_size", out var isz) && isz.TryGetInt64(out var iSize) ? (long?)iSize : null,
+            bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
+                ? bu.GetString()
+                : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
+            patch_url = canPatch ? patchUrl : null,
+            patch_size = canPatch && remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
+            patch_sha256 = canPatch && remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
+                ? pSha.GetString()
+                : null,
+            installer_sha256 = remote.TryGetProperty("installer_sha256", out var iSha) && iSha.ValueKind == JsonValueKind.String
+                ? iSha.GetString()
+                : null,
+            deps_fingerprint = remoteDeps,
+            local_deps_fingerprint = local.DepsFingerprint,
+            min_patch_version = minPatchVer,
+            release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
+                ? ru.GetString()
+                : $"https://github.com/{repo}/releases/tag/native-latest",
+            zero_data_loss = true
+        };
+    }
+
     public async Task<object> CheckForUpdatesAsync(JsonElement? payload = null, CancellationToken cancellationToken = default)
     {
         var local = ReadLocalVersionMeta();
         var repo = string.IsNullOrWhiteSpace(local.Repository) ? "shzdasim/Karobar-App" : local.Repository;
+        var cacheBust = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
+        // require a one-time zero-data-loss full installer upgrade instead of a differential patch.
+        var hasBundledWaRuntime = !OperatingSystem.IsWindows() ||
+            (File.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "node", "node.exe")) &&
+             Directory.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys")));
 
         using var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 6
+            MaxAutomaticRedirections = 6,
+            AutomaticDecompression = DecompressionMethods.All
         };
         using var client = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(8)
+            Timeout = TimeSpan.FromSeconds(15)
         };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Karobar-App-Desktop-Updater/2.0");
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
+        client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+        client.DefaultRequestHeaders.Pragma.Add(new NameValueHeaderValue("no-cache"));
+
+        string? lastError = null;
 
         // 1. Primary manifest: dedicated `native-latest` rolling channel (never collides with Electron `latest`)
-        string[] manifestCandidates =
-        [
-            $"https://github.com/{repo}/releases/download/native-latest/latest-native-release.json",
-            $"https://github.com/{repo}/releases/latest/download/latest-native-release.json"
-        ];
-
-        foreach (var manifestUrl in manifestCandidates)
+        // Include a cache-buster query param so intermediate proxies/WinINET do not serve a stale 302 redirect.
+        var primaryManifestUrl = $"https://github.com/{repo}/releases/download/native-latest/latest-native-release.json?t={cacheBust}";
+        try
         {
-            try
+            var jsonText = await client.GetStringAsync(primaryManifestUrl, cancellationToken);
+            var parsed = BuildUpdateResultFromManifest(local, repo, jsonText, hasBundledWaRuntime);
+            if (parsed != null)
             {
-                var jsonText = await client.GetStringAsync(manifestUrl, cancellationToken);
-                using var doc = JsonDocument.Parse(jsonText);
-                var remote = doc.RootElement;
-
-                if (remote.TryGetProperty("version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
-                {
-                    var remoteVer = (vProp.GetString() ?? "").TrimStart('v', 'V');
-                    var remoteBuild = remote.TryGetProperty("build_number", out var bProp) && bProp.TryGetInt32(out var bVal) ? bVal : 0;
-                    var isNewer = remoteBuild > 0 && local.BuildNumber > 0 && remoteBuild != local.BuildNumber
-                        ? remoteBuild > local.BuildNumber
-                        : CompareSemverNewer(remoteVer, local.Version);
-
-                    var minPatchVer = (remote.TryGetProperty("min_patch_version", out var mpProp) && mpProp.ValueKind == JsonValueKind.String
-                        ? mpProp.GetString() ?? "2.0.0"
-                        : "2.0.0").TrimStart('v', 'V');
-
-                    var patchUrl = remote.TryGetProperty("patch_url", out var puProp) && puProp.ValueKind == JsonValueKind.String
-                        ? puProp.GetString()
-                        : null;
-
-                    var remoteLayout = remote.TryGetProperty("runtime_layout", out var rlProp) && rlProp.ValueKind == JsonValueKind.String
-                        ? rlProp.GetString() ?? ""
-                        : "";
-
-                    var remoteDeps = remote.TryGetProperty("deps_fingerprint", out var rdProp) && rdProp.ValueKind == JsonValueKind.String
-                        ? rdProp.GetString() ?? ""
-                        : "";
-
-                    List<string>? compatibleDeps = null;
-                    if (remote.TryGetProperty("compatible_deps_fingerprints", out var cdfProp) && cdfProp.ValueKind == JsonValueKind.Array)
-                    {
-                        compatibleDeps = cdfProp.EnumerateArray()
-                            .Where(e => e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString()))
-                            .Select(e => e.GetString()!.Trim())
-                            .ToList();
-                    }
-
-                    // On Windows, if the local install does not yet have the bundled portable Node + Baileys WhatsApp runtime,
-                    // require a one-time zero-data-loss full installer upgrade instead of a differential patch.
-                    var hasBundledWaRuntime = !OperatingSystem.IsWindows() ||
-                        (File.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "node", "node.exe")) &&
-                         Directory.Exists(Path.Combine(_networkConfig.AppRoot, "runtime", "whatsapp-agent", "node_modules", "@whiskeysockets", "baileys")));
-
-                    var (canPatch, patchIneligibleReason) = EvaluatePatchEligibility(
-                        local,
-                        patchUrl,
-                        remoteLayout,
-                        remoteDeps,
-                        compatibleDeps,
-                        minPatchVer,
-                        hasBundledWaRuntime);
-
-                    return new
-                    {
-                        ok = true,
-                        update_available = isNewer,
-                        is_patch = canPatch,
-                        patch_ineligible_reason = patchIneligibleReason,
-                        app_name = "Karobar-App Native",
-                        current_version = local.Version,
-                        current_build = local.BuildNumber,
-                        latest_version = remoteVer,
-                        latest_build = remoteBuild,
-                        release_name = remote.TryGetProperty("release_name", out var rn) && rn.ValueKind == JsonValueKind.String
-                            ? rn.GetString()
-                            : $"Karobar-App Native v{remoteVer}",
-                        released_at = remote.TryGetProperty("released_at", out var ra) && ra.ValueKind == JsonValueKind.String
-                            ? ra.GetString()
-                            : "",
-                        notes = remote.TryGetProperty("notes", out var nt) && nt.ValueKind == JsonValueKind.String
-                            ? nt.GetString()
-                            : "Performance improvements, bug fixes, and new features.",
-                        download_url = remote.TryGetProperty("download_url", out var du) && du.ValueKind == JsonValueKind.String
-                            ? du.GetString()
-                            : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe",
-                        installer_size = remote.TryGetProperty("installer_size", out var isz) && isz.TryGetInt64(out var iSize) ? (long?)iSize : null,
-                        bundle_url = remote.TryGetProperty("bundle_url", out var bu) && bu.ValueKind == JsonValueKind.String
-                            ? bu.GetString()
-                            : $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip",
-                        patch_url = canPatch ? patchUrl : null,
-                        patch_size = canPatch && remote.TryGetProperty("patch_size", out var ps) && ps.TryGetInt64(out var pSize) ? (long?)pSize : null,
-                        patch_sha256 = canPatch && remote.TryGetProperty("patch_sha256", out var pSha) && pSha.ValueKind == JsonValueKind.String
-                            ? pSha.GetString()
-                            : null,
-                        installer_sha256 = remote.TryGetProperty("installer_sha256", out var iSha) && iSha.ValueKind == JsonValueKind.String
-                            ? iSha.GetString()
-                            : null,
-                        deps_fingerprint = remoteDeps,
-                        local_deps_fingerprint = local.DepsFingerprint,
-                        min_patch_version = minPatchVer,
-                        release_url = remote.TryGetProperty("release_url", out var ru) && ru.ValueKind == JsonValueKind.String
-                            ? ru.GetString()
-                            : $"https://github.com/{repo}/releases/tag/native-latest",
-                        zero_data_loss = true
-                    };
-                }
+                return parsed;
             }
-            catch
-            {
-                // Try next manifest candidate
-            }
+        }
+        catch (Exception ex)
+        {
+            lastError = ex.Message;
         }
 
         // 2. Fallback: GitHub Releases REST API (strictly `native-latest` tag so Electron `latest` is never returned)
         try
         {
-            var apiText = await client.GetStringAsync($"https://api.github.com/repos/{repo}/releases/tags/native-latest", cancellationToken);
-            using var doc = JsonDocument.Parse(apiText);
+            using var apiReq = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/tags/native-latest");
+            apiReq.Headers.Accept.Clear();
+            apiReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            using var apiResp = await client.SendAsync(apiReq, cancellationToken);
+            apiResp.EnsureSuccessStatusCode();
+            var apiText = await apiResp.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(apiText.TrimStart('\uFEFF'));
             var apiData = doc.RootElement;
 
             if (apiData.TryGetProperty("tag_name", out var tagProp) && tagProp.ValueKind == JsonValueKind.String)
             {
+                // 2a. Prefer downloading `latest-native-release.json` directly via the GitHub API asset endpoint
+                // so fast differential patch metadata & verified SHA-256 checksums are preserved even when
+                // github.com/releases/download timed out or failed.
+                string? manifestAssetApiUrl = null;
+                var downloadUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe";
+                var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
+                long? installerSize = null;
+                string? installerSha256 = null;
+
+                if (apiData.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var asset in assetsProp.EnumerateArray())
+                    {
+                        var name = asset.TryGetProperty("name", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() ?? "" : "";
+                        var url = asset.TryGetProperty("browser_download_url", out var uProp) && uProp.ValueKind == JsonValueKind.String ? uProp.GetString() ?? "" : "";
+                        var apiAssetUrl = asset.TryGetProperty("url", out var auProp) && auProp.ValueKind == JsonValueKind.String ? auProp.GetString() ?? "" : "";
+                        var digest = asset.TryGetProperty("digest", out var dgProp) && dgProp.ValueKind == JsonValueKind.String ? dgProp.GetString() : null;
+
+                        if (string.Equals(name, "latest-native-release.json", StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrWhiteSpace(apiAssetUrl))
+                        {
+                            manifestAssetApiUrl = apiAssetUrl;
+                        }
+                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup.exe")
+                        {
+                            downloadUrl = url;
+                            if (asset.TryGetProperty("size", out var isProp) && isProp.TryGetInt64(out var iSz))
+                                installerSize = iSz;
+                            installerSha256 = ExtractSha256FromGitHubDigest(digest);
+                        }
+                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip")
+                            bundleUrl = url;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(manifestAssetApiUrl))
+                {
+                    try
+                    {
+                        using var assetReq = new HttpRequestMessage(HttpMethod.Get, manifestAssetApiUrl);
+                        assetReq.Headers.Accept.Clear();
+                        assetReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+                        using var assetResp = await client.SendAsync(assetReq, cancellationToken);
+                        if (assetResp.IsSuccessStatusCode)
+                        {
+                            var assetJson = await assetResp.Content.ReadAsStringAsync(cancellationToken);
+                            var parsedFromAsset = BuildUpdateResultFromManifest(local, repo, assetJson, hasBundledWaRuntime);
+                            if (parsedFromAsset != null)
+                            {
+                                return parsedFromAsset;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Fall back to parsed GitHub Release metadata below
+                    }
+                }
+
                 var rawTag = tagProp.GetString() ?? "";
                 var releaseName = apiData.TryGetProperty("name", out var rn) && rn.ValueKind == JsonValueKind.String
                     ? rn.GetString() ?? ""
@@ -1667,29 +1768,8 @@ public sealed class KarobarDesktopBridge
                                   ? remoteBuild > local.BuildNumber
                                   : CompareSemverNewer(remoteVer, local.Version));
 
-                var downloadUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup.exe";
-                var bundleUrl = $"https://github.com/{repo}/releases/download/native-latest/Karobar-Native-Setup-Bundle.zip";
-                long? installerSize = null;
-
-                if (apiData.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var asset in assetsProp.EnumerateArray())
-                    {
-                        var name = asset.TryGetProperty("name", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() ?? "" : "";
-                        var url = asset.TryGetProperty("browser_download_url", out var uProp) && uProp.ValueKind == JsonValueKind.String ? uProp.GetString() ?? "" : "";
-                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup.exe")
-                        {
-                            downloadUrl = url;
-                            if (asset.TryGetProperty("size", out var isProp) && isProp.TryGetInt64(out var iSz))
-                                installerSize = iSz;
-                        }
-                        if (!string.IsNullOrWhiteSpace(url) && name is "Karobar-Native-Setup-Bundle.zip")
-                            bundleUrl = url;
-                    }
-                }
-
-                // Never enable differential patch in the GitHub REST fallback because runtime_layout,
-                // deps_fingerprint, min_patch_version, and patch_sha256 from native-version.json were not verified.
+                // Never enable differential patch in the GitHub REST metadata fallback because runtime_layout,
+                // deps_fingerprint, min_patch_version, and patch_sha256 from latest-native-release.json were not verified.
                 return new
                 {
                     ok = true,
@@ -1698,6 +1778,7 @@ public sealed class KarobarDesktopBridge
                     app_name = "Karobar-App Native",
                     current_version = local.Version,
                     current_build = local.BuildNumber,
+                    current_commit = local.CommitSha,
                     latest_version = string.IsNullOrWhiteSpace(remoteVer) ? local.Version : remoteVer,
                     latest_build = remoteBuild,
                     release_name = !string.IsNullOrWhiteSpace(releaseName)
@@ -1715,7 +1796,7 @@ public sealed class KarobarDesktopBridge
                     patch_url = (string?)null,
                     patch_size = (long?)null,
                     patch_sha256 = (string?)null,
-                    installer_sha256 = (string?)null,
+                    installer_sha256 = installerSha256,
                     min_patch_version = "2.0.0",
                     release_url = apiData.TryGetProperty("html_url", out var hu) && hu.ValueKind == JsonValueKind.String
                         ? hu.GetString()
@@ -1732,7 +1813,7 @@ public sealed class KarobarDesktopBridge
                 update_available = false,
                 current_version = local.Version,
                 current_build = local.BuildNumber,
-                message = ex.Message
+                message = string.IsNullOrWhiteSpace(lastError) ? ex.Message : $"{ex.Message} ({lastError})"
             };
         }
 
@@ -1742,7 +1823,9 @@ public sealed class KarobarDesktopBridge
             update_available = false,
             current_version = local.Version,
             current_build = local.BuildNumber,
-            message = "Unable to reach GitHub Releases right now."
+            message = string.IsNullOrWhiteSpace(lastError)
+                ? "Unable to reach GitHub Releases right now."
+                : $"Unable to reach GitHub Releases right now ({lastError})."
         };
     }
 

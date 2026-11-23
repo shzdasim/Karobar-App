@@ -29,6 +29,7 @@ public class SystemUpdateController : ApiControllerBase
     {
         var isForce = !string.IsNullOrWhiteSpace(force) &&
             (force.Trim() == "1" || force.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || force.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase));
+        var bridgeError = (string?)null;
         var bridge = ResolveDesktopBridge();
         if (bridge != null)
         {
@@ -51,16 +52,19 @@ public class SystemUpdateController : ApiControllerBase
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall back to local version metadata if offline
+                bridgeError = ex.InnerException?.Message ?? ex.Message;
             }
         }
 
+        // Never fake ok=true / "up to date" when the desktop updater bridge is unavailable or failed,
+        // otherwise the SPA skips its direct GitHub fallback and silently hides available updates.
         var local = ReadLocalVersion();
         return Ok(new
         {
-            ok = true,
+            ok = false,
+            offline_fallback = true,
             update_available = false,
             is_patch = false,
             app_name = local["app_name"],
@@ -72,7 +76,9 @@ public class SystemUpdateController : ApiControllerBase
             latest_commit = local["commit_sha"],
             release_name = $"Karobar-App Native v{local["version"]}",
             released_at = local["released_at"],
-            notes = "Running native Windows build.",
+            message = string.IsNullOrWhiteSpace(bridgeError)
+                ? "Desktop updater bridge is unavailable in this environment."
+                : bridgeError,
             zero_data_loss = true
         });
     }

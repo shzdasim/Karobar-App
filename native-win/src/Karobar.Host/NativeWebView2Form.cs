@@ -716,6 +716,25 @@ public sealed class NativeWebView2Form : Form
         AddCubeMenuItem("Cube AI & Mascot Settings…", () => _ = OpenTabAsync("/settings#cube", "Cube AI Settings", allowDuplicate: false));
         menuStrip.Items.Add(cubeMenu);
 
+        // Native Help / Updates menu (accessible even on fullscreen POS or Login screens)
+        var helpMenu = new ToolStripMenuItem("Help")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(15, 23, 42)
+        };
+        helpMenu.DropDown.BackColor = Color.FromArgb(30, 41, 59);
+        helpMenu.DropDown.ForeColor = Color.FromArgb(248, 250, 252);
+        helpMenu.DropDown.Renderer = darkRenderer;
+
+        var checkUpdatesItem = new ToolStripMenuItem("Check for Updates…")
+        {
+            ForeColor = Color.FromArgb(248, 250, 252),
+            BackColor = Color.FromArgb(30, 41, 59)
+        };
+        checkUpdatesItem.Click += (_, _) => _windowManager.SendTriggerUpdateCheck(manual: true);
+        helpMenu.DropDownItems.Add(checkUpdatesItem);
+        menuStrip.Items.Add(helpMenu);
+
         MainMenuStrip = menuStrip;
         Controls.Add(menuStrip);
     }
@@ -1182,6 +1201,16 @@ public sealed class NativeWebView2Form : Form
             if (activeId != null && _tabWebViews.TryGetValue(activeId, out var wv) && wv.CoreWebView2 != null)
             {
                 try { wv.CoreWebView2.PostWebMessageAsString(json); } catch { }
+                return;
+            }
+            // Fallback to any initialized tab if ActiveTabId is not yet ready
+            foreach (var fallbackWv in _tabWebViews.Values)
+            {
+                if (!fallbackWv.IsDisposed && fallbackWv.CoreWebView2 != null)
+                {
+                    try { fallbackWv.CoreWebView2.PostWebMessageAsString(json); } catch { }
+                    return;
+                }
             }
         }
 
