@@ -101,7 +101,7 @@ public sealed class KarobarDesktopBridge
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ThermalPosPrinterRegex = new(
-        @"(pos|thermal|receipt|58mm|80mm|78mm|72mm|xprinter|xp-|black\s*copper|bc-|epson.*tm|tm-t|tm-u|bixolon|star\s*tsp|citizen|rongta|rp58|rp80|birch|sewoo|gainscha|hprt|deli|zywell|munbyn|netum|goojprt|milestone|gp-)",
+        @"(pos|thermal|receipt|58mm|80mm|78mm|72mm|pos58|pos80|pos-58|pos-80|xprinter|xp-|black\s*copper|bc-|epson.*tm|tm-t|tm-u|bixolon|star\s*tsp|citizen|rongta|rp58|rp80|birch|sewoo|gainscha|hprt|deli|zywell|munbyn|netum|goojprt|milestone|gp-|zjiang|zj-|gprinter|hoin|hop-|snbc|btp-|srp-|mht-|niimbot|speedx|tsc|argox|zebra)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly NetworkConfigManager _networkConfig;
@@ -164,6 +164,7 @@ public sealed class KarobarDesktopBridge
     /// Signature: (targetUrl, targetHtml, printerName, isThermal) => (Ok, Engine, Error).
     /// </summary>
     public Func<string?, string?, string, bool, Task<(bool Ok, string? Engine, string? Error)>>? NativeSilentPrintExecutor { get; set; }
+    public Func<string?, string?, string, bool, string, Task<(bool Ok, string? Engine, string? Error)>>? NativeSilentPrintWithScaleExecutor { get; set; }
     public Func<Task<IReadOnlyList<PrinterInfoDto>>>? PrinterListProvider { get; set; }
     public Func<Task>? OnStopBackendServices { get; set; }
 
@@ -640,6 +641,10 @@ public sealed class KarobarDesktopBridge
             : ReadPreferredPrinterConfig()).Trim();
 
         var printers = await GetPrintersAsync();
+        if (PrinterListProvider == null && (printers.Count == 0 || !printers.Any(p => !p.IsVirtual)))
+        {
+            printers = await GetPrintersAsync(forceRefresh: true);
+        }
         if (printers.Count == 0)
         {
             return new PrinterStrategyResult
@@ -657,9 +662,9 @@ public sealed class KarobarDesktopBridge
             var matched = printers.FirstOrDefault(p => p.Name == explicitRequest) ??
                           printers.FirstOrDefault(p => string.Equals(p.Name, explicitRequest, StringComparison.OrdinalIgnoreCase));
 
-            if (matched is { IsVirtual: false })
+            if (matched != null)
             {
-                if (matched.WorkOffline)
+                if (!matched.IsVirtual && matched.WorkOffline)
                 {
                     var onlineAlt = printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline);
                     if (onlineAlt != null)
@@ -820,6 +825,31 @@ public sealed class KarobarDesktopBridge
                 pdfPath = pProp.GetString();
         }
 
+        if (!string.IsNullOrWhiteSpace(targetHtml))
+        {
+            var (metaIsThermal, metaScaleMode) = Karobar.Printing.PrintTemplateRenderer.ExtractPrintMetaHints(targetHtml);
+            if (metaIsThermal == true)
+            {
+                isThermal = true;
+            }
+            if ((string.IsNullOrWhiteSpace(scaleMode) || scaleMode.Equals("auto", StringComparison.OrdinalIgnoreCase)) &&
+                !string.IsNullOrWhiteSpace(metaScaleMode))
+            {
+                scaleMode = metaScaleMode;
+            }
+        }
+        else if (!isThermal && !string.IsNullOrWhiteSpace(targetUrl) &&
+                 (targetUrl.Contains("/print/thermal-preview/", StringComparison.OrdinalIgnoreCase) ||
+                  targetUrl.Contains("/print/sticker-preview/", StringComparison.OrdinalIgnoreCase) ||
+                  targetUrl.Contains("/print/cash-drawer/", StringComparison.OrdinalIgnoreCase) ||
+                  targetUrl.Contains("type=thermal", StringComparison.OrdinalIgnoreCase)))
+        {
+            isThermal = true;
+        }
+
+        var hasNativeHostExecutor = NativeSilentPrintExecutor != null || NativeSilentPrintWithScaleExecutor != null;
+        var hasPdfFile = !string.IsNullOrWhiteSpace(pdfPath) && File.Exists(pdfPath);
+
         var strategy = await ResolvePrinterStrategyAsync(requestedDeviceName, isThermal);
         if (strategy.Mode == "no-printer" || string.IsNullOrWhiteSpace(strategy.DeviceName))
         {
@@ -827,6 +857,7 @@ public sealed class KarobarDesktopBridge
             {
                 ok = false,
                 noPhysicalPrinter = true,
+                fallbackToBrowserPrint = !hasNativeHostExecutor && !hasPdfFile,
                 error = strategy.Error ??
                         "No physical hardware printer detected on Windows. Please connect a printer or select one in Settings → Print & Receipt Layouts."
             };
@@ -835,7 +866,6 @@ public sealed class KarobarDesktopBridge
         var targetPrinter = strategy.DeviceName;
         var effectiveIsThermal = isThermal || (strategy.PrinterInfo?.IsThermalPos == true);
         var sumatraExe = ResolveSumatraPdfBinary();
-        var hasPdfFile = !string.IsNullOrWhiteSpace(pdfPath) && File.Exists(pdfPath);
 
         if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(sumatraExe) && hasPdfFile)
         {
@@ -858,9 +888,11 @@ public sealed class KarobarDesktopBridge
             effectiveTargetUrl = new Uri(Path.GetFullPath(pdfPath!)).AbsoluteUri;
         }
 
-        if (NativeSilentPrintExecutor != null)
+        if (hasNativeHostExecutor)
         {
-            var nativeRes = await NativeSilentPrintExecutor(effectiveTargetUrl, effectiveTargetHtml, targetPrinter, effectiveIsThermal);
+            var nativeRes = NativeSilentPrintWithScaleExecutor != null
+                ? await NativeSilentPrintWithScaleExecutor(effectiveTargetUrl, effectiveTargetHtml, targetPrinter, effectiveIsThermal, scaleMode)
+                : await NativeSilentPrintExecutor!(effectiveTargetUrl, effectiveTargetHtml, targetPrinter, effectiveIsThermal);
             if (nativeRes.Ok)
             {
                 return new
@@ -911,6 +943,7 @@ public sealed class KarobarDesktopBridge
         return new
         {
             ok = false,
+            fallbackToBrowserPrint = true,
             printer = targetPrinter,
             engine = "webview2-silent-print",
             error = "Desktop silent print host is unavailable in this environment."
@@ -1038,6 +1071,9 @@ public sealed class KarobarDesktopBridge
     }
 
     public Task<object> printHtml(JsonElement payload) => PrintHtmlAsync(payload);
+
+    public static (bool? IsThermal, string? ScaleMode) ExtractPrintMetaHints(string? html)
+        => Karobar.Printing.PrintTemplateRenderer.ExtractPrintMetaHints(html);
 
     public static string InjectBaseHrefForPrintHtml(string html, string appBaseUrl)
     {

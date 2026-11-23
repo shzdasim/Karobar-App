@@ -388,4 +388,83 @@ public class Phase11And12PrintingAndBackgroundTests
         using var waManager = new LocalWhatsAppSidecarManager();
         waManager.ResolveAgentUrl().Should().Be("http://127.0.0.1:3002");
     }
+
+    [Fact]
+    public async Task PrintPipeline_MetaThermalExtraction_ExplicitPrinter_And_BrowserFallback_Work()
+    {
+        // 1. ExtractPrintMetaHints detects isThermal + scaleMode from rendered thermal HTML
+        var renderer = new PrintTemplateRenderer();
+        var thermalHtml = renderer.RenderThermalPreview("standard", new PrintSettingViewModel
+        {
+            StoreName = "Print QA Store",
+            PrintScaleMode = "noscale"
+        });
+        var (metaThermal, metaScale) = Karobar.Host.KarobarDesktopBridge.ExtractPrintMetaHints(thermalHtml);
+        metaThermal.Should().BeTrue();
+        metaScale.Should().Be("noscale");
+
+        // 2. KarobarDesktopBridge honors explicit user-selected printer and returns fallbackToBrowserPrint when headless
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"karobar_print_fix_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var cfg = new Karobar.Host.NetworkConfigManager(tempRoot);
+            using var winMgr = new Karobar.Host.WebView2WindowManager(cfg);
+            var bridge = new Karobar.Host.KarobarDesktopBridge(cfg, winMgr);
+            bridge.PrinterListProvider = () => Task.FromResult<IReadOnlyList<Karobar.Host.PrinterInfoDto>>(new[]
+            {
+                new Karobar.Host.PrinterInfoDto { Name = "Microsoft Print to PDF", IsVirtual = true, IsDefault = true, IsOnline = false },
+                new Karobar.Host.PrinterInfoDto { Name = "ZJ-80 Thermal", IsVirtual = false, IsThermalPos = true, IsOnline = true }
+            });
+
+            // Automatic strategy skips virtual printer and prefers thermal POS printer when HTML meta indicates thermal
+            string? usedPrinter = null;
+            bool? usedThermal = null;
+            string? usedScale = null;
+            bridge.NativeSilentPrintWithScaleExecutor = (url, html, printer, isThermal, scale) =>
+            {
+                usedPrinter = printer;
+                usedThermal = isThermal;
+                usedScale = scale;
+                return Task.FromResult<(bool Ok, string? Engine, string? Error)>((true, "webview2-silent-print", null));
+            };
+
+            using (var payloadDoc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new { html = thermalHtml })))
+            {
+                var resJson = System.Text.Json.JsonSerializer.Serialize(await bridge.PrintHtmlAsync(payloadDoc.RootElement));
+                resJson.Should().Contain("\"ok\":true");
+                usedPrinter.Should().Be("ZJ-80 Thermal");
+                usedThermal.Should().BeTrue();
+                usedScale.Should().Be("noscale");
+            }
+
+            // Explicit user selection of virtual/PDF printer is honored
+            using (var explicitDoc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new { html = thermalHtml, deviceName = "Microsoft Print to PDF" })))
+            {
+                var resJson = System.Text.Json.JsonSerializer.Serialize(await bridge.PrintHtmlAsync(explicitDoc.RootElement));
+                resJson.Should().Contain("\"ok\":true");
+                usedPrinter.Should().Be("Microsoft Print to PDF");
+            }
+
+            // Headless host (no WebView2 executor) returns ok=false AND fallbackToBrowserPrint=true
+            bridge.NativeSilentPrintWithScaleExecutor = null;
+            bridge.NativeSilentPrintExecutor = null;
+            using (var headlessDoc = System.Text.Json.JsonDocument.Parse("{}"))
+            {
+                var headlessJson = System.Text.Json.JsonSerializer.Serialize(await bridge.SilentPrintAsync(headlessDoc.RootElement));
+                headlessJson.Should().Contain("\"ok\":false");
+                headlessJson.Should().Contain("\"fallbackToBrowserPrint\":true");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+
+        // 3. Preload script preserves native window.print and exposes hasNativeHost
+        var preload = Karobar.Host.KarobarPreloadScript.GetPreloadScript(false);
+        preload.Should().Contain("__karobarNativeWindowPrint");
+        preload.Should().Contain("hasNativeHost");
+        preload.Should().Contain("fallbackToBrowserPrint");
+    }
 }

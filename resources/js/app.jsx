@@ -9,6 +9,7 @@ import { SaleSystemProvider } from "./context/SaleSystemContext.jsx";
 import { CurrencyProvider } from "./context/CurrencyContext.jsx";
 import Routing from "./routes/index.jsx";
 import { initAxiosAuth } from "./context/axiosSetup.js";
+import "./utils/printHelper.js";
 initAxiosAuth();
 
 ReactDOM.createRoot(document.getElementById("app")).render(

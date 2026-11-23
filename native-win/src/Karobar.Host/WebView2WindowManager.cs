@@ -828,7 +828,9 @@ public sealed class WebView2WindowManager : IDisposable
             _printWorkerWindow = CreateHiddenPrintWindow();
         }
 #if WINDOWS_DESKTOP
-        if (SynchronizationContext.Current != null || System.Windows.Forms.Application.OpenForms.Count > 0)
+        // Only start offscreen WebView2 prewarm once a real NativeWebView2Form is active on the WinForms message loop
+        // (avoids racing with splashForm disposal before Application.Run starts).
+        if (System.Windows.Forms.Application.OpenForms.OfType<NativeWebView2Form>().Any(f => !f.IsDisposed && f.IsHandleCreated))
         {
             CaptureUiSynchronizationContext();
             _ = PrewarmOffscreenPrintWorkerAsync();

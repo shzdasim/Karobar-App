@@ -81,11 +81,20 @@ public sealed class OffscreenPrintWorker : IDisposable
         }
     }
 
+    public Task<(bool Ok, string? Engine, string? Error)> PrintAsync(
+        string? targetUrl,
+        string? targetHtml,
+        string printerName,
+        bool isThermal,
+        CancellationToken cancellationToken = default)
+        => PrintAsync(targetUrl, targetHtml, printerName, isThermal, scaleMode: "auto", cancellationToken);
+
     public async Task<(bool Ok, string? Engine, string? Error)> PrintAsync(
         string? targetUrl,
         string? targetHtml,
         string printerName,
         bool isThermal,
+        string scaleMode,
         CancellationToken cancellationToken = default)
     {
         if (_lifecycle.IsDisposed)
@@ -120,112 +129,169 @@ public sealed class OffscreenPrintWorker : IDisposable
                             : "Silent print job was cancelled.");
                 }
 
-                return await MarshalToUiAsync(async () =>
+                for (var attempt = 0; attempt < 2; attempt++)
                 {
-                    if (_lifecycle.IsDisposed || linkedToken.IsCancellationRequested)
-                    {
-                        return (false, "webview2-silent-print",
-                            _lifecycle.IsDisposed
-                                ? "Offscreen print worker has been shut down."
-                                : "Silent print job was cancelled.");
-                    }
-
-                    var initLockAcquired = false;
                     try
                     {
-                        await _initLock.WaitAsync(linkedToken);
-                        initLockAcquired = true;
-                        if (_lifecycle.IsDisposed || linkedToken.IsCancellationRequested)
+                        var result = await MarshalToUiAsync(async () =>
                         {
-                            return (false, "webview2-silent-print",
-                                _lifecycle.IsDisposed
-                                    ? "Offscreen print worker has been shut down."
-                                    : "Silent print job was cancelled.");
-                        }
-                        await EnsureInitializedOnUiAsync();
+                            if (_lifecycle.IsDisposed || linkedToken.IsCancellationRequested)
+                            {
+                                return (false, "webview2-silent-print",
+                                    _lifecycle.IsDisposed
+                                        ? "Offscreen print worker has been shut down."
+                                        : "Silent print job was cancelled.");
+                            }
+
+                            var initLockAcquired = false;
+                            try
+                            {
+                                await _initLock.WaitAsync(linkedToken);
+                                initLockAcquired = true;
+                                if (_lifecycle.IsDisposed || linkedToken.IsCancellationRequested)
+                                {
+                                    return (false, "webview2-silent-print",
+                                        _lifecycle.IsDisposed
+                                            ? "Offscreen print worker has been shut down."
+                                            : "Silent print job was cancelled.");
+                                }
+                                await EnsureInitializedOnUiAsync();
+                            }
+                            finally
+                            {
+                                if (initLockAcquired)
+                                {
+                                    TryReleaseSemaphore(_initLock);
+                                }
+                            }
+
+                            if (_core == null || _form == null || _form.IsDisposed)
+                            {
+                                return (false, "webview2-silent-print", "Failed to initialize offscreen print WebView2.");
+                            }
+
+                            _form.Size = new Size(isThermal ? 380 : 820, 900);
+
+                            string? largeHtmlTempFile = null;
+                            var effectiveUrl = targetUrl;
+                            if (string.IsNullOrWhiteSpace(effectiveUrl) &&
+                                !string.IsNullOrWhiteSpace(targetHtml) &&
+                                targetHtml.Length > 1_500_000)
+                            {
+                                // WebView2.NavigateToString has a hard ~2MB limit; spill oversized documents (e.g. huge barcode sheets) to a temp file.
+                                largeHtmlTempFile = Path.Combine(
+                                    Path.GetTempPath(),
+                                    $"karobar-doc-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}.html");
+                                await File.WriteAllTextAsync(largeHtmlTempFile, targetHtml, System.Text.Encoding.UTF8, linkedToken);
+                                effectiveUrl = new Uri(largeHtmlTempFile).AbsoluteUri;
+                            }
+
+                            var navTcs = new TaskCompletionSource<(bool IsSuccess, CoreWebView2WebErrorStatus ErrorStatus)>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                            ulong expectedNavId = 0;
+
+                            void OnNavStarting(object? s, CoreWebView2NavigationStartingEventArgs args)
+                            {
+                                if (expectedNavId == 0)
+                                {
+                                    expectedNavId = args.NavigationId;
+                                }
+                            }
+
+                            void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs args)
+                            {
+                                if (expectedNavId != 0 && args.NavigationId != expectedNavId)
+                                {
+                                    return;
+                                }
+                                navTcs.TrySetResult((args.IsSuccess, args.WebErrorStatus));
+                            }
+
+                            _core.NavigationStarting += OnNavStarting;
+                            _core.NavigationCompleted += OnNavCompleted;
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(effectiveUrl))
+                                {
+                                    _core.Navigate(effectiveUrl);
+                                }
+                                else
+                                {
+                                    _core.NavigateToString(targetHtml!);
+                                }
+
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(linkedToken);
+                                timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+                                var completed = await Task.WhenAny(navTcs.Task, Task.Delay(Timeout.Infinite, timeoutCts.Token));
+                                if (completed != navTcs.Task)
+                                {
+                                    return (false, "webview2-silent-print",
+                                        _lifecycle.IsDisposed
+                                            ? "Offscreen print worker has been shut down."
+                                            : cancellationToken.IsCancellationRequested
+                                                ? "Silent print job was cancelled."
+                                                : "Timed out waiting for receipt page to load before printing.");
+                                }
+
+                                var navRes = await navTcs.Task;
+                                if (!navRes.IsSuccess)
+                                {
+                                    return (false, "webview2-silent-print",
+                                        $"Failed to load print document (navigation error: {navRes.ErrorStatus}).");
+                                }
+
+                                await WaitForDocumentReadyOnUiAsync(_core, linkedToken);
+
+                                if (!string.IsNullOrWhiteSpace(effectiveUrl) &&
+                                    Uri.TryCreate(effectiveUrl, UriKind.Absolute, out var pdfUri) &&
+                                    pdfUri.IsFile &&
+                                    pdfUri.LocalPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Give Chromium's PDFium plugin brief settle time before CoreWebView2.PrintAsync
+                                    await Task.Delay(350, linkedToken);
+                                }
+
+                                return await PrintCoreWebViewAsync(
+                                    _core,
+                                    printerName,
+                                    isThermal,
+                                    scaleMode,
+                                    _windowManager.NetworkConfig.AppRoot,
+                                    linkedToken);
+                            }
+                            finally
+                            {
+                                if (_core != null)
+                                {
+                                    _core.NavigationStarting -= OnNavStarting;
+                                    _core.NavigationCompleted -= OnNavCompleted;
+                                }
+                                await ResetToBlankOnUiAsync();
+                                if (!string.IsNullOrWhiteSpace(largeHtmlTempFile))
+                                {
+                                    try { if (File.Exists(largeHtmlTempFile)) File.Delete(largeHtmlTempFile); } catch { }
+                                }
+                            }
+                        }, linkedToken).ConfigureAwait(false);
+
+                        return result;
                     }
-                    finally
+                    catch (Exception ex) when (attempt == 0 && ex is not OperationCanceledException && !_lifecycle.IsDisposed && !linkedToken.IsCancellationRequested)
                     {
-                        if (initLockAcquired)
-                        {
-                            TryReleaseSemaphore(_initLock);
-                        }
-                    }
-
-                    if (_core == null || _form == null || _form.IsDisposed)
-                    {
-                        return (false, "webview2-silent-print", "Failed to initialize offscreen print WebView2.");
-                    }
-
-                    _form.Size = new Size(isThermal ? 380 : 820, 900);
-
-                    var navTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs args)
-                    {
-                        navTcs.TrySetResult(args.IsSuccess);
-                    }
-
-                    _core.NavigationCompleted += OnNavCompleted;
-                    try
-                    {
-                        if (!string.IsNullOrWhiteSpace(targetUrl))
-                        {
-                            _core.Navigate(targetUrl);
-                        }
-                        else
-                        {
-                            _core.NavigateToString(targetHtml!);
-                        }
-
-                        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(linkedToken);
-                        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
-                        var completed = await Task.WhenAny(navTcs.Task, Task.Delay(Timeout.Infinite, timeoutCts.Token));
-                        if (completed != navTcs.Task)
-                        {
-                            return (false, "webview2-silent-print",
-                                _lifecycle.IsDisposed
-                                    ? "Offscreen print worker has been shut down."
-                                    : cancellationToken.IsCancellationRequested
-                                        ? "Silent print job was cancelled."
-                                        : "Timed out waiting for receipt page to load before printing.");
-                        }
-
-                        if (!await navTcs.Task)
-                        {
-                            return (false, "webview2-silent-print",
-                                "Failed to load print document (navigation error or HTTP 403/404/500).");
-                        }
-
+                        // Recover automatically from stale/crashed WebView2 process or COM error and retry once
                         try
                         {
-                            await _core.ExecuteScriptAsync(
-                                "(async () => { if (document.fonts && document.fonts.ready) { await document.fonts.ready; } await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); })()");
+                            await MarshalToUiAsync(() =>
+                            {
+                                ResetWorkerOnUi();
+                                return Task.CompletedTask;
+                            }, linkedToken).ConfigureAwait(false);
                         }
-                        catch
-                        {
-                            await Task.Delay(120, linkedToken);
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(targetUrl) &&
-                            Uri.TryCreate(targetUrl, UriKind.Absolute, out var pdfUri) &&
-                            pdfUri.IsFile &&
-                            pdfUri.LocalPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // Give Chromium's PDFium plugin brief settle time before CoreWebView2.PrintAsync
-                            await Task.Delay(350, linkedToken);
-                        }
-
-                        return await PrintCoreWebViewAsync(_core, printerName, isThermal);
+                        catch { }
                     }
-                    finally
-                    {
-                        if (_core != null)
-                        {
-                            _core.NavigationCompleted -= OnNavCompleted;
-                        }
-                        await ResetToBlankOnUiAsync();
-                    }
-                }, linkedToken).ConfigureAwait(false);
+                }
+
+                return (false, "webview2-silent-print", "Offscreen print worker failed after recovery retry.");
             }
         }
         catch (OperationCanceledException)
@@ -250,6 +316,31 @@ public sealed class OffscreenPrintWorker : IDisposable
                 TryReleaseSemaphore(_printMutex);
             }
             _lifecycle.ExitOperation();
+        }
+    }
+
+    private static async Task WaitForDocumentReadyOnUiAsync(CoreWebView2 core, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // ExecuteScriptAsync does not await JS Promises, so poll document.readyState + images synchronously (max ~1.2s)
+            const string readyScript =
+                "(function(){try{if(document.readyState!=='complete')return 'loading';var imgs=Array.from(document.images||[]);if(imgs.some(function(i){return !i.complete;}))return 'images';return 'ready';}catch(e){return 'ready';}})()";
+            var deadline = Environment.TickCount64 + 1200;
+            while (Environment.TickCount64 < deadline && !cancellationToken.IsCancellationRequested)
+            {
+                var state = await core.ExecuteScriptAsync(readyScript);
+                if (string.Equals(state, "\"ready\"", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+                await Task.Delay(50, cancellationToken);
+            }
+            await Task.Delay(100, cancellationToken);
+        }
+        catch
+        {
+            try { await Task.Delay(120, cancellationToken); } catch { }
         }
     }
 
@@ -513,26 +604,17 @@ public sealed class OffscreenPrintWorker : IDisposable
     internal static async Task<(bool Ok, string? Engine, string? Error)> PrintCoreWebViewAsync(
         CoreWebView2 core,
         string printerName,
-        bool isThermal)
+        bool isThermal,
+        string scaleMode = "auto",
+        string? appRoot = null,
+        CancellationToken cancellationToken = default)
     {
-        var settings = core.Environment.CreatePrintSettings();
-        settings.PrinterName = printerName;
-        settings.Copies = 1;
-        settings.Orientation = CoreWebView2PrintOrientation.Portrait;
-        settings.ShouldPrintBackgrounds = true;
-        settings.ShouldPrintHeaderAndFooter = false;
-        settings.ShouldPrintSelectionOnly = false;
+        var effectiveIsThermal = isThermal;
+        var effectiveScaleMode = string.IsNullOrWhiteSpace(scaleMode) ? "auto" : scaleMode.Trim();
         var requestedCopies = 1;
-        if (isThermal)
-        {
-            settings.MarginTop = 0;
-            settings.MarginBottom = 0;
-            settings.MarginLeft = 0;
-            settings.MarginRight = 0;
-            settings.ScaleFactor = 1.0;
-        }
+        double? paperWidthMm = null;
 
-        // Read <meta name="karobar-print-config"> for ALL silent prints (copies + optional paperWidthMm)
+        // Read <meta name="karobar-print-config"> for ALL silent prints (isThermal, copies, paperWidthMm, scaleMode)
         try
         {
             var metaRaw = await core.ExecuteScriptAsync(
@@ -543,36 +625,63 @@ public sealed class OffscreenPrintWorker : IDisposable
                 if (!string.IsNullOrWhiteSpace(unescaped))
                 {
                     using var cfgDoc = JsonDocument.Parse(unescaped);
-                    if (isThermal && cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) &&
+                    if (cfgDoc.RootElement.TryGetProperty("isThermal", out var thEl) &&
+                        thEl.ValueKind == JsonValueKind.True)
+                    {
+                        effectiveIsThermal = true;
+                    }
+                    if (cfgDoc.RootElement.TryGetProperty("paperWidthMm", out var pwEl) &&
                         pwEl.TryGetDouble(out var pwMm) && pwMm is >= 25 and <= 216)
                     {
-                        settings.PageWidth = pwMm / 25.4;
+                        paperWidthMm = pwMm;
                     }
                     if (cfgDoc.RootElement.TryGetProperty("copies", out var cpEl) &&
                         cpEl.TryGetInt32(out var copies) && copies is >= 1 and <= 20)
                     {
                         requestedCopies = copies;
-                        settings.Copies = copies;
+                    }
+                    if ((string.IsNullOrWhiteSpace(effectiveScaleMode) || effectiveScaleMode.Equals("auto", StringComparison.OrdinalIgnoreCase)) &&
+                        cfgDoc.RootElement.TryGetProperty("scaleMode", out var scEl) &&
+                        scEl.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(scEl.GetString()))
+                    {
+                        effectiveScaleMode = scEl.GetString()!.Trim();
                     }
                 }
             }
         }
         catch { }
 
-        CoreWebView2PrintStatus status;
+        var settings = core.Environment.CreatePrintSettings();
+        settings.PrinterName = printerName;
+        settings.Copies = requestedCopies;
+        settings.Orientation = CoreWebView2PrintOrientation.Portrait;
+        settings.ShouldPrintBackgrounds = true;
+        settings.ShouldPrintHeaderAndFooter = false;
+        settings.ShouldPrintSelectionOnly = false;
+        if (effectiveIsThermal)
+        {
+            settings.MarginTop = 0;
+            settings.MarginBottom = 0;
+            settings.MarginLeft = 0;
+            settings.MarginRight = 0;
+            settings.ScaleFactor = 1.0;
+            if (paperWidthMm.HasValue)
+            {
+                settings.PageWidth = paperWidthMm.Value / 25.4;
+            }
+        }
+
+        CoreWebView2PrintStatus status = CoreWebView2PrintStatus.OtherError;
+        string? primaryException = null;
         try
         {
             status = await core.PrintAsync(settings);
         }
-        catch (ArgumentException)
+        catch (Exception ex)
         {
-            // Fallback for thermal drivers that reject explicit 0 margins or custom scale factor
-            var fallback = core.Environment.CreatePrintSettings();
-            fallback.PrinterName = printerName;
-            fallback.Copies = requestedCopies;
-            fallback.ShouldPrintBackgrounds = true;
-            fallback.ShouldPrintHeaderAndFooter = false;
-            status = await core.PrintAsync(fallback);
+            primaryException = ex.Message;
+            status = CoreWebView2PrintStatus.OtherError;
         }
 
         if (status == CoreWebView2PrintStatus.Succeeded)
@@ -580,10 +689,147 @@ public sealed class OffscreenPrintWorker : IDisposable
             return (true, "webview2-silent-print", null);
         }
 
+        // Fallback 1: Retry CoreWebView2.PrintAsync with clean driver-default settings
+        // (many Windows thermal & A4 drivers reject explicit 0 margins, custom PageWidth, or ScaleFactor with OtherError or COMException)
+        try
+        {
+            var fallback = core.Environment.CreatePrintSettings();
+            fallback.PrinterName = printerName;
+            fallback.Copies = requestedCopies;
+            fallback.ShouldPrintBackgrounds = true;
+            fallback.ShouldPrintHeaderAndFooter = false;
+            var fallbackStatus = await core.PrintAsync(fallback);
+            if (fallbackStatus == CoreWebView2PrintStatus.Succeeded)
+            {
+                return (true, "webview2-silent-print-fallback", null);
+            }
+            status = fallbackStatus;
+        }
+        catch (Exception ex)
+        {
+            primaryException ??= ex.Message;
+        }
+
+        // Fallback 2: Render via CoreWebView2.PrintToPdfAsync and spool silently through bundled SumatraPDF.exe (GDI driver path)
+        var sumatraFallback = await TryPrintViaPdfAndSumatraAsync(
+            core,
+            printerName,
+            effectiveIsThermal,
+            paperWidthMm,
+            requestedCopies,
+            effectiveScaleMode,
+            appRoot,
+            cancellationToken);
+        if (sumatraFallback.Ok)
+        {
+            return sumatraFallback;
+        }
+
         var reason = status == CoreWebView2PrintStatus.PrinterUnavailable
             ? $"Printer '{printerName}' is offline, disconnected, or unavailable in Windows."
-            : $"Windows printer '{printerName}' failed to print (status: {status}).";
+            : !string.IsNullOrWhiteSpace(primaryException)
+                ? $"Windows printer '{printerName}' failed to print: {primaryException}"
+                : $"Windows printer '{printerName}' failed to print (status: {status}).";
         return (false, "webview2-silent-print", reason);
+    }
+
+    private static async Task<(bool Ok, string? Engine, string? Error)> TryPrintViaPdfAndSumatraAsync(
+        CoreWebView2 core,
+        string printerName,
+        bool isThermal,
+        double? paperWidthMm,
+        int copies,
+        string scaleMode,
+        string? appRoot,
+        CancellationToken cancellationToken)
+    {
+        var rawPrinter = new Karobar.Printing.Win32RawPrinterService(appRoot);
+        var sumatraExe = rawPrinter.ResolveSumatraPdfBinary();
+        if (string.IsNullOrWhiteSpace(sumatraExe))
+        {
+            return (false, "sumatra-fallback", "SumatraPDF.exe is not available.");
+        }
+
+        var tempPdfPath = Path.Combine(
+            Path.GetTempPath(),
+            $"karobar-pdf-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}.pdf");
+
+        try
+        {
+            var pdfSettings = core.Environment.CreatePrintSettings();
+            pdfSettings.ShouldPrintBackgrounds = true;
+            pdfSettings.ShouldPrintHeaderAndFooter = false;
+            pdfSettings.Orientation = CoreWebView2PrintOrientation.Portrait;
+            if (isThermal)
+            {
+                pdfSettings.MarginTop = 0;
+                pdfSettings.MarginBottom = 0;
+                pdfSettings.MarginLeft = 0;
+                pdfSettings.MarginRight = 0;
+                if (paperWidthMm.HasValue)
+                {
+                    pdfSettings.PageWidth = paperWidthMm.Value / 25.4;
+                }
+            }
+
+            var pdfOk = await core.PrintToPdfAsync(tempPdfPath, pdfSettings);
+            if (!pdfOk || !File.Exists(tempPdfPath))
+            {
+                return (false, "sumatra-fallback", "WebView2 PrintToPdfAsync did not produce a PDF.");
+            }
+
+            var effectiveScale = scaleMode is "noscale" or "fit" or "shrink"
+                ? scaleMode
+                : (isThermal ? "noscale" : "fit");
+            var printSettingsArg = copies > 1 ? $"{effectiveScale},{copies}x" : effectiveScale;
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = sumatraExe,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardError = true
+            };
+            psi.ArgumentList.Add("-print-to");
+            psi.ArgumentList.Add(printerName);
+            psi.ArgumentList.Add("-silent");
+            psi.ArgumentList.Add("-print-settings");
+            psi.ArgumentList.Add(printSettingsArg);
+            psi.ArgumentList.Add(tempPdfPath);
+
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null)
+            {
+                return (false, "sumatra-fallback", "Failed to start SumatraPDF.");
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+            var stderr = await proc.StandardError.ReadToEndAsync(cts.Token);
+            await proc.WaitForExitAsync(cts.Token);
+
+            if (proc.ExitCode == 0)
+            {
+                return (true, "webview2-pdf-sumatra", null);
+            }
+
+            return (false, "sumatra-fallback", string.IsNullOrWhiteSpace(stderr) ? $"SumatraPDF exited with code {proc.ExitCode}." : stderr.Trim());
+        }
+        catch (Exception ex)
+        {
+            return (false, "sumatra-fallback", ex.Message);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPdfPath))
+                {
+                    File.Delete(tempPdfPath);
+                }
+            }
+            catch { }
+        }
     }
 
     private static void TryReleaseSemaphore(SemaphoreSlim semaphore)

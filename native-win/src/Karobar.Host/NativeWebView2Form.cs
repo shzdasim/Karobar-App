@@ -1386,11 +1386,12 @@ public sealed class NativeWebView2Form : Form
         string? targetUrl,
         string? targetHtml,
         string printerName,
-        bool isThermal)
+        bool isThermal,
+        string scaleMode = "auto")
     {
         if (!string.IsNullOrWhiteSpace(targetUrl) || !string.IsNullOrWhiteSpace(targetHtml))
         {
-            return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal);
+            return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal, scaleMode);
         }
 
         if (IsDisposed || !IsHandleCreated)
@@ -1408,7 +1409,12 @@ public sealed class NativeWebView2Form : Form
                     _tabWebViews.TryGetValue(_workspace.ActiveTabId, out var activeWv) &&
                     activeWv.CoreWebView2 != null)
                 {
-                    var result = await OffscreenPrintWorker.PrintCoreWebViewAsync(activeWv.CoreWebView2, printerName, isThermal);
+                    var result = await OffscreenPrintWorker.PrintCoreWebViewAsync(
+                        activeWv.CoreWebView2,
+                        printerName,
+                        isThermal,
+                        scaleMode,
+                        _windowManager.NetworkConfig.AppRoot);
                     tcs.TrySetResult(result);
                 }
                 else

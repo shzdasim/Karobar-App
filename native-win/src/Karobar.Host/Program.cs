@@ -136,6 +136,7 @@ public static class Program
 
             // Wire real Windows hardware silent printing (active tab on surviving form OR persistent OffscreenPrintWorker)
             hostServer.DesktopBridge.NativeSilentPrintExecutor = appContext.ExecuteSilentPrintAsync;
+            hostServer.DesktopBridge.NativeSilentPrintWithScaleExecutor = appContext.ExecuteSilentPrintWithScaleAsync;
 
             // Route all child-window / openWindow / openSubWindow requests into tabs on the active surviving window
             windowManager.OnOpenTabRequested = (routePath, title) => appContext.OpenTabOnActiveForm(routePath, title);
@@ -375,10 +376,18 @@ public static class Program
             string? targetHtml,
             string printerName,
             bool isThermal)
+            => ExecuteSilentPrintWithScaleAsync(targetUrl, targetHtml, printerName, isThermal, "auto");
+
+        public Task<(bool Ok, string? Engine, string? Error)> ExecuteSilentPrintWithScaleAsync(
+            string? targetUrl,
+            string? targetHtml,
+            string printerName,
+            bool isThermal,
+            string scaleMode)
         {
             if (!string.IsNullOrWhiteSpace(targetUrl) || !string.IsNullOrWhiteSpace(targetHtml))
             {
-                return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal);
+                return _windowManager.OffscreenPrintWorker.PrintAsync(targetUrl, targetHtml, printerName, isThermal, scaleMode);
             }
 
             var activeForm = GetPreferredActiveForm();
@@ -387,7 +396,7 @@ public static class Program
                 return Task.FromResult<(bool, string?, string?)>((false, "webview2-silent-print", "No active window available to print."));
             }
 
-            return activeForm.ExecuteNativeSilentPrintAsync(null, null, printerName, isThermal);
+            return activeForm.ExecuteNativeSilentPrintAsync(null, null, printerName, isThermal, scaleMode);
         }
 
         public void QuitAll()

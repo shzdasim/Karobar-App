@@ -257,6 +257,54 @@ public sealed class PrintTemplateRenderer
         return Convert.ToHexStringLower(bytes);
     }
 
+    public static (bool? IsThermal, string? ScaleMode) ExtractPrintMetaHints(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                html,
+                @"<meta\s+[^>]*name=[""']karobar-print-config[""'][^>]*content=[""']([^""']+)[""']",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                match = System.Text.RegularExpressions.Regex.Match(
+                    html,
+                    @"<meta\s+[^>]*content=[""']([^""']+)[""'][^>]*name=[""']karobar-print-config[""']",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
+            if (!match.Success)
+            {
+                return (null, null);
+            }
+
+            var decoded = WebUtility.HtmlDecode(match.Groups[1].Value);
+            using var doc = JsonDocument.Parse(decoded);
+            bool? isThermal = null;
+            string? scaleMode = null;
+            if (doc.RootElement.TryGetProperty("isThermal", out var thProp) &&
+                (thProp.ValueKind == JsonValueKind.True || thProp.ValueKind == JsonValueKind.False))
+            {
+                isThermal = thProp.GetBoolean();
+            }
+            if (doc.RootElement.TryGetProperty("scaleMode", out var scProp) &&
+                scProp.ValueKind == JsonValueKind.String)
+            {
+                scaleMode = scProp.GetString();
+            }
+            return (isThermal, scaleMode);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
     /// <summary>
     /// Renders `resources/views/printer/partials/calibration_styles.blade.php`.
     /// </summary>

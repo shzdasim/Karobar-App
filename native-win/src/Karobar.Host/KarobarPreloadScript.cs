@@ -206,9 +206,15 @@ public static class KarobarPreloadScript
             };
           }
 
+          const hasNativeHost = Boolean(
+            window.__karobarUseNativeWebView2PostMessage ||
+            (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function")
+          );
+
           const desktopApi = {
             isDesktop: true,
             isNative: true,
+            hasNativeHost: hasNativeHost,
             isOffscreenPrintWorker: Boolean(isOffscreenPrintWorker),
             platform: "win32",
             getAppInfo: () => ipcInvoke("karobar:app-info"),
@@ -258,8 +264,13 @@ public static class KarobarPreloadScript
           }
 
           // Intercept window.print() in the page's main world before any DOM onload handlers execute
-          // so native OS print dialogs or popup print dialogs are never shown.
+          // so native OS print dialogs or popup print dialogs are never shown inside WebView2,
+          // while preserving native browser print when opened in a regular browser on localhost.
           try {
+            var __nativeWindowPrint = typeof window.print === "function" ? window.print.bind(window) : null;
+            if (__nativeWindowPrint && !window.__karobarNativeWindowPrint) {
+              window.__karobarNativeWindowPrint = __nativeWindowPrint;
+            }
             if (isOffscreenPrintWorker) {
               window.__karobarSilentPrintWorker = true;
               window.print = function () {};
@@ -269,6 +280,10 @@ public static class KarobarPreloadScript
                 window.__karobarWindowPrintPatched = true;
                 window.print = function () {
                   try {
+                    if (!hasNativeHost && typeof window.__karobarNativeWindowPrint === "function") {
+                      window.__karobarNativeWindowPrint();
+                      return;
+                    }
                     if (window.karobarDesktop && typeof window.karobarDesktop.silentPrint === "function") {
                       var preferred = "";
                       try {
@@ -278,7 +293,15 @@ public static class KarobarPreloadScript
                         preferred && preferred !== "default" && preferred !== "system_default"
                           ? preferred
                           : undefined;
-                      window.karobarDesktop.silentPrint({ silent: true, deviceName: deviceName });
+                      Promise.resolve(window.karobarDesktop.silentPrint({ silent: true, deviceName: deviceName }))
+                        .then(function (res) {
+                          if (res && res.fallbackToBrowserPrint && typeof window.__karobarNativeWindowPrint === "function") {
+                            window.__karobarNativeWindowPrint();
+                          }
+                        })
+                        .catch(function () {});
+                    } else if (typeof window.__karobarNativeWindowPrint === "function") {
+                      window.__karobarNativeWindowPrint();
                     }
                   } catch (e) {}
                 };

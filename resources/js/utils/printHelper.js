@@ -12,14 +12,31 @@ import toast from "react-hot-toast";
 
 export const PREFERRED_PRINTER_STORAGE_KEY = "karobar_preferred_printer";
 
+const NATIVE_WINDOW_PRINT =
+  typeof window !== "undefined"
+    ? typeof window.__karobarNativeWindowPrint === "function"
+      ? window.__karobarNativeWindowPrint
+      : typeof window.print === "function"
+      ? window.print.bind(window)
+      : null
+    : null;
+
+function isUsableDesktopBridge(candidate) {
+  if (!candidate?.isDesktop) return false;
+  // When Kestrel serves the SPA to a regular web browser on localhost (Chrome/Edge/Safari),
+  // preload.js sets isNative=true with hasNativeHost=false. Use browser printing instead of desktop IPC.
+  if (candidate.isNative && candidate.hasNativeHost === false) return false;
+  return true;
+}
+
 export function getDesktopPrintBridge() {
   if (typeof window === "undefined") return null;
   try {
-    if (window.karobarDesktop?.isDesktop) return window.karobarDesktop;
-    if (window.parent && window.parent !== window && window.parent.karobarDesktop?.isDesktop) {
+    if (isUsableDesktopBridge(window.karobarDesktop)) return window.karobarDesktop;
+    if (window.parent && window.parent !== window && isUsableDesktopBridge(window.parent.karobarDesktop)) {
       return window.parent.karobarDesktop;
     }
-    if (window.top && window.top !== window && window.top.karobarDesktop?.isDesktop) {
+    if (window.top && window.top !== window && isUsableDesktopBridge(window.top.karobarDesktop)) {
       return window.top.karobarDesktop;
     }
   } catch {
@@ -80,12 +97,11 @@ function runIframeUrlPrint(url) {
       const iframe = document.createElement("iframe");
       iframe.id = "karobar-hidden-print-iframe";
       iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
+      iframe.style.left = "-10000px";
+      iframe.style.top = "0";
+      iframe.style.width = "820px";
+      iframe.style.height = "900px";
       iframe.style.border = "0";
-      iframe.style.opacity = "0";
       iframe.style.pointerEvents = "none";
 
       let printed = false;
@@ -131,12 +147,11 @@ function runIframeHtmlPrint(html) {
       const iframe = document.createElement("iframe");
       iframe.id = "karobar-hidden-print-iframe";
       iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
+      iframe.style.left = "-10000px";
+      iframe.style.top = "0";
+      iframe.style.width = "820px";
+      iframe.style.height = "900px";
       iframe.style.border = "0";
-      iframe.style.opacity = "0";
       iframe.style.pointerEvents = "none";
 
       document.body.appendChild(iframe);
@@ -221,6 +236,12 @@ export async function printSlipUrl(urlOrPayload, options = {}) {
         }
         return true;
       }
+      if (res?.fallbackToBrowserPrint) {
+        if (!options.quiet) {
+          toast.dismiss(toastId);
+        }
+        return runIframeUrlPrint(url);
+      }
       if (!options.quiet) {
         toast.error(
           res?.error ? `Printer error: ${res.error}` : "Could not print slip. Check printer connection.",
@@ -266,6 +287,12 @@ export async function printSlipHtml(html, options = {}) {
           });
         }
         return true;
+      }
+      if (res?.fallbackToBrowserPrint) {
+        if (!options.quiet) {
+          toast.dismiss(toastId);
+        }
+        return runIframeHtmlPrint(html);
       }
       if (!options.quiet) {
         toast.error(
@@ -314,6 +341,15 @@ export async function printCurrentView(options = {}) {
         }
         return true;
       }
+      if (res?.fallbackToBrowserPrint) {
+        if (!options.quiet) {
+          toast.dismiss(toastId);
+        }
+        if (typeof NATIVE_WINDOW_PRINT === "function") {
+          NATIVE_WINDOW_PRINT();
+          return true;
+        }
+      }
       if (!options.quiet) {
         toast.error(
           res?.error ? `Printer error: ${res.error}` : "Could not print document. Check printer connection.",
@@ -329,8 +365,8 @@ export async function printCurrentView(options = {}) {
     }
   }
 
-  if (typeof window !== "undefined" && typeof window.print === "function") {
-    window.print();
+  if (typeof NATIVE_WINDOW_PRINT === "function") {
+    NATIVE_WINDOW_PRINT();
     return true;
   }
   return false;

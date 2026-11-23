@@ -62,7 +62,7 @@ public sealed class Win32RawPrinterService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ThermalPosPrinterRegex = new(
-        @"(pos|thermal|receipt|58mm|80mm|78mm|72mm|xprinter|xp-|black\s*copper|bc-|epson.*tm|tm-t|tm-u|bixolon|star\s*tsp|citizen|rongta|rp58|rp80|birch|sewoo|gainscha|hprt|deli|zywell|munbyn|netum|goojprt|milestone|gp-)",
+        @"(pos|thermal|receipt|58mm|80mm|78mm|72mm|pos58|pos80|pos-58|pos-80|xprinter|xp-|black\s*copper|bc-|epson.*tm|tm-t|tm-u|bixolon|star\s*tsp|citizen|rongta|rp58|rp80|birch|sewoo|gainscha|hprt|deli|zywell|munbyn|netum|goojprt|milestone|gp-|zjiang|zj-|gprinter|hoin|hop-|snbc|btp-|srp-|mht-|niimbot|speedx|tsc|argox|zebra)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly string _appRoot;
@@ -446,69 +446,101 @@ public sealed class Win32RawPrinterService
             try
             {
                 var defaultPrinterName = GetWindowsDefaultPrinterName();
-                const uint flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
-                uint cbNeeded = 0;
-                uint pcReturned = 0;
-                EnumPrinters(flags, null, 2, IntPtr.Zero, 0, out cbNeeded, out pcReturned);
-
-                if (cbNeeded > 0)
+                var flagSets = new[]
                 {
-                    for (var attempt = 0; attempt < 2; attempt++)
+                    PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS,
+                    PRINTER_ENUM_LOCAL
+                };
+
+                foreach (var flags in flagSets)
+                {
+                    uint cbNeeded = 0;
+                    uint pcReturned = 0;
+                    EnumPrinters(flags, null, 2, IntPtr.Zero, 0, out cbNeeded, out pcReturned);
+
+                    if (cbNeeded > 0)
                     {
-                        var pBuffer = Marshal.AllocHGlobal((int)cbNeeded);
-                        try
+                        for (var attempt = 0; attempt < 2; attempt++)
                         {
-                            if (EnumPrinters(flags, null, 2, pBuffer, cbNeeded, out cbNeeded, out pcReturned))
+                            var pBuffer = Marshal.AllocHGlobal((int)cbNeeded);
+                            try
                             {
-                                var structSize = Marshal.SizeOf<PRINTER_INFO_2W>();
-                                for (var i = 0; i < (int)pcReturned; i++)
+                                if (EnumPrinters(flags, null, 2, pBuffer, cbNeeded, out cbNeeded, out pcReturned))
                                 {
-                                    var info = Marshal.PtrToStructure<PRINTER_INFO_2W>(IntPtr.Add(pBuffer, i * structSize));
-                                    var name = (Marshal.PtrToStringUni(info.pPrinterName) ?? "").Trim();
-                                    if (string.IsNullOrEmpty(name)) continue;
+                                    var structSize = Marshal.SizeOf<PRINTER_INFO_2W>();
+                                    for (var i = 0; i < (int)pcReturned; i++)
+                                    {
+                                        var info = Marshal.PtrToStructure<PRINTER_INFO_2W>(IntPtr.Add(pBuffer, i * structSize));
+                                        var name = (Marshal.PtrToStringUni(info.pPrinterName) ?? "").Trim();
+                                        if (string.IsNullOrEmpty(name)) continue;
 
-                                    var driverName = (Marshal.PtrToStringUni(info.pDriverName) ?? "").Trim();
-                                    var portName = (Marshal.PtrToStringUni(info.pPortName) ?? "").Trim();
-                                    var isDefault = !string.IsNullOrEmpty(defaultPrinterName) &&
-                                                    string.Equals(name, defaultPrinterName, StringComparison.OrdinalIgnoreCase);
-                                    var workOffline = (info.Attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0 ||
-                                                      (info.Status & (PRINTER_STATUS_OFFLINE | PRINTER_STATUS_NOT_AVAILABLE)) != 0;
-                                    var hasHardwareError = (info.Status & (PRINTER_STATUS_ERROR | PRINTER_STATUS_PENDING_DELETION)) != 0;
+                                        var driverName = (Marshal.PtrToStringUni(info.pDriverName) ?? "").Trim();
+                                        var portName = (Marshal.PtrToStringUni(info.pPortName) ?? "").Trim();
+                                        var isDefault = !string.IsNullOrEmpty(defaultPrinterName) &&
+                                                        string.Equals(name, defaultPrinterName, StringComparison.OrdinalIgnoreCase);
+                                        var workOffline = (info.Attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0 ||
+                                                          (info.Status & (PRINTER_STATUS_OFFLINE | PRINTER_STATUS_NOT_AVAILABLE)) != 0;
+                                        var hasHardwareError = (info.Status & (PRINTER_STATUS_ERROR | PRINTER_STATUS_PENDING_DELETION)) != 0;
 
-                                    result.Add(ClassifyPrinter(
-                                        name,
-                                        name,
-                                        driverName,
-                                        portName,
-                                        isDefault,
-                                        workOffline,
-                                        (int)info.Status,
-                                        preferredName,
-                                        hasHardwareError));
+                                        result.Add(ClassifyPrinter(
+                                            name,
+                                            name,
+                                            driverName,
+                                            portName,
+                                            isDefault,
+                                            workOffline,
+                                            (int)info.Status,
+                                            preferredName,
+                                            hasHardwareError));
+                                    }
+                                    enumeratedOk = true;
+                                    break;
                                 }
-                                enumeratedOk = true;
-                                break;
-                            }
 
-                            var err = Marshal.GetLastWin32Error();
-                            if (err != ERROR_INSUFFICIENT_BUFFER || cbNeeded == 0)
-                            {
-                                break;
+                                var err = Marshal.GetLastWin32Error();
+                                if (err != ERROR_INSUFFICIENT_BUFFER || cbNeeded == 0)
+                                {
+                                    break;
+                                }
                             }
-                        }
-                        finally
-                        {
-                            if (pBuffer != IntPtr.Zero)
+                            finally
                             {
-                                Marshal.FreeHGlobal(pBuffer);
+                                if (pBuffer != IntPtr.Zero)
+                                {
+                                    Marshal.FreeHGlobal(pBuffer);
+                                }
                             }
                         }
                     }
+                    else
+                    {
+                        var err = Marshal.GetLastWin32Error();
+                        if (err is 0 or 122 or 18)
+                        {
+                            enumeratedOk = true;
+                        }
+                    }
+
+                    if (result.Count > 0)
+                    {
+                        break;
+                    }
                 }
-                else
+
+                // Fallback: if spooler enumeration failed/returned empty but Windows reports a default printer, expose it.
+                if (result.Count == 0 && !string.IsNullOrWhiteSpace(defaultPrinterName))
                 {
-                    // No printers installed in Windows spooler
-                    enumeratedOk = Marshal.GetLastWin32Error() is 0 or 122 or 18;
+                    result.Add(ClassifyPrinter(
+                        defaultPrinterName,
+                        defaultPrinterName,
+                        "",
+                        "",
+                        isDefault: true,
+                        workOfflineFlag: false,
+                        printerStatus: 0,
+                        preferredName: preferredName,
+                        hasHardwareError: false));
+                    enumeratedOk = true;
                 }
             }
             catch
@@ -622,7 +654,7 @@ public sealed class Win32RawPrinterService
                         VirtualPrinterNameOrDriverRegex.IsMatch(driverName) ||
                         VirtualPrinterPortRegex.IsMatch(portName);
 
-        var workOffline = workOfflineFlag || printerStatus == 7;
+        var workOffline = workOfflineFlag;
         var isOnline = !isVirtual && !workOffline && !hasHardwareError;
         var isThermalPos = !isVirtual && (
             ThermalPosPrinterRegex.IsMatch(name) ||
@@ -652,8 +684,14 @@ public sealed class Win32RawPrinterService
         string? requestedDeviceName = null,
         bool isThermalDoc = false)
     {
-        var explicitRequest = (requestedDeviceName ?? ReadPreferredPrinterConfig() ?? "").Trim();
+        var explicitRequest = (!string.IsNullOrWhiteSpace(requestedDeviceName)
+            ? requestedDeviceName
+            : ReadPreferredPrinterConfig()).Trim();
         var printers = await GetPrintersAsync();
+        if (printers.Count == 0 || !printers.Any(p => !p.IsVirtual))
+        {
+            printers = await GetPrintersAsync(forceRefresh: true);
+        }
 
         if (printers.Count == 0)
         {
@@ -670,9 +708,9 @@ public sealed class Win32RawPrinterService
             !explicitRequest.Equals("system_default", StringComparison.OrdinalIgnoreCase))
         {
             var matched = printers.FirstOrDefault(p => string.Equals(p.Name, explicitRequest, StringComparison.OrdinalIgnoreCase));
-            if (matched != null && !matched.IsVirtual)
+            if (matched != null)
             {
-                if (matched.WorkOffline)
+                if (!matched.IsVirtual && matched.WorkOffline)
                 {
                     var onlineAlt = isThermalDoc
                         ? (printers.FirstOrDefault(p => !p.IsVirtual && p.IsOnline && p.IsThermalPos)

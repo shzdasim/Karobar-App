@@ -1962,6 +1962,17 @@ export default function PrinterSetting({
                         {p.isDefault ? " (Windows Default)" : ""}
                       </option>
                     ))}
+                  {installedPrinters.some((p) => p.isVirtual) && (
+                    <optgroup label="Virtual / PDF Printers (Manual Selection)">
+                      {installedPrinters
+                        .filter((p) => p.isVirtual)
+                        .map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.displayName || p.name} (Virtual)
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
                 <button
                   type="button"
