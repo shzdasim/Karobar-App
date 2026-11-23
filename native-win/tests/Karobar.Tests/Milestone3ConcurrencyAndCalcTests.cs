@@ -197,7 +197,7 @@ public class Milestone3ConcurrencyAndCalcTests
             files.Add(ff);
         }
 
-        ctx.Request.Form = new FormCollection(formDict, files);
+        ctx.Request.Form = new Microsoft.AspNetCore.Http.FormCollection(formDict, files);
         return ctx;
     }
 
@@ -1570,7 +1570,7 @@ public class Milestone3ConcurrencyAndCalcTests
         };
         ctx.Items["KarobarUserId"] = adminId;
         ctx.Request.ContentType = "multipart/form-data; boundary=----KarobarM3RaceBoundary";
-        ctx.Request.Form = new FormCollection(
+        ctx.Request.Form = new Microsoft.AspNetCore.Http.FormCollection(
             new Dictionary<string, StringValues>(),
             new FormFileCollection { racingFile });
 

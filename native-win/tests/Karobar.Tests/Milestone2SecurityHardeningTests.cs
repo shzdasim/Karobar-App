@@ -212,7 +212,7 @@ public class Milestone2SecurityHardeningTests
             files.Add(ff);
         }
 
-        ctx.Request.Form = new FormCollection(formDict, files);
+        ctx.Request.Form = new Microsoft.AspNetCore.Http.FormCollection(formDict, files);
         return ctx;
     }
 
