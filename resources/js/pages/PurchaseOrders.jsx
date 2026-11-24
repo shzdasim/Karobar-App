@@ -377,7 +377,13 @@ export default function PurchaseOrders() {
     (async () => {
       try {
         if (creating) {
-          setForm({ ...blank(), items: location.state?.items?.length ? location.state.items.map(orderRow) : [newItem()] }); setSupplier(null);
+          const incomingSupplier = location.state?.supplier?.id ? location.state.supplier : null;
+          setForm({
+            ...blank(),
+            supplier_id: incomingSupplier ? incomingSupplier.id : '',
+            items: location.state?.items?.length ? location.state.items.map(orderRow) : [newItem()],
+          });
+          setSupplier(incomingSupplier);
           setProducts((location.state?.items || []).map(item => item.product).filter(Boolean));
         } else if (id) {
           const { data } = await axios.get(`/api/purchase-orders/${id}`);

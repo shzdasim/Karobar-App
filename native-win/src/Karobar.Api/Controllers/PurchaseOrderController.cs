@@ -591,7 +591,9 @@ public class PurchaseOrderController : ApiControllerBase
         [FromQuery(Name = "brand_ids")] List<long>? brand_ids = null,
         [FromQuery(Name = "brand_ids[]")] List<long>? brand_ids_arr = null,
         [FromQuery] int safety_packs = 0,
-        [FromQuery] int moq_packs = 0)
+        [FromQuery] int moq_packs = 0,
+        [FromQuery] bool include_secondary_suppliers = false,
+        [FromQuery] bool deduct_on_order = true)
     {
         if (!await CanAsync("purchase-order.generate", "purchase-order.forecast", "purchase-order.create"))
         {
@@ -623,11 +625,44 @@ public class PurchaseOrderController : ApiControllerBase
             return Unprocessable("The given data was invalid.", errors);
         }
 
+        var safeSafetyPacks = Math.Max(0, safety_packs);
+        var safeMoqPacks = Math.Max(0, moq_packs);
+
         var mergedBrandIds = new List<long>();
         if (brand_id.HasValue && brand_id.Value > 0) mergedBrandIds.Add(brand_id.Value);
         if (brand_ids != null) mergedBrandIds.AddRange(brand_ids.Where(x => x > 0));
         if (brand_ids_arr != null) mergedBrandIds.AddRange(brand_ids_arr.Where(x => x > 0));
+
+        // Parse brand filters directly from Request.Query as well so Axios bracketed arrays
+        // (brand_ids[]=1&brand_ids[]=2), indexed arrays (brand_ids[0]=1), repeated params
+        // (brand_ids=1&brand_ids=2), or CSV (brand_ids=1,2) always bind reliably.
+        if (Request?.Query != null)
+        {
+            foreach (var kv in Request.Query)
+            {
+                var key = kv.Key ?? "";
+                var isBrandKey =
+                    key.Equals("brand_id", StringComparison.OrdinalIgnoreCase) ||
+                    key.Equals("brand_ids", StringComparison.OrdinalIgnoreCase) ||
+                    key.Equals("brand_ids[]", StringComparison.OrdinalIgnoreCase) ||
+                    (key.StartsWith("brand_ids[", StringComparison.OrdinalIgnoreCase) && key.EndsWith("]"));
+                if (!isBrandKey) continue;
+
+                foreach (var rawVal in kv.Value)
+                {
+                    if (string.IsNullOrWhiteSpace(rawVal)) continue;
+                    foreach (var part in rawVal.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        if (long.TryParse(part, out var parsedBrandId) && parsedBrandId > 0)
+                        {
+                            mergedBrandIds.Add(parsedBrandId);
+                        }
+                    }
+                }
+            }
+        }
         var brandIdArray = mergedBrandIds.Distinct().ToArray();
+        var brandIdSet = brandIdArray.Length > 0 ? new HashSet<long>(brandIdArray) : null;
 
         var fromStr = fromDt.ToString("yyyy-MM-dd");
         var toStr = toDt.ToString("yyyy-MM-dd");
@@ -635,6 +670,9 @@ public class PurchaseOrderController : ApiControllerBase
         var proj = projected_days!.Value;
 
         var hasProdSuppliers = await Db.HasTableAsync("product_suppliers");
+        var hasSaleReturns = await Db.HasTableAsync("sale_returns") && await Db.HasTableAsync("sale_return_items");
+        var hasSaleReturnStatus = hasSaleReturns && await Db.HasColumnAsync("sale_returns", "status");
+
         var dyn = new DynamicParameters();
         dyn.Add("fromStr", fromStr);
         dyn.Add("toStr", toStr);
@@ -643,9 +681,16 @@ public class PurchaseOrderController : ApiControllerBase
         if (supplier_id.HasValue && supplier_id.Value > 0)
         {
             dyn.Add("sid", supplier_id.Value);
-            if (hasProdSuppliers)
+            if (hasProdSuppliers && include_secondary_suppliers)
             {
                 filterWhere += " AND (p.supplier_id = @sid OR EXISTS (SELECT 1 FROM product_suppliers ps WHERE ps.product_id = p.id AND ps.supplier_id = @sid))";
+            }
+            else if (hasProdSuppliers)
+            {
+                // Strict primary supplier filter: prevent products whose primary supplier is another supplier
+                // from leaking in via historical purchase-invoice links in product_suppliers.
+                // Only fall back to product_suppliers when a product has no primary supplier set.
+                filterWhere += " AND (p.supplier_id = @sid OR ((p.supplier_id IS NULL OR p.supplier_id = 0) AND EXISTS (SELECT 1 FROM product_suppliers ps WHERE ps.product_id = p.id AND ps.supplier_id = @sid)))";
             }
             else
             {
@@ -659,26 +704,52 @@ public class PurchaseOrderController : ApiControllerBase
             filterWhere += " AND p.brand_id IN @brandIds";
         }
 
-        var soldSql = $@"
+        var saleReturnStatusClause = hasSaleReturnStatus
+            ? " AND (sr.status IS NULL OR LOWER(sr.status) NOT IN ('reversed', 'cancelled'))"
+            : "";
+
+        var soldSql = hasSaleReturns
+            ? $@"
             WITH srx AS (
-                SELECT sri.product_id, SUM(sri.unit_return_quantity) as units_returned
+                SELECT sri.product_id, SUM(COALESCE(sri.unit_return_quantity, 0)) as units_returned
                 FROM sale_return_items sri
                 INNER JOIN sale_returns sr ON sr.id = sri.sale_return_id
-                WHERE date(sr.date) BETWEEN date(@fromStr) AND date(@toStr)
+                WHERE date(sr.date) BETWEEN date(@fromStr) AND date(@toStr){saleReturnStatusClause}
                 GROUP BY sri.product_id
             ),
             sx AS (
                 SELECT sii.product_id,
-                       CASE WHEN (SUM(sii.quantity + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0)) > 0
-                            THEN (SUM(sii.quantity + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0))
+                       CASE WHEN (SUM(COALESCE(sii.quantity, 0) + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0)) > 0
+                            THEN (SUM(COALESCE(sii.quantity, 0) + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0))
                             ELSE 0 END as units_sold,
                        MAX(si.date) as last_sold_date_in_range
                 FROM sale_invoice_items sii
                 INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id
                 LEFT JOIN srx ON srx.product_id = sii.product_id
                 WHERE date(si.date) BETWEEN date(@fromStr) AND date(@toStr)
-                  AND (si.status IS NULL OR si.status != 'reversed')
+                  AND (si.status IS NULL OR LOWER(si.status) NOT IN ('reversed', 'cancelled', 'draft'))
                 GROUP BY sii.product_id, srx.units_returned
+            )
+            SELECT p.id as product_id, p.product_code, p.name as product_name, p.pack_size as product_pack_size,
+                   p.quantity as current_stock_units, p.unit_purchase_price, p.pack_purchase_price, p.unit_sale_price,
+                   p.brand_id, p.supplier_id, b.name as brand_name, s.name as supplier_name,
+                   sx.units_sold, sx.last_sold_date_in_range as last_sold_date, 0 as is_user_demand
+            FROM products p
+            INNER JOIN sx ON p.id = sx.product_id
+            LEFT JOIN brands b ON b.id = p.brand_id
+            LEFT JOIN suppliers s ON s.id = p.supplier_id
+            WHERE sx.units_sold > 0 {filterWhere}
+            ORDER BY sx.units_sold DESC"
+            : $@"
+            WITH sx AS (
+                SELECT sii.product_id,
+                       SUM(COALESCE(sii.quantity, 0) + COALESCE(sii.bonus, 0)) as units_sold,
+                       MAX(si.date) as last_sold_date_in_range
+                FROM sale_invoice_items sii
+                INNER JOIN sale_invoices si ON si.id = sii.sale_invoice_id
+                WHERE date(si.date) BETWEEN date(@fromStr) AND date(@toStr)
+                  AND (si.status IS NULL OR LOWER(si.status) NOT IN ('reversed', 'cancelled', 'draft'))
+                GROUP BY sii.product_id
             )
             SELECT p.id as product_id, p.product_code, p.name as product_name, p.pack_size as product_pack_size,
                    p.quantity as current_stock_units, p.unit_purchase_price, p.pack_purchase_price, p.unit_sale_price,
@@ -702,12 +773,12 @@ public class PurchaseOrderController : ApiControllerBase
                 SELECT p.id as product_id, p.product_code, p.name as product_name, p.pack_size as product_pack_size,
                        p.quantity as current_stock_units, p.unit_purchase_price, p.pack_purchase_price, p.unit_sale_price,
                        p.brand_id, p.supplier_id, b.name as brand_name, s.name as supplier_name,
-                       SUM(ud.requested_quantity) as units_sold, MAX(ud.created_at) as last_sold_date, 1 as is_user_demand
+                       0 as units_sold, MAX(ud.created_at) as last_sold_date, 1 as is_user_demand
                 FROM user_demands ud
                 INNER JOIN products p ON p.id = ud.product_id
                 LEFT JOIN brands b ON b.id = p.brand_id
                 LEFT JOIN suppliers s ON s.id = p.supplier_id
-                WHERE ud.status = 'pending' {filterWhere}
+                WHERE LOWER(COALESCE(ud.status, '')) = 'pending' {filterWhere}
                 GROUP BY p.id, p.product_code, p.name, p.pack_size, p.quantity,
                          p.unit_purchase_price, p.pack_purchase_price, p.unit_sale_price,
                          p.brand_id, p.supplier_id, b.name, s.name";
@@ -716,14 +787,58 @@ public class PurchaseOrderController : ApiControllerBase
             var demandInfoList = await Db.QueryListAsync(@"
                 SELECT ud.product_id,
                        GROUP_CONCAT(DISTINCT COALESCE(c.name, ud.requested_name)) as customer_names,
-                       SUM(ud.requested_quantity) as demand_quantity
+                       SUM(COALESCE(ud.requested_quantity, 0)) as demand_quantity
                 FROM user_demands ud
                 LEFT JOIN customers c ON c.id = ud.customer_id
-                WHERE ud.status = 'pending'
+                WHERE LOWER(COALESCE(ud.status, '')) = 'pending'
                 GROUP BY ud.product_id");
             foreach (var di in demandInfoList)
             {
                 demandInfoByProduct[ToLong(di.GetValueOrDefault("product_id"))] = di;
+            }
+        }
+
+        // Compute remaining unreceived units from currently open Purchase Orders so users don't double-order.
+        var onOrderByProduct = new Dictionary<long, int>();
+        if (await Db.HasTableAsync("purchase_orders") && await Db.HasTableAsync("purchase_order_items"))
+        {
+            var hasPiItems = await Db.HasTableAsync("purchase_invoices") && await Db.HasTableAsync("purchase_invoice_items");
+            var onOrderSql = hasPiItems
+                ? @"SELECT poi.product_id,
+                           SUM(
+                               CASE WHEN (COALESCE(poi.ordered_quantity, 0) - COALESCE((
+                                   SELECT SUM(COALESCE(pii.unit_quantity, 0))
+                                   FROM purchase_invoice_items pii
+                                   INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                                   WHERE pii.purchase_order_item_id = poi.id
+                                     AND (pi.status IS NULL OR LOWER(pi.status) != 'reversed')
+                               ), 0)) > 0
+                               THEN (COALESCE(poi.ordered_quantity, 0) - COALESCE((
+                                   SELECT SUM(COALESCE(pii.unit_quantity, 0))
+                                   FROM purchase_invoice_items pii
+                                   INNER JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                                   WHERE pii.purchase_order_item_id = poi.id
+                                     AND (pi.status IS NULL OR LOWER(pi.status) != 'reversed')
+                               ), 0))
+                               ELSE 0 END
+                           ) AS on_order_units
+                    FROM purchase_order_items poi
+                    INNER JOIN purchase_orders po ON po.id = poi.purchase_order_id
+                    WHERE LOWER(COALESCE(po.status, '')) IN ('ordered', 'partially_received')
+                    GROUP BY poi.product_id"
+                : @"SELECT poi.product_id,
+                           SUM(COALESCE(poi.ordered_quantity, 0)) AS on_order_units
+                    FROM purchase_order_items poi
+                    INNER JOIN purchase_orders po ON po.id = poi.purchase_order_id
+                    WHERE LOWER(COALESCE(po.status, '')) IN ('ordered', 'partially_received')
+                    GROUP BY poi.product_id";
+
+            var onOrderRows = await Db.QueryListAsync(onOrderSql);
+            foreach (var oor in onOrderRows)
+            {
+                var opid = ToLong(oor.GetValueOrDefault("product_id"));
+                var qty = (int)Math.Max(0, ToLong(oor.GetValueOrDefault("on_order_units")));
+                if (opid > 0 && qty > 0) onOrderByProduct[opid] = qty;
             }
         }
 
@@ -732,7 +847,7 @@ public class PurchaseOrderController : ApiControllerBase
         {
             var retRows = await Db.QueryListAsync(@"
                 SELECT pri.product_id,
-                       SUM(pri.return_unit_quantity) as returned_units,
+                       SUM(COALESCE(pri.return_unit_quantity, 0)) as returned_units,
                        MAX(pr.date) as last_purchase_return_date
                 FROM purchase_return_items pri
                 INNER JOIN purchase_returns pr ON pr.id = pri.purchase_return_id
@@ -767,28 +882,48 @@ public class PurchaseOrderController : ApiControllerBase
         foreach (var row in mergedRows)
         {
             var pid = ToLong(row.GetValueOrDefault("product_id"));
+            var rowBrandId = ToLong(row.GetValueOrDefault("brand_id"));
+            var rowSupplierId = ToLong(row.GetValueOrDefault("supplier_id"));
+
+            // Defense-in-depth enforcement of requested brand & strict primary supplier filters.
+            if (brandIdSet != null && !brandIdSet.Contains(rowBrandId))
+            {
+                continue;
+            }
+            if (supplier_id.HasValue && supplier_id.Value > 0 && !include_secondary_suppliers &&
+                rowSupplierId > 0 && rowSupplierId != supplier_id.Value)
+            {
+                continue;
+            }
+
             var packSize = Math.Max(1, (int)ToLong(row.GetValueOrDefault("product_pack_size") ?? 1));
-            var unitsSold = (int)ToLong(row.GetValueOrDefault("units_sold"));
+            var unitsSold = Math.Max(0, (int)ToLong(row.GetValueOrDefault("units_sold")));
             var dailyUnits = days > 0 ? ((double)unitsSold / days) : 0.0;
-            var projUnits = dailyUnits * proj;
+            var projUnits = days > 0 ? ((double)unitsSold * proj / days) : 0.0;
+
+            demandInfoByProduct.TryGetValue(pid, out var demandInfo);
+            returnedByProduct.TryGetValue(pid, out var returnInfo);
+            var userDemandUnits = demandInfo != null ? Math.Max(0, (int)ToLong(demandInfo.GetValueOrDefault("demand_quantity"))) : 0;
+            var onOrderUnits = onOrderByProduct.TryGetValue(pid, out var ooUnits) ? ooUnits : 0;
 
             var stockUnits = (int)ToLong(row.GetValueOrDefault("current_stock_units"));
-            var safetyUnits = safety_packs * packSize;
-            var endingUnits = stockUnits - projUnits;
+            var effectiveStockUnits = stockUnits + (deduct_on_order ? onOrderUnits : 0);
+            var safetyUnits = safeSafetyPacks * packSize;
+            var requiredUnits = projUnits + userDemandUnits;
+            var endingUnits = effectiveStockUnits - requiredUnits;
             var dueUnits = Math.Max(0.0, safetyUnits - endingUnits);
-            var suggested = (int)Math.Ceiling(dueUnits / packSize);
+            var exactPacks = dueUnits / packSize;
+            var suggested = exactPacks <= 1e-9 ? 0 : (int)Math.Ceiling(exactPacks - 1e-9);
 
-            if (suggested > 0 && moq_packs > 0)
+            if (suggested > 0 && safeMoqPacks > 0)
             {
-                suggested = Math.Max(suggested, moq_packs);
+                suggested = Math.Max(suggested, safeMoqPacks);
             }
 
             var ppu = ToDouble(row.GetValueOrDefault("unit_purchase_price"));
             var ppp = ToDouble(row.GetValueOrDefault("pack_purchase_price"));
             var packPrice = ppp > 0 ? ppp : (ppu > 0 ? ppu * packSize : 0.0);
 
-            demandInfoByProduct.TryGetValue(pid, out var demandInfo);
-            returnedByProduct.TryGetValue(pid, out var returnInfo);
             bool isUserDemand = ToLong(row.GetValueOrDefault("is_user_demand")) == 1 || demandInfo != null;
 
             items.Add(new Dictionary<string, object?>
@@ -803,6 +938,8 @@ public class PurchaseOrderController : ApiControllerBase
                 ["pack_size"] = packSize,
                 ["units_sold"] = unitsSold,
                 ["current_stock_units"] = stockUnits,
+                ["on_order_units"] = onOrderUnits,
+                ["on_order_packs"] = Math.Round((double)onOrderUnits / packSize, 2),
                 ["projected_days"] = proj,
                 ["suggested_packs"] = suggested,
                 ["suggested_units"] = suggested * packSize,
@@ -813,7 +950,7 @@ public class PurchaseOrderController : ApiControllerBase
                 ["unit_sale_price"] = row.GetValueOrDefault("unit_sale_price"),
                 ["is_user_demand"] = isUserDemand ? 1 : 0,
                 ["user_demand_customers"] = demandInfo?.GetValueOrDefault("customer_names"),
-                ["user_demand_quantity"] = demandInfo != null ? (int)ToLong(demandInfo.GetValueOrDefault("demand_quantity")) : 0,
+                ["user_demand_quantity"] = userDemandUnits,
                 ["has_purchase_return"] = returnInfo != null ? 1 : 0,
                 ["purchase_return_units"] = returnInfo != null ? (int)ToLong(returnInfo.GetValueOrDefault("returned_units")) : 0,
                 ["last_purchase_return_date"] = returnInfo != null ? FormatDate(returnInfo.GetValueOrDefault("last_purchase_return_date")) : null,
@@ -821,10 +958,15 @@ public class PurchaseOrderController : ApiControllerBase
                 {
                     ["daily_units"] = Math.Round(dailyUnits, 4),
                     ["proj_units"] = Math.Round(projUnits, 2),
+                    ["user_demand_units"] = userDemandUnits,
+                    ["required_units"] = Math.Round(requiredUnits, 2),
+                    ["on_order_units"] = onOrderUnits,
+                    ["deduct_on_order"] = deduct_on_order,
+                    ["effective_stock_units"] = effectiveStockUnits,
                     ["ending_units"] = Math.Round(endingUnits, 2),
                     ["safety_units"] = safetyUnits,
                     ["due_units"] = Math.Round(dueUnits, 2),
-                    ["moq_packs"] = moq_packs
+                    ["moq_packs"] = safeMoqPacks
                 }
             });
         }
@@ -842,8 +984,10 @@ public class PurchaseOrderController : ApiControllerBase
                     ["supplier_id"] = supplier_id,
                     ["brand_id"] = brand_id,
                     ["brand_ids"] = brandIdArray.Length > 0 ? brandIdArray : null,
-                    ["safety_packs"] = safety_packs,
-                    ["moq_packs"] = moq_packs
+                    ["safety_packs"] = safeSafetyPacks,
+                    ["moq_packs"] = safeMoqPacks,
+                    ["include_secondary_suppliers"] = include_secondary_suppliers,
+                    ["deduct_on_order"] = deduct_on_order
                 }
             },
             ["items"] = items
