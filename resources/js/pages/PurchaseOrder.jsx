@@ -37,6 +37,7 @@ import {
 import {
   buildCreateOrderPayload,
   buildForecastQueryParams,
+  calculateRowScrollOffset,
   finalizeForecastRowPacks,
   getForecastFilterSignature,
   updateForecastRowPacks,
@@ -350,28 +351,53 @@ export default function PurchaseOrder() {
     };
   }, [visibleRows]);
 
+  // === Keep Active / Focused Row Clear of Sticky Header & Totals Footer ===
+  const ensureRowVisible = useCallback((rowId) => {
+    if (!rowId) return;
+    const trEl = rowRefs.current[rowId];
+    const wrap = tableWrapRef.current;
+    if (!trEl || !wrap) return;
+
+    const trBox = trEl.getBoundingClientRect();
+    const wrapBox = wrap.getBoundingClientRect();
+
+    const theadEl = wrap.querySelector("thead");
+    const tfootEl = wrap.querySelector("tfoot");
+
+    const headerHeight = theadEl ? theadEl.getBoundingClientRect().height : 44;
+    const footerHeight = tfootEl ? tfootEl.getBoundingClientRect().height : 54;
+
+    const offset = calculateRowScrollOffset({
+      trTop: trBox.top,
+      trBottom: trBox.bottom,
+      wrapTop: wrapBox.top,
+      wrapBottom: wrapBox.bottom,
+      headerHeight,
+      footerHeight,
+      padding: 12,
+    });
+
+    if (offset !== 0) {
+      wrap.scrollTop += offset;
+    }
+  }, []);
+
   // === Explicit Row Focus Effect (ONLY when navigating rows via keyboard) ===
   useEffect(() => {
     if (!pendingFocusRowId) return;
     const inputEl = inputRefs.current[pendingFocusRowId];
-    const trEl = rowRefs.current[pendingFocusRowId];
 
-    if (trEl && tableWrapRef.current) {
-      const wrap = tableWrapRef.current;
-      const trBox = trEl.getBoundingClientRect();
-      const wrapBox = wrap.getBoundingClientRect();
-      if (trBox.top < wrapBox.top + 44 || trBox.bottom > wrapBox.bottom - 44) {
-        trEl.scrollIntoView({ block: "nearest" });
-      }
-    }
+    ensureRowVisible(pendingFocusRowId);
+
     if (inputEl) {
       requestAnimationFrame(() => {
         inputEl.focus({ preventScroll: true });
         inputEl.select();
+        ensureRowVisible(pendingFocusRowId);
       });
     }
     setPendingFocusRowId(null);
-  }, [pendingFocusRowId]);
+  }, [pendingFocusRowId, ensureRowVisible]);
 
   // === Build Printable HTML ===
   const buildPrintHtml = useCallback(
@@ -1654,7 +1680,10 @@ ${
                       if (el) rowRefs.current[r._rowId] = el;
                       else delete rowRefs.current[r._rowId];
                     }}
-                    onClick={() => setSelectedRowId(r._rowId)}
+                    onClick={() => {
+                      setSelectedRowId(r._rowId);
+                      ensureRowVisible(r._rowId);
+                    }}
                     className={`purchase-order-row transition-colors ${
                       isActive
                         ? "is-active"
@@ -1812,7 +1841,10 @@ ${
                           autoComplete="off"
                           aria-label={`Order packs for ${r.product_name}`}
                           value={r.order_packs_input ?? String(orderPacksVal)}
-                          onFocus={() => setSelectedRowId(r._rowId)}
+                          onFocus={() => {
+                            setSelectedRowId(r._rowId);
+                            ensureRowVisible(r._rowId);
+                          }}
                           onChange={(e) => handleOrderPacksChange(r._rowId, e.target.value)}
                           onBlur={() => handleOrderPacksBlur(r._rowId)}
                           onKeyDown={(e) => handleRowInputKeyDown(e, idx)}

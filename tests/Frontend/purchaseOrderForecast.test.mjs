@@ -8,6 +8,7 @@ import {
   buildForecastQueryParams,
   getForecastFilterSignature,
   buildCreateOrderPayload,
+  calculateRowScrollOffset,
 } from "../../resources/js/utils/purchaseOrderForecast.js";
 
 test("multi-digit quantity entry works cleanly without losing digits", () => {
@@ -166,3 +167,38 @@ test("buildCreateOrderPayload passes supplier and flags mixed-supplier lists", (
   assert.equal(mixed.distinctSuppliers.length, 2);
   assert.equal(mixed.supplier, null);
 });
+
+test("calculateRowScrollOffset adjusts view when active row reaches sticky totals footer or header", () => {
+  const container = { wrapTop: 100, wrapBottom: 600, headerHeight: 44, footerHeight: 54, padding: 12 };
+
+  // 1. Row is fully visible in the safe middle area (between 156 and 534)
+  const clearOffset = calculateRowScrollOffset({
+    ...container,
+    trTop: 300,
+    trBottom: 340,
+  });
+  assert.equal(clearOffset, 0);
+
+  // 2. Row bottom reaches or enters behind the sticky bottom totals footer
+  // maxVisibleBottom = 600 - 54 = 546. With padding 12, threshold is 534.
+  // Suppose trBottom is 550 (overlapping footer by 4px).
+  const bottomOffset = calculateRowScrollOffset({
+    ...container,
+    trTop: 510,
+    trBottom: 550,
+  });
+  // delta should be (550 - 546) + 12 = 16px to scroll down and clear the footer
+  assert.equal(bottomOffset, 16);
+
+  // 3. Row top is partially or fully behind the sticky thead header
+  // minVisibleTop = 100 + 44 = 144. With padding 12, threshold is 156.
+  // Suppose trTop is 140 (overlapping header by 4px).
+  const topOffset = calculateRowScrollOffset({
+    ...container,
+    trTop: 140,
+    trBottom: 180,
+  });
+  // delta should be 140 - 156 = -16px to scroll up and clear the header
+  assert.equal(topOffset, -16);
+});
+

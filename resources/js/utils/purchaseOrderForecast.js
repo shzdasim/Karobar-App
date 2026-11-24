@@ -218,3 +218,43 @@ export function buildCreateOrderPayload({
     hasMultipleSuppliers: distinctSuppliers.length > 1,
   };
 }
+
+/**
+ * Calculates any necessary scrollTop delta to keep a table row fully visible
+ * between a sticky header (thead) and sticky footer (tfoot).
+ *
+ * @param {object} params
+ * @param {number} params.trTop - Element getBoundingClientRect().top
+ * @param {number} params.trBottom - Element getBoundingClientRect().bottom
+ * @param {number} params.wrapTop - Container getBoundingClientRect().top
+ * @param {number} params.wrapBottom - Container getBoundingClientRect().bottom
+ * @param {number} [params.headerHeight=44] - Height of sticky table header
+ * @param {number} [params.footerHeight=54] - Height of sticky table footer (totals row)
+ * @param {number} [params.padding=12] - Additional safety breathing room in pixels
+ * @returns {number} delta in pixels to add to container.scrollTop (positive scrolls down, negative scrolls up, 0 if already visible)
+ */
+export function calculateRowScrollOffset({
+  trTop,
+  trBottom,
+  wrapTop,
+  wrapBottom,
+  headerHeight = 44,
+  footerHeight = 54,
+  padding = 12,
+}) {
+  const minVisibleTop = wrapTop + headerHeight;
+  const maxVisibleBottom = wrapBottom - footerHeight;
+
+  // If row is hidden or partially obstructed by sticky bottom footer (tfoot)
+  if (trBottom > maxVisibleBottom - padding) {
+    return trBottom - maxVisibleBottom + padding;
+  }
+
+  // If row is hidden or partially obstructed by sticky top header (thead)
+  if (trTop < minVisibleTop + padding) {
+    return trTop - (minVisibleTop + padding);
+  }
+
+  return 0;
+}
+
