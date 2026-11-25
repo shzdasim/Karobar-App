@@ -16,6 +16,7 @@ import {
   XMarkIcon,
   ArrowPathIcon,
   ServerStackIcon,
+  BookOpenIcon,
 } from "@heroicons/react/24/solid";
 import toast from "react-hot-toast";
 import { useLicense } from "@/context/LicenseContext.jsx";
@@ -950,6 +951,18 @@ export default function Topbar({
               isOpen={guideBotOpen}
               pageTitle={pageTitle}
             />
+
+            {/* In-App Bilingual User Manual */}
+            <button
+              type="button"
+              onClick={() => navigate("/user-manual")}
+              title="Open User Manual & Training (English / اردو)"
+              aria-label="Open User Manual"
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            >
+              <BookOpenIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="hidden lg:inline">User Manual</span>
+            </button>
           </div>
 
           {/* Right: 1) Server Status & Cash Drawer | 2) Notifications & Theme | 3) User & Tools Menu */}

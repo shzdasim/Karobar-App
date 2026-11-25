@@ -179,7 +179,8 @@ public sealed class KestrelHostServer : IAsyncDisposable
         "/users/:id/edit",
         "/roles",
         "/roles/create",
-        "/roles/:id/edit"
+        "/roles/:id/edit",
+        "/user-manual"
     ];
 
     private static readonly Regex NonSpaRoutePrefixRegex = new(

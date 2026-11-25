@@ -42,8 +42,12 @@ vendor
 Homestead.json
 Homestead.yaml
 Thumbs.db
-/docs
 /docs/*
+!/docs/README.md
+!/docs/DOCUMENTATION_STATUS.md
+!/docs/en/
+!/docs/ur/
+!/docs/customer/
 /doc
 /doc/*
 /.planning

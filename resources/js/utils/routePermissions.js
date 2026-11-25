@@ -18,6 +18,7 @@ export const PUBLIC_ROUTES = [
 
 export const OPEN_AUTHENTICATED_ROUTES = [
   "/dashboard",
+  "/user-manual",
   "/profile",
 ];
 

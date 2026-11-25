@@ -76,6 +76,7 @@ const PurchaseOrder = registerLazy(() => import("../pages/PurchaseOrder.jsx"), [
 const UserDemandsIndex = registerLazy(() => import("../pages/UserDemand/index.jsx"), ["/user-demands"]);
 const CreateUserDemand = registerLazy(() => import("../pages/UserDemand/Create.jsx"), ["/user-demands/create"]);
 const Dashboard = registerLazy(() => import("../pages/Dashboard.jsx"), ["/dashboard"]);
+const UserManual = registerLazy(() => import("../pages/UserManual.jsx"), ["/user-manual"]);
 const CostOfSaleReport = registerLazy(() => import("../pages/Reports/CostOfSaleReport.jsx"), ["/reports/cost-of-sale"]);
 const CostOfSaleDetailReport = registerLazy(() => import("../pages/Reports/CostOfSaleDetailReport.jsx"), ["/reports/cost-of-sale-detail"]);
 const PurchaseDetailReport = registerLazy(() => import("../pages/Reports/PurchaseDetailReport.jsx"), ["/reports/purchase-detail"]);
@@ -224,6 +225,7 @@ export default function AppRoutes() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/user-manual" element={<UserManual />} />
           <Route path="/profile" element={<Profile />} />
 
           {/* Suppliers & Customers */}
