@@ -83,6 +83,7 @@ public class Phase2DatabaseVerificationTests
             File.Exists(factory.SqlitePath).Should().BeTrue($"database.sqlite should exist at {factory.SqlitePath}");
 
             var bootstrapper = new DatabaseBootstrapper(factory);
+            await bootstrapper.EnsureSchemaReadyAsync();
             var verification = await bootstrapper.VerifySchemaCompatibilityAsync();
 
             verification.MissingTables.Should().BeEmpty("Every entity [Table] must exist in database.sqlite");

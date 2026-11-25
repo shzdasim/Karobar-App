@@ -407,6 +407,24 @@ public class StockDisposalService
                 var currentProd = await _db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id = productId }, conn, tx) ?? product;
                 var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(currentProd) - disposeQty);
                 await stocktakeSvc.UpdateProductQtyInDbAsync(currentProd, newProdQty, conn, tx);
+
+                if (disposeQty > 0m)
+                {
+                    await new InventoryLedgerService(_db).RecordMovementAsync(
+                        conn,
+                        tx,
+                        productId,
+                        batch != null ? Convert.ToInt64(batch["id"]) : null,
+                        pItem.GetValueOrDefault("batch_number")?.ToString(),
+                        "disposal",
+                        disposalId,
+                        null,
+                        disposalNumber,
+                        -disposeQty,
+                        newProdQty,
+                        $"Stock disposal ({cause})",
+                        userId);
+                }
             }
 
             await tx.CommitAsync();
@@ -624,6 +642,24 @@ public class StockDisposalService
 
                 var newProdQty = StocktakeService.GetProductQty(product) + disposeQty;
                 await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+
+                if (disposeQty > 0m)
+                {
+                    await new InventoryLedgerService(_db).RecordMovementAsync(
+                        conn,
+                        tx,
+                        productId,
+                        batch != null ? Convert.ToInt64(batch["id"]) : null,
+                        item.GetValueOrDefault("batch_number")?.ToString(),
+                        "reversal",
+                        disposalId,
+                        Convert.ToInt64(item["id"]),
+                        disposal.GetValueOrDefault("disposal_number")?.ToString() ?? $"DISP-{disposalId}",
+                        disposeQty,
+                        newProdQty,
+                        string.IsNullOrWhiteSpace(reason) ? "Restored quarantined disposal to shelf" : reason.Trim(),
+                        userId);
+                }
             }
 
             var updatedNotes = disposal.GetValueOrDefault("notes")?.ToString() ?? "";

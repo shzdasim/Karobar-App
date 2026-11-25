@@ -2211,10 +2211,10 @@ public class SaleInvoiceController : ApiControllerBase
                 await Db.UpdateAsync("products", pid, new Dictionary<string, object?> { ["default_dosage"] = dosage }, "id", conn, tx);
             }
 
-            await Db.InsertAsync("sale_invoice_items", payload, conn, tx);
+            var itemId = await Db.InsertAsync("sale_invoice_items", payload, conn, tx);
 
             var units = (int)ToLong(payload["quantity"]) + Math.Max(0, (int)ToLong(payload["bonus"]));
-            await ApplyStockDeltaSmartAsync(pid, batchNumber, expiry, -units, conn, tx);
+            await ApplyStockDeltaSmartAsync(pid, batchNumber, expiry, -units, conn, tx, "sale", invoiceId, itemId, $"SI-{invoiceId:D6}");
         }
     }
 
@@ -2229,8 +2229,10 @@ public class SaleInvoiceController : ApiControllerBase
             var batchNo = item.GetValueOrDefault("batch_number")?.ToString();
             var expiry = item.GetValueOrDefault("expiry")?.ToString();
             var units = (int)ToLong(item.GetValueOrDefault("quantity")) + Math.Max(0, (int)ToLong(item.GetValueOrDefault("bonus")));
+            var invId = ToLong(item.GetValueOrDefault("sale_invoice_id"));
+            var itemId = ToLong(item.GetValueOrDefault("id"));
 
-            await ApplyStockDeltaSmartAsync(pid, batchNo, expiry, +units, conn, tx);
+            await ApplyStockDeltaSmartAsync(pid, batchNo, expiry, +units, conn, tx, "reversal", invId > 0 ? invId : null, itemId > 0 ? itemId : null, invId > 0 ? $"SI-{invId:D6}" : "SALE-REV");
         }
     }
 
@@ -2240,7 +2242,11 @@ public class SaleInvoiceController : ApiControllerBase
         string? expiry,
         int deltaUnits,
         IDbConnection conn,
-        IDbTransaction tx)
+        IDbTransaction tx,
+        string txType = "sale",
+        long? txId = null,
+        long? txItemId = null,
+        string? refNumber = null)
     {
         var bTrim = (batchNo ?? "").Trim();
         var eTrim = (expiry ?? "").Trim();
@@ -2346,6 +2352,25 @@ public class SaleInvoiceController : ApiControllerBase
                 prodUpdates["whole_sale_margin"] = 0;
             }
             await Db.UpdateAsync("products", productId, prodUpdates, "id", conn, tx);
+
+            if (actualApplied != 0)
+            {
+                long? batchIdForLedger = matchingBatches.Count > 0 ? ToLong(matchingBatches[0]["id"]) : null;
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    productId,
+                    batchIdForLedger,
+                    string.IsNullOrEmpty(bTrim) || bTrim == "__unbatched__" ? null : bTrim,
+                    txType,
+                    txId,
+                    txItemId,
+                    refNumber ?? (txId.HasValue ? $"SI-{txId.Value:D6}" : "SALE"),
+                    actualApplied,
+                    pAfter,
+                    txType == "reversal" ? "Sale invoice edit/reversal/deletion" : "Sale invoice",
+                    CurrentUserId);
+            }
         }
     }
 

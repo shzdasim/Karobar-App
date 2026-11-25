@@ -674,7 +674,7 @@ public class PurchaseInvoiceController : ApiControllerBase
 
                 // Revert old stock and apply new stock
                 var oldItems = await Db.QueryListAsync("SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = @id", new { id }, conn, tx);
-                await ApplyPurchaseStockDiffAsync(oldItems, calcItems, supplierId, conn, tx);
+                await ApplyPurchaseStockDiffAsync(oldItems, calcItems, supplierId, conn, tx, id, postedNumber);
 
                 var dueDate = await ResolveDueDateAsync(rawData, supplierId, postedDate, conn, tx);
                 var oldPayMethodStr = existing.GetValueOrDefault("payment_method")?.ToString() ?? "cash";
@@ -1437,13 +1437,32 @@ public class PurchaseInvoiceController : ApiControllerBase
             {
                 ["purchase_invoice_id"] = invoiceId
             };
-            await Db.InsertAsync("purchase_invoice_items", copy, conn, tx);
+            var itemId = await Db.InsertAsync("purchase_invoice_items", copy, conn, tx);
 
             var pid = ToLong(item.GetValueOrDefault("product_id"));
             var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @pid", new { pid }, conn, tx);
             if (product != null)
             {
                 await ApplyPurchaseToProductAsync(product, item, conn, tx);
+                var qtyAdded = Math.Max(0, (int)ToLong(item.GetValueOrDefault("quantity")));
+                if (qtyAdded > 0)
+                {
+                    var afterQty = (int)ToLong(product.GetValueOrDefault("quantity")) + qtyAdded;
+                    await new InventoryLedgerService(Db).RecordMovementAsync(
+                        conn,
+                        tx,
+                        pid,
+                        null,
+                        item.GetValueOrDefault("batch")?.ToString(),
+                        "purchase",
+                        invoiceId,
+                        itemId,
+                        $"PRINV-{invoiceId:D4}",
+                        qtyAdded,
+                        afterQty,
+                        "Purchase invoice",
+                        CurrentUserId);
+                }
             }
 
             var receivedQty = (int)ToLong(item.GetValueOrDefault("quantity") ?? item.GetValueOrDefault("unit_quantity"));
@@ -1589,6 +1608,26 @@ public class PurchaseInvoiceController : ApiControllerBase
                 ["margin"] = (retailSale > 0 && nextAvg > 0) ? Math.Round(((retailSale - nextAvg) / retailSale) * 100.0, 2) : 0.0,
                 ["whole_sale_margin"] = (wholesaleSale > 0 && nextAvg > 0) ? Math.Round(((wholesaleSale - nextAvg) / wholesaleSale) * 100.0, 2) : 0.0
             }, "id", conn, tx);
+
+            if (qtyToRemove > 0)
+            {
+                var pInvId = ToLong(item.GetValueOrDefault("purchase_invoice_id"));
+                var pItemId = ToLong(item.GetValueOrDefault("id"));
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    pid,
+                    null,
+                    item.GetValueOrDefault("batch")?.ToString(),
+                    "reversal",
+                    pInvId > 0 ? pInvId : null,
+                    pItemId > 0 ? pItemId : null,
+                    pInvId > 0 ? $"PRINV-{pInvId:D4}" : "PURCH-REV",
+                    -qtyToRemove,
+                    remainingQty,
+                    "Purchase invoice reversal/deletion",
+                    CurrentUserId);
+            }
         }
 
         var batchNo = (item.GetValueOrDefault("batch")?.ToString() ?? "").Trim();
@@ -1613,7 +1652,9 @@ public class PurchaseInvoiceController : ApiControllerBase
         List<Dictionary<string, object?>> newItems,
         long supplierId,
         IDbConnection conn,
-        IDbTransaction tx)
+        IDbTransaction tx,
+        long? invoiceId = null,
+        string? postedNumber = null)
     {
         // 1. Aggregate OLD vs NEW totals per product_id and per (product_id, batch, expiry) key
         var oldByProduct = new Dictionary<long, (int Qty, double TotalCost)>();
@@ -1768,6 +1809,24 @@ public class PurchaseInvoiceController : ApiControllerBase
             updates["whole_sale_margin"] = (effWsSale > 0 && nextAvg > 0) ? Math.Round(((effWsSale - nextAvg) / effWsSale) * 100.0, 2) : 0.0;
 
             await Db.UpdateAsync("products", pid, updates, "id", conn, tx);
+
+            if (netQtyDelta != 0)
+            {
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    pid,
+                    null,
+                    hasNew ? newInfo.LastItem?.GetValueOrDefault("batch")?.ToString() : null,
+                    netQtyDelta > 0 ? "purchase" : "reversal",
+                    invoiceId,
+                    null,
+                    !string.IsNullOrWhiteSpace(postedNumber) ? postedNumber : (invoiceId.HasValue ? $"PRINV-{invoiceId.Value:D4}" : "PURCH-EDIT"),
+                    netQtyDelta,
+                    nextQty,
+                    "Purchase invoice edit net delta",
+                    CurrentUserId);
+            }
         }
 
         // 5. Apply true NET DELTAS per batch (preserving storage_location_id & rack on newly created batches!)

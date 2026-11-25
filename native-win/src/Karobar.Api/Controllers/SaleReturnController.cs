@@ -514,8 +514,10 @@ public class SaleReturnController : ApiControllerBase
             var batchNo = it.GetValueOrDefault("batch_number")?.ToString();
             var expiry = it.GetValueOrDefault("expiry")?.ToString();
             var units = (int)ToLong(it.GetValueOrDefault("unit_return_quantity"));
+            var srId = ToLong(it.GetValueOrDefault("sale_return_id"));
+            var itemId = ToLong(it.GetValueOrDefault("id"));
 
-            await ApplyStockDeltaSmartAsync(pid, batchNo, expiry, -units, conn, tx);
+            await ApplyStockDeltaSmartAsync(pid, batchNo, expiry, -units, conn, tx, "reversal", srId > 0 ? srId : null, itemId > 0 ? itemId : null);
         }
     }
 
@@ -525,7 +527,10 @@ public class SaleReturnController : ApiControllerBase
         string? expiry,
         int deltaUnits,
         IDbConnection conn,
-        IDbTransaction tx)
+        IDbTransaction tx,
+        string txType = "sale_return",
+        long? txId = null,
+        long? txItemId = null)
     {
         var bTrim = (batchNo ?? "").Trim();
         var eTrim = (expiry ?? "").Trim();
@@ -589,6 +594,25 @@ public class SaleReturnController : ApiControllerBase
                 prodUpdates["whole_sale_margin"] = 0;
             }
             await Db.UpdateAsync("products", productId, prodUpdates, "id", conn, tx);
+
+            if (actualApplied != 0)
+            {
+                long? batchIdForLedger = batch != null ? ToLong(batch["id"]) : null;
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    productId,
+                    batchIdForLedger,
+                    string.IsNullOrEmpty(bTrim) ? null : bTrim,
+                    txType,
+                    txId,
+                    txItemId,
+                    txId.HasValue ? $"SLRET-{txId.Value:D4}" : "SLRET",
+                    actualApplied,
+                    pAfter,
+                    txType == "reversal" ? "Sale return edit/deletion" : "Sale return",
+                    CurrentUserId);
+            }
         }
     }
 

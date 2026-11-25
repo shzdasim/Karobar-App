@@ -561,8 +561,10 @@ public class StocktakeService
 
                     if (hasBatch && hasBatchesTable)
                     {
+                        long? batchIdForLedger = null;
                         if (batch != null)
                         {
+                            batchIdForLedger = Convert.ToInt64(batch["id"]);
                             var bUpdate = new Dictionary<string, object?>
                             {
                                 ["quantity"] = Math.Max(0m, countedQty)
@@ -572,12 +574,12 @@ public class StocktakeService
                             {
                                 bUpdate["expiry_date"] = item.GetValueOrDefault("expiry_date")?.ToString();
                             }
-                            await _db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), bUpdate, "id", conn, tx);
+                            await _db.UpdateAsync("batches", batchIdForLedger.Value, bUpdate, "id", conn, tx);
                         }
                         else if (countedQty > 0m)
                         {
                             var itemExpiry = item.GetValueOrDefault("expiry_date")?.ToString()?.Trim();
-                            await _db.InsertAsync("batches", new Dictionary<string, object?>
+                            batchIdForLedger = await _db.InsertAsync("batches", new Dictionary<string, object?>
                             {
                                 ["product_id"] = productId,
                                 ["batch_number"] = batchNumber,
@@ -590,11 +592,47 @@ public class StocktakeService
 
                         var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
                         await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+
+                        if (liveVarianceQty != 0m)
+                        {
+                            await new InventoryLedgerService(_db).RecordMovementAsync(
+                                conn,
+                                tx,
+                                productId,
+                                batchIdForLedger,
+                                batchNumber,
+                                "stocktake",
+                                sessionId,
+                                Convert.ToInt64(item["id"]),
+                                postedNumber,
+                                liveVarianceQty,
+                                newProdQty,
+                                $"Stocktake {session.GetValueOrDefault("reference_no")}",
+                                userId);
+                        }
                     }
                     else
                     {
                         var newProdQty = Math.Max(0m, GetProductQty(product) + liveVarianceQty);
                         await UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+
+                        if (liveVarianceQty != 0m)
+                        {
+                            await new InventoryLedgerService(_db).RecordMovementAsync(
+                                conn,
+                                tx,
+                                productId,
+                                null,
+                                null,
+                                "stocktake",
+                                sessionId,
+                                Convert.ToInt64(item["id"]),
+                                postedNumber,
+                                liveVarianceQty,
+                                newProdQty,
+                                $"Stocktake {session.GetValueOrDefault("reference_no")}",
+                                userId);
+                        }
                     }
                 }
 

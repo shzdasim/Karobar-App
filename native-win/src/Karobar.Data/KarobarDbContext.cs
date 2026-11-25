@@ -93,6 +93,7 @@ public class KarobarDbContext : DbContext
     public DbSet<StocktakeSession> StocktakeSessions => Set<StocktakeSession>();
     public DbSet<StocktakeItem> StocktakeItems => Set<StocktakeItem>();
     public DbSet<StockDisposal> StockDisposals => Set<StockDisposal>();
+    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
     public DbSet<StockDisposalItem> StockDisposalItems => Set<StockDisposalItem>();
 
     // -------------------------------------------------------------------------

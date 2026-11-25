@@ -269,16 +269,18 @@ public class StockAdjustmentController : ApiControllerBase
                     totalWorth += worth;
                     netSignedValue += (diff * unitCost);
 
+                    long? targetBatchId = null;
                     if (batch != null)
                     {
-                        await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
+                        targetBatchId = Convert.ToInt64(batch["id"]);
+                        await Db.UpdateAsync("batches", targetBatchId.Value, new Dictionary<string, object?>
                         {
                             ["quantity"] = actual
                         }, "id", conn, tx);
                     }
                     else
                     {
-                        await Db.InsertAsync("batches", new Dictionary<string, object?>
+                        targetBatchId = await Db.InsertAsync("batches", new Dictionary<string, object?>
                         {
                             ["product_id"] = productId,
                             ["batch_number"] = batchNumber,
@@ -291,6 +293,24 @@ public class StockAdjustmentController : ApiControllerBase
 
                     var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) + diff);
                     await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+
+                    if (diff != 0m)
+                    {
+                        await new InventoryLedgerService(Db).RecordMovementAsync(
+                            conn,
+                            tx,
+                            productId,
+                            targetBatchId,
+                            batchNumber,
+                            "adjustment",
+                            adjId,
+                            null,
+                            postedNumber,
+                            diff,
+                            newProdQty,
+                            note,
+                            CurrentUserId);
+                    }
                 }
                 else
                 {
@@ -312,7 +332,71 @@ public class StockAdjustmentController : ApiControllerBase
                     totalWorth += worth;
                     netSignedValue += (diff * unitCost);
 
+                    // Enforce invariant: SUM(batches.quantity) <= products.quantity (unbatched stock >= 0)
+                    decimal totalTrimmedFromBatches = 0m;
+                    if (hasBatchesTable)
+                    {
+                        var activeBatches = await Db.QueryListAsync(
+                            "SELECT id, batch_number, quantity FROM batches WHERE product_id = @productId AND quantity > 0 ORDER BY expiry_date ASC, id ASC",
+                            new { productId }, conn, tx);
+                        var totalBatched = activeBatches.Sum(b => StocktakeService.ToDecimal(b.GetValueOrDefault("quantity")));
+                        if (totalBatched > actual)
+                        {
+                            var excess = totalBatched - actual;
+                            foreach (var b in activeBatches)
+                            {
+                                if (excess <= 0m) break;
+                                var bQty = StocktakeService.ToDecimal(b.GetValueOrDefault("quantity"));
+                                var deduct = Math.Min(bQty, excess);
+                                if (deduct > 0m)
+                                {
+                                    var bId = Convert.ToInt64(b["id"]);
+                                    var bNo = b.GetValueOrDefault("batch_number")?.ToString();
+                                    await Db.UpdateAsync("batches", bId, new Dictionary<string, object?>
+                                    {
+                                        ["quantity"] = bQty - deduct
+                                    }, "id", conn, tx);
+                                    await new InventoryLedgerService(Db).RecordMovementAsync(
+                                        conn,
+                                        tx,
+                                        productId,
+                                        bId,
+                                        bNo,
+                                        "adjustment",
+                                        adjId,
+                                        null,
+                                        postedNumber,
+                                        -deduct,
+                                        actual,
+                                        $"Batch FEFO trim on unbatched adjustment ({note})",
+                                        CurrentUserId);
+                                    totalTrimmedFromBatches += deduct;
+                                    excess -= deduct;
+                                }
+                            }
+                        }
+                    }
+
                     await stocktakeSvc.UpdateProductQtyInDbAsync(product, actual, conn, tx);
+
+                    var unbatchedDelta = diff + totalTrimmedFromBatches;
+                    if (unbatchedDelta != 0m)
+                    {
+                        await new InventoryLedgerService(Db).RecordMovementAsync(
+                            conn,
+                            tx,
+                            productId,
+                            null,
+                            null,
+                            "adjustment",
+                            adjId,
+                            null,
+                            postedNumber,
+                            unbatchedDelta,
+                            actual,
+                            note,
+                            CurrentUserId);
+                    }
                 }
             }
 
@@ -421,6 +505,7 @@ public class StockAdjustmentController : ApiControllerBase
                     : (StocktakeService.ToDecimal(item.GetValueOrDefault("actual_qty")) - StocktakeService.ToDecimal(item.GetValueOrDefault("previous_qty")));
 
                 var batchNumber = item.GetValueOrDefault("batch_number")?.ToString();
+                long? batchIdForLedger = null;
                 if (!string.IsNullOrWhiteSpace(batchNumber) && hasBatchesTable)
                 {
                     var batch = await Db.QuerySingleOrDefaultAsync(
@@ -428,8 +513,9 @@ public class StockAdjustmentController : ApiControllerBase
                         new { productId, batchNumber }, conn, tx);
                     if (batch != null)
                     {
+                        batchIdForLedger = Convert.ToInt64(batch["id"]);
                         var newBatchQty = Math.Max(0m, StocktakeService.ToDecimal(batch.GetValueOrDefault("quantity")) - diffQty);
-                        await Db.UpdateAsync("batches", Convert.ToInt64(batch["id"]), new Dictionary<string, object?>
+                        await Db.UpdateAsync("batches", batchIdForLedger.Value, new Dictionary<string, object?>
                         {
                             ["quantity"] = newBatchQty
                         }, "id", conn, tx);
@@ -437,7 +523,50 @@ public class StockAdjustmentController : ApiControllerBase
                 }
 
                 var newProdQty = Math.Max(0m, StocktakeService.GetProductQty(product) - diffQty);
+                if (string.IsNullOrWhiteSpace(batchNumber) && hasBatchesTable)
+                {
+                    var activeBatches = await Db.QueryListAsync(
+                        "SELECT id, quantity FROM batches WHERE product_id = @productId AND quantity > 0 ORDER BY expiry_date ASC, id ASC",
+                        new { productId }, conn, tx);
+                    var totalBatched = activeBatches.Sum(b => StocktakeService.ToDecimal(b.GetValueOrDefault("quantity")));
+                    if (totalBatched > newProdQty)
+                    {
+                        var excess = totalBatched - newProdQty;
+                        foreach (var b in activeBatches)
+                        {
+                            if (excess <= 0m) break;
+                            var bQty = StocktakeService.ToDecimal(b.GetValueOrDefault("quantity"));
+                            var deduct = Math.Min(bQty, excess);
+                            if (deduct > 0m)
+                            {
+                                await Db.UpdateAsync("batches", Convert.ToInt64(b["id"]), new Dictionary<string, object?>
+                                {
+                                    ["quantity"] = bQty - deduct
+                                }, "id", conn, tx);
+                                excess -= deduct;
+                            }
+                        }
+                    }
+                }
                 await stocktakeSvc.UpdateProductQtyInDbAsync(product, newProdQty, conn, tx);
+
+                if (diffQty != 0m)
+                {
+                    await new InventoryLedgerService(Db).RecordMovementAsync(
+                        conn,
+                        tx,
+                        productId,
+                        batchIdForLedger,
+                        batchNumber,
+                        "reversal",
+                        id,
+                        Convert.ToInt64(item["id"]),
+                        postedNumber ?? $"STADJ-{id}",
+                        -diffQty,
+                        newProdQty,
+                        "Stock adjustment deleted",
+                        CurrentUserId);
+                }
             }
 
             await conn.ExecuteAsync("DELETE FROM stock_adjustment_items WHERE stock_adjustment_id = @id", new { id }, tx);

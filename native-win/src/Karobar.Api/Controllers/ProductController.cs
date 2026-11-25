@@ -369,12 +369,34 @@ public class ProductController : ApiControllerBase
         }
 
         long id;
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
         try
         {
-            id = await Db.InsertAsync("products", data);
+            id = await Db.InsertAsync("products", data, conn, tx);
+            var initialQty = data.TryGetValue("quantity", out var qObj) && qObj != null ? Convert.ToDecimal(qObj) : 0m;
+            if (initialQty > 0m)
+            {
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    id,
+                    null,
+                    null,
+                    "opening_stock",
+                    id,
+                    null,
+                    $"OPENING-{id}",
+                    initialQty,
+                    initialQty,
+                    "Initial stock on product creation",
+                    CurrentUserId);
+            }
+            await tx.CommitAsync();
         }
         catch
         {
+            await tx.RollbackAsync();
             SafeFileStorageHelper.TryDeleteContainedStorageFile(Db, newImagePath, "products");
             throw;
         }
@@ -476,6 +498,19 @@ public class ProductController : ApiControllerBase
             return Unprocessable(errors.Values.First().First(), errors);
         }
 
+        // Bug 1 fix: Product editing must NEVER silently overwrite stock quantity.
+        if (data.TryGetValue("quantity", out var submittedQtyObj) && submittedQtyObj != null)
+        {
+            var existingQty = existing.TryGetValue("quantity", out var eqObj) && eqObj != null ? Convert.ToInt32(eqObj) : 0;
+            var submittedQty = Convert.ToInt32(submittedQtyObj);
+            if (submittedQty != existingQty)
+            {
+                const string msg = "Stock quantity cannot be modified directly through product edit. Use Stock Adjustment or Opening Stock initialization.";
+                return Unprocessable(msg, new Dictionary<string, string[]> { ["quantity"] = [msg] });
+            }
+        }
+        data.Remove("quantity");
+
         var oldImagePath = existing.GetValueOrDefault("image")?.ToString();
         string? newImagePath = null;
         if (Request.HasFormContentType && Request.Form.Files.GetFile("image") is { } file)
@@ -533,6 +568,87 @@ public class ProductController : ApiControllerBase
                     ["is_preferred"] = true
                 });
             }
+        }
+
+        var updated = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id });
+        return Ok(updated);
+    }
+
+    [HttpPost("{id:long}/opening-stock")]
+    public async Task<IActionResult> InitializeOpeningStock(long id)
+    {
+        if (!await CanAsync("product.update")) return Forbidden();
+
+        var body = await ReadJsonBodyAsync();
+        if (!body.TryGetValue("quantity", out var qtyElem) || qtyElem.ValueKind == JsonValueKind.Null)
+        {
+            return Unprocessable("Opening stock quantity is required.", new Dictionary<string, string[]> { ["quantity"] = ["Opening stock quantity is required."] });
+        }
+
+        var rawQtyStr = GetString(body, "quantity");
+        if (!int.TryParse(rawQtyStr, out var openingQty) || openingQty < 0)
+        {
+            return Unprocessable("Opening stock quantity must be a non-negative integer.", new Dictionary<string, string[]> { ["quantity"] = ["Opening stock quantity must be a non-negative integer."] });
+        }
+
+        var reason = GetString(body, "reason")?.Trim();
+        if (string.IsNullOrWhiteSpace(reason)) reason = "Explicit opening stock initialization";
+
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await KarobarDb.BeginImmediateTransactionAsync(conn);
+        try
+        {
+            var product = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id }, conn, tx);
+            if (product == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "Product not found." });
+            }
+
+            if (await Db.HasTableAsync("inventory_movements"))
+            {
+                var movCount = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM inventory_movements WHERE product_id = @id",
+                    new { id }, tx);
+                if (movCount > 0)
+                {
+                    await tx.RollbackAsync();
+                    return Unprocessable("Opening stock can only be initialized for products with no prior inventory movements.");
+                }
+            }
+
+            var currentQty = product.TryGetValue("quantity", out var cq) && cq != null ? Convert.ToInt32(cq) : 0;
+            if (currentQty != 0)
+            {
+                await tx.RollbackAsync();
+                return Unprocessable("Product already has non-zero stock. Use Stock Adjustment to change stock.");
+            }
+
+            await Db.UpdateAsync("products", id, new Dictionary<string, object?> { ["quantity"] = openingQty }, "id", conn, tx);
+            if (openingQty > 0)
+            {
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    id,
+                    null,
+                    null,
+                    "opening_stock",
+                    id,
+                    null,
+                    $"OPENING-{id}",
+                    openingQty,
+                    openingQty,
+                    reason,
+                    CurrentUserId);
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
         }
 
         var updated = await Db.QuerySingleOrDefaultAsync("SELECT * FROM products WHERE id = @id", new { id });

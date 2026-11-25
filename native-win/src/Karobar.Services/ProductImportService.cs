@@ -267,9 +267,14 @@ public class ProductImportService
             if (codeToId.TryGetValue(lc, out var existingProdId) && existingProdId > 0)
             {
                 stats["existing"]++;
-                if (!hasExplicitQty && codeToQty.TryGetValue(lc, out var existingQty))
+                // Preserve existing stock on bulk product import update to avoid silent overwrites.
+                if (codeToQty.TryGetValue(lc, out var existingQty))
                 {
                     normalized["quantity"] = existingQty;
+                }
+                else
+                {
+                    normalized.Remove("quantity");
                 }
                 await _db.UpdateAsync("products", existingProdId, normalized, "id", conn, tx);
             }
@@ -283,9 +288,13 @@ public class ProductImportService
                 if (dbExistingId.HasValue)
                 {
                     if (codeToId.ContainsKey(lc)) stats["existing"]++;
-                    if (!hasExplicitQty && codeToQty.TryGetValue(lc, out var existingQty))
+                    if (codeToQty.TryGetValue(lc, out var existingQty))
                     {
                         normalized["quantity"] = existingQty;
+                    }
+                    else
+                    {
+                        normalized.Remove("quantity");
                     }
                     await _db.UpdateAsync("products", dbExistingId.Value, normalized, "id", conn, tx);
                     codeToId[lc] = dbExistingId.Value;
@@ -295,6 +304,23 @@ public class ProductImportService
                     stats["new"]++;
                     var newId = await _db.InsertAsync("products", normalized, conn, tx);
                     codeToId[lc] = newId;
+                    var importedQty = normalized.TryGetValue("quantity", out var iqObj) && iqObj != null ? Convert.ToDecimal(iqObj) : 0m;
+                    if (importedQty > 0m)
+                    {
+                        await new InventoryLedgerService(_db).RecordMovementAsync(
+                            conn,
+                            tx,
+                            newId,
+                            null,
+                            null,
+                            "opening_stock",
+                            newId,
+                            null,
+                            $"IMPORT-{newId}",
+                            importedQty,
+                            importedQty,
+                            "Imported opening stock");
+                    }
                 }
             }
 

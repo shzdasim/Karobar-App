@@ -572,8 +572,10 @@ public class PurchaseReturnController : ApiControllerBase
             var batch = item.GetValueOrDefault("batch")?.ToString();
             var expiry = item.GetValueOrDefault("expiry")?.ToString();
             var units = (int)ToLong(item.GetValueOrDefault("return_unit_quantity"));
+            var prId = ToLong(item.GetValueOrDefault("purchase_return_id"));
+            var itemId = ToLong(item.GetValueOrDefault("id"));
 
-            await ApplyStockDeltaSmartAsync(pid, batch, expiry, +units, conn, tx);
+            await ApplyStockDeltaSmartAsync(pid, batch, expiry, +units, conn, tx, "reversal", prId > 0 ? prId : null, itemId > 0 ? itemId : null);
         }
     }
 
@@ -583,7 +585,10 @@ public class PurchaseReturnController : ApiControllerBase
         string? expiry,
         int deltaUnits,
         IDbConnection conn,
-        IDbTransaction tx)
+        IDbTransaction tx,
+        string txType = "purchase_return",
+        long? txId = null,
+        long? txItemId = null)
     {
         var bTrim = (batchNo ?? "").Trim();
         var eTrim = (expiry ?? "").Trim();
@@ -645,6 +650,25 @@ public class PurchaseReturnController : ApiControllerBase
                 prodUpdates["whole_sale_margin"] = 0;
             }
             await Db.UpdateAsync("products", productId, prodUpdates, "id", conn, tx);
+
+            if (actualApplied != 0)
+            {
+                long? batchIdForLedger = batch != null ? ToLong(batch["id"]) : null;
+                await new InventoryLedgerService(Db).RecordMovementAsync(
+                    conn,
+                    tx,
+                    productId,
+                    batchIdForLedger,
+                    string.IsNullOrEmpty(bTrim) ? null : bTrim,
+                    txType,
+                    txId,
+                    txItemId,
+                    txId.HasValue ? $"PRRET-{txId.Value:D4}" : "PRRET",
+                    actualApplied,
+                    pAfter,
+                    txType == "reversal" ? "Purchase return edit/deletion" : "Purchase return",
+                    CurrentUserId);
+            }
         }
     }
 
