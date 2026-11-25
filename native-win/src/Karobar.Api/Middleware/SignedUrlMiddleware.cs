@@ -41,6 +41,14 @@ public class SignedUrlMiddleware
     private static readonly string[] SignedRoutePrefixes =
     {
         "/print/sale-invoices/",
+        "/print/purchase-invoices/",
+        "/print/sale-returns/",
+        "/print/purchase-returns/",
+        "/print/purchase-orders/",
+        "/print/purchase-invoices/",
+        "/print/sale-returns/",
+        "/print/purchase-returns/",
+        "/print/purchase-orders/",
         "/print/cash-drawer/",
         "/supplier-ledger/print",
         "/customer-ledger/print",

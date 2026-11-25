@@ -26,7 +26,7 @@ import {
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
-import { printCurrentView } from "@/utils/printHelper.js";
+import { printSlipUrl } from "@/utils/printHelper.js";
 
 // Reusable components
 import {
@@ -176,6 +176,20 @@ export default function SaleReturnsIndex() {
     return () => ctrl.abort();
   }, [fetchReturns, permsLoading, can.view]);
 
+  const handlePrintReturn = useCallback(async (returnId) => {
+    if (!returnId) return;
+    try {
+      const { data } = await axios.get(`/api/sale-returns/${returnId}/print-url`);
+      if (!data?.url && !data?.html) {
+        toast.error("Failed to generate print link.");
+        return;
+      }
+      await printSlipUrl(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
+  }, []);
+
   // Ctrl+N -> create
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -183,7 +197,7 @@ export default function SaleReturnsIndex() {
       const key = (e.key || "").toLowerCase();
       if ((key === "p" || e.code === "KeyP") && viewingReturn) {
         e.preventDefault();
-        printCurrentView();
+        handlePrintReturn(viewingReturn.id);
         return;
       }
       if (e.defaultPrevented) return;
@@ -701,7 +715,7 @@ export default function SaleReturnsIndex() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => printCurrentView()}
+                      onClick={() => handlePrintReturn(viewingReturn.id)}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                         isDark ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-gray-300 text-gray-700 hover:bg-gray-100"
                       }`}

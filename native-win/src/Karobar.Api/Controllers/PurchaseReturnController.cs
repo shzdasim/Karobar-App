@@ -1,7 +1,10 @@
 using System.Data;
 using System.Text.Json;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -18,14 +21,16 @@ public class PurchaseReturnController : ApiControllerBase
     private readonly ReturnEntitlementService _entitlementService;
     private readonly ReturnSettlementService _settlementService;
     private readonly OperatorPinService _operatorPinService;
+    private readonly PrintTemplateRenderer _renderer;
 
-    public PurchaseReturnController(KarobarDb db) : base(db)
+    public PurchaseReturnController(KarobarDb db, PrintTemplateRenderer? renderer = null) : base(db)
     {
         _sequenceService = new DocumentSequenceService(db);
         _calculationService = new InvoiceCalculationService(db);
         _entitlementService = new ReturnEntitlementService(db);
         _settlementService = new ReturnSettlementService(db);
         _operatorPinService = new OperatorPinService(db);
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     [HttpGet("new-code")]
@@ -802,6 +807,40 @@ public class PurchaseReturnController : ApiControllerBase
     {
         var l = ToLong(val);
         return l > 0 ? l : null;
+    }
+
+    [HttpGet("{purchaseReturn:long}/print-url")]
+    public async Task<IActionResult> PrintUrl(long purchaseReturn, [FromQuery] string? type = null)
+    {
+        if (!await CanAsync("purchase-return.view", "purchase-return.create"))
+        {
+            return Forbidden();
+        }
+
+        var vm = await PrintViewModelMapper.LoadPurchaseReturnPrintVmAsync(Db, purchaseReturn);
+        if (vm == null) return NotFound(new { message = "Purchase return not found." });
+
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (!string.IsNullOrWhiteSpace(type)) qParams["type"] = type;
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/purchase-returns/{purchaseReturn}", qParams, TimeSpan.FromMinutes(15));
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["html"] = html
+        });
+    }
+
+    [AllowAnonymous]
+    [HttpGet("/print/purchase-returns/{purchaseReturn:long}")]
+    public async Task<IActionResult> PrintWeb(long purchaseReturn, [FromQuery] string? type = null)
+    {
+        var vm = await PrintViewModelMapper.LoadPurchaseReturnPrintVmAsync(Db, purchaseReturn);
+        if (vm == null) return NotFound("Purchase return not found.");
+
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+        return Content(html, "text/html; charset=utf-8");
     }
 
     private static double ToDouble(object? val)

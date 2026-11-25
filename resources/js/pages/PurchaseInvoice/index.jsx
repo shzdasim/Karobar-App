@@ -15,6 +15,7 @@ import {
   ClipboardDocumentListIcon,
   ClockIcon,
   ArrowUturnLeftIcon,
+  PrinterIcon,
   ShareIcon,
   ChevronDoubleLeftIcon,
   ChevronLeftIcon,
@@ -29,6 +30,7 @@ import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import { printSlipUrl } from "@/utils/printHelper.js";
 
 import {
   GlassCard,
@@ -588,6 +590,30 @@ export default function PurchaseInvoicesIndex() {
                           >
                             <EyeIcon aria-hidden="true" className="w-4 h-4" />
                           </Link>
+                        </Guard>
+
+                        {/* Print Action */}
+                        <Guard when={can.view}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { data } = await axios.get(`/api/purchase-invoices/${inv.id}/print-url`);
+                                if (!data?.url && !data?.html) {
+                                  toast.error("Failed to generate print link.");
+                                  return;
+                                }
+                                await printSlipUrl(data);
+                              } catch (err) {
+                                toast.error(err?.response?.data?.message || "Failed to generate print link.");
+                              }
+                            }}
+                            className="products-row-action"
+                            aria-label={`Print invoice ${inv.posted_number || inv.invoice_number}`}
+                            title={`Print ${inv.posted_number || inv.invoice_number}`}
+                          >
+                            <PrinterIcon aria-hidden="true" className="w-4 h-4" />
+                          </button>
                         </Guard>
 
                         {/* Share Action */}

@@ -1,7 +1,10 @@
 using System.Data;
 using System.Text.Json;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -21,8 +24,9 @@ public class PurchaseInvoiceController : ApiControllerBase
     private readonly ReturnSettlementService _settlementService;
     private readonly DocumentAuditService _auditService;
     private readonly OperatorPinService _operatorPinService;
+    private readonly PrintTemplateRenderer _renderer;
 
-    public PurchaseInvoiceController(KarobarDb db) : base(db)
+    public PurchaseInvoiceController(KarobarDb db, PrintTemplateRenderer? renderer = null) : base(db)
     {
         _sequenceService = new DocumentSequenceService(db);
         _calculationService = new InvoiceCalculationService(db);
@@ -32,6 +36,7 @@ public class PurchaseInvoiceController : ApiControllerBase
         _settlementService = new ReturnSettlementService(db);
         _auditService = new DocumentAuditService(db);
         _operatorPinService = new OperatorPinService(db);
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     [HttpGet("new-code")]
@@ -2243,6 +2248,40 @@ public class PurchaseInvoiceController : ApiControllerBase
     {
         var l = ToLong(val);
         return l > 0 ? l : null;
+    }
+
+    [HttpGet("{purchaseInvoice:long}/print-url")]
+    public async Task<IActionResult> PrintUrl(long purchaseInvoice, [FromQuery] string? type = null)
+    {
+        if (!await CanAsync("purchase-invoice.view", "purchase-invoice.create"))
+        {
+            return Forbidden();
+        }
+
+        var vm = await PrintViewModelMapper.LoadPurchaseInvoicePrintVmAsync(Db, purchaseInvoice);
+        if (vm == null) return NotFound(new { message = "Purchase invoice not found." });
+
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (!string.IsNullOrWhiteSpace(type)) qParams["type"] = type;
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/purchase-invoices/{purchaseInvoice}", qParams, TimeSpan.FromMinutes(15));
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["html"] = html
+        });
+    }
+
+    [AllowAnonymous]
+    [HttpGet("/print/purchase-invoices/{purchaseInvoice:long}")]
+    public async Task<IActionResult> PrintWeb(long purchaseInvoice, [FromQuery] string? type = null)
+    {
+        var vm = await PrintViewModelMapper.LoadPurchaseInvoicePrintVmAsync(Db, purchaseInvoice);
+        if (vm == null) return NotFound("Purchase invoice not found.");
+
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+        return Content(html, "text/html; charset=utf-8");
     }
 
     private static double ToDouble(object? val)

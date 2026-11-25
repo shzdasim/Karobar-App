@@ -55,6 +55,7 @@ public sealed class PrintInvoiceItemViewModel
     public decimal UnitQuantity { get; set; }
     public int Bonus { get; set; }
     public decimal PackBonus { get; set; }
+    public decimal BonusQuantity { get; set; }
     public decimal Price { get; set; }
     public decimal PackPrice { get; set; }
     public decimal ItemDiscountPercentage { get; set; }
@@ -96,6 +97,33 @@ public sealed class PrintInvoiceViewModel
     public string? FbrUsin { get; set; }
     public decimal FbrPosFee { get; set; }
     public List<PrintInvoiceItemViewModel> Items { get; set; } = [];
+
+    // Document context (defaults preserve Sale Invoice output identically)
+    public string DocumentKind { get; set; } = "sale_invoice";
+    public string? DocumentTitle { get; set; }
+    public string PartyLabel { get; set; } = "Customer";
+    public string PartyFallbackName { get; set; } = "Walk-in Customer";
+    public string StaffLabel { get; set; } = "Cashier";
+    public string? ReferenceLabel { get; set; }
+    public string? ReferenceValue { get; set; }
+    public string? SecondaryRefLabel { get; set; }
+    public string? SecondaryRefValue { get; set; }
+    public bool ShowModeRow { get; set; } = true;
+    public string ModeLabel { get; set; } = "Mode";
+    public string? ModeValue { get; set; }
+    public string PayLabel { get; set; } = "Pay";
+    public bool ShowPayRow { get; set; } = true;
+    public bool ShowPaymentBreakdown { get; set; } = true;
+    public bool ShowYouSaved { get; set; } = true;
+    public string NetTotalLabel { get; set; } = "NET TOTAL";
+    public string A4NetTotalLabel { get; set; } = "NET PAYABLE TOTAL";
+    public string PaidLabel { get; set; } = "Amount Paid";
+    public string BalanceLabel { get; set; } = "Balance Due (Bill)";
+    public string TotalDueLabel { get; set; } = "Total Account Due";
+    public string A4TotalDueLabel { get; set; } = "Total Account Balance Due";
+    public string? StatusOverrideText { get; set; }
+    public string? StatusOverrideKind { get; set; }
+    public string? ClosingGreeting { get; set; }
 }
 
 public sealed class PrintStickerConfigViewModel
@@ -656,7 +684,8 @@ public sealed class PrintTemplateRenderer
                     : Math.Max(0m, Math.Round(lineGross - it.SubTotal, 2)));
             rawGrossSum += lineGross;
             itemDiscSum += lineDisc;
-            totalUnits += it.Quantity + it.Bonus;
+            var effectiveBonus = it.Bonus > 0 ? it.Bonus : it.BonusQuantity;
+            totalUnits += it.Quantity + effectiveBonus;
         }
 
         var itemDiscTotal = invoice.ItemDiscountTotal > 0 ? invoice.ItemDiscountTotal : Math.Round(itemDiscSum, 2);
@@ -726,19 +755,30 @@ public sealed class PrintTemplateRenderer
         var showLogo = colorMode ? setting.ShareShowLogo : setting.PrintShowLogo;
         var logo = showLogo ? setting.LogoUrl : null;
 
+        var docKind = string.IsNullOrWhiteSpace(invoice.DocumentKind) ? "sale_invoice" : invoice.DocumentKind.Trim();
+        var thermalBadgeTitle = !string.IsNullOrWhiteSpace(invoice.DocumentTitle) ? invoice.DocumentTitle.Trim() : "SALE INVOICE";
+        var thermalPageTitle = docKind == "sale_invoice"
+            ? "Sale Invoice"
+            : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(thermalBadgeTitle.ToLowerInvariant());
+        var statusText = !string.IsNullOrWhiteSpace(invoice.StatusOverrideText) ? invoice.StatusOverrideText.Trim() : fin.StatusText;
+        var statusKind = !string.IsNullOrWhiteSpace(invoice.StatusOverrideKind) ? invoice.StatusOverrideKind.Trim() : fin.StatusKind;
+        var partyFallback = string.IsNullOrWhiteSpace(invoice.PartyFallbackName) ? "Walk-in Customer" : invoice.PartyFallbackName.Trim();
+        var staffLabel = string.IsNullOrWhiteSpace(invoice.StaffLabel) ? "Cashier" : invoice.StaffLabel.Trim();
+
         var dateStr = invoice.Date?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) ?? "";
         var timeStr = invoice.Date?.ToString("hh:mm tt", CultureInfo.InvariantCulture) ?? "";
         var saleModeLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase((invoice.SaleType ?? "retail").ToLowerInvariant());
         var invTypeRaw = (invoice.InvoiceType ?? "debit").Trim().ToLowerInvariant();
         var invTypeLabel = invTypeRaw == "credit" ? "Credit" : (invTypeRaw == "cash" ? "Cash" : "Debit");
+        var modeDisplay = !string.IsNullOrWhiteSpace(invoice.ModeValue) ? invoice.ModeValue.Trim() : $"{saleModeLabel}/{invTypeLabel}";
         var payMethodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase((invoice.PaymentMethod ?? "cash").Replace("_", " ").ToLowerInvariant());
         var docNo = string.IsNullOrWhiteSpace(invoice.PostedNumber) ? "INV-0001" : invoice.PostedNumber.Trim();
-        var customerDisplay = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "Walk-in Customer" : invoice.CustomerName.Trim();
+        var customerDisplay = string.IsNullOrWhiteSpace(invoice.CustomerName) ? partyFallback : invoice.CustomerName.Trim();
         var itemCount = invoice.Items.Count;
 
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>");
-        sb.AppendLine($"<title>Sale Invoice ({H(pal.Id)} Thermal) - {H(docNo)}</title>");
+        sb.AppendLine($"<title>{H(thermalPageTitle)} ({H(pal.Id)} Thermal) - {H(docNo)}</title>");
         sb.AppendLine("<style>");
         sb.AppendLine("@page{margin:0;}*{box-sizing:border-box;}");
         sb.AppendLine(colorMode
@@ -778,7 +818,7 @@ public sealed class PrintTemplateRenderer
                 sb.AppendLine($"<div style=\"font-size:8.5px;color:{(colorMode ? "#e2e8f0" : "#ffffff")};\">Tel: {H(setting.PhoneNumber)}</div>");
             if (!string.IsNullOrEmpty(setting.LicenseNumber))
                 sb.AppendLine($"<div style=\"font-size:7.8px;color:{(colorMode ? "#cbd5e1" : "#ffffff")};\">Lic: {H(setting.LicenseNumber)}</div>");
-            sb.AppendLine($"<div style=\"margin-top:5px;display:inline-block;background:{pillBg};color:{pillFg};padding:2px 9px;border-radius:999px;font-size:8.5px;font-weight:900;letter-spacing:0.5px;\">SALE INVOICE &bull; #{H(docNo)}</div>");
+            sb.AppendLine($"<div style=\"margin-top:5px;display:inline-block;background:{pillBg};color:{pillFg};padding:2px 9px;border-radius:999px;font-size:8.5px;font-weight:900;letter-spacing:0.5px;\">{H(thermalBadgeTitle)} &bull; #{H(docNo)}</div>");
             sb.AppendLine("</div>");
         }
         else
@@ -798,7 +838,7 @@ public sealed class PrintTemplateRenderer
             var badgeStyle = isMinimal
                 ? $"border:1.2px solid {pal.Primary};color:{pal.Primary};background:#ffffff;"
                 : $"background:{pal.Primary};color:#ffffff;";
-            sb.AppendLine($"<div style=\"margin-top:5px;display:inline-block;{badgeStyle}padding:2px 9px;border-radius:3px;font-size:8.5px;font-weight:800;letter-spacing:0.5px;\">SALE INVOICE &bull; #{H(docNo)}</div>");
+            sb.AppendLine($"<div style=\"margin-top:5px;display:inline-block;{badgeStyle}padding:2px 9px;border-radius:3px;font-size:8.5px;font-weight:800;letter-spacing:0.5px;\">{H(thermalBadgeTitle)} &bull; #{H(docNo)}</div>");
             if (isBarcode)
             {
                 var barSvg = GenerateCode128Svg(docNo, 195, 24);
@@ -812,7 +852,7 @@ public sealed class PrintTemplateRenderer
             ? $"border-bottom:1px dashed {pal.Border};padding-bottom:5px;margin-bottom:6px;"
             : $"background:{pal.SoftBg};border:1px solid {pal.Border};border-radius:4px;padding:5px 7px;margin-bottom:7px;";
         sb.AppendLine($"<div style=\"{metaWrapStyle}font-size:8.5px;line-height:1.4;\">");
-        sb.AppendLine($"<div style=\"display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:2px;\"><span style=\"font-weight:800;font-size:9.5px;color:{pal.Text};\">{H(customerDisplay)}</span>{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: true)}</div>");
+        sb.AppendLine($"<div style=\"display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:2px;\"><span style=\"font-weight:800;font-size:9.5px;color:{pal.Text};\">{H(customerDisplay)}</span>{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: true)}</div>");
         if (!string.IsNullOrWhiteSpace(invoice.CustomerPhone))
             sb.AppendLine($"<div style=\"color:{pal.Muted};\">Ph: {H(invoice.CustomerPhone)}</div>");
         if (!string.IsNullOrWhiteSpace(invoice.CustomerAddress))
@@ -821,11 +861,17 @@ public sealed class PrintTemplateRenderer
         sb.AppendLine($"<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:1px 6px;margin-top:3px;padding-top:3px;border-top:1px dotted {pal.Border};\">");
         sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">Date:</span> <strong>{H(dateStr)}</strong></div>");
         sb.AppendLine($"<div style=\"text-align:right;\"><span style=\"color:{pal.Muted};\">Time:</span> <strong>{H(timeStr)}</strong></div>");
-        sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">Mode:</span> <strong>{H(saleModeLabel)}/{H(invTypeLabel)}</strong></div>");
-        sb.AppendLine($"<div style=\"text-align:right;\"><span style=\"color:{pal.Muted};\">Pay:</span> <strong>{H(payMethodLabel)}</strong></div>");
+        if (invoice.ShowModeRow)
+            sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">{H(invoice.ModeLabel)}:</span> <strong>{H(modeDisplay)}</strong></div>");
+        if (invoice.ShowPayRow)
+            sb.AppendLine($"<div style=\"text-align:{(invoice.ShowModeRow ? "right" : "left")};\"><span style=\"color:{pal.Muted};\">{H(invoice.PayLabel)}:</span> <strong>{H(payMethodLabel)}</strong></div>");
         if (!string.IsNullOrWhiteSpace(invoice.UserName))
-            sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">Cashier:</span> <strong>{H(invoice.UserName)}</strong></div>");
+            sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">{H(staffLabel)}:</span> <strong>{H(invoice.UserName)}</strong></div>");
         sb.AppendLine($"<div style=\"text-align:{(string.IsNullOrWhiteSpace(invoice.UserName) ? "left" : "right")};\"><span style=\"color:{pal.Muted};\">Items:</span> <strong>{itemCount} ({Nf(fin.TotalUnits)}u)</strong></div>");
+        if (!string.IsNullOrWhiteSpace(invoice.ReferenceValue))
+            sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">{H(invoice.ReferenceLabel ?? "Ref")}:</span> <strong>{H(invoice.ReferenceValue)}</strong></div>");
+        if (!string.IsNullOrWhiteSpace(invoice.SecondaryRefValue))
+            sb.AppendLine($"<div style=\"text-align:{(string.IsNullOrWhiteSpace(invoice.ReferenceValue) ? "left" : "right")};\"><span style=\"color:{pal.Muted};\">{H(invoice.SecondaryRefLabel ?? "Ref 2")}:</span> <strong>{H(invoice.SecondaryRefValue)}</strong></div>");
         if (!string.IsNullOrWhiteSpace(invoice.DoctorName))
             sb.AppendLine($"<div><span style=\"color:{pal.Muted};\">Dr:</span> <strong>{H(invoice.DoctorName)}</strong></div>");
         if (!string.IsNullOrWhiteSpace(invoice.PatientName))
@@ -864,8 +910,9 @@ public sealed class PrintTemplateRenderer
                 ? string.Join(" • ", new[] { it.ProductCode, it.Barcode }.Where(x => !string.IsNullOrWhiteSpace(x)))
                 : "";
 
-            var qtyHtml = it.Bonus > 0
-                ? $"<div style=\"font-weight:800;\">{Nf(it.Quantity)}</div><div style=\"font-size:7px;font-weight:700;color:{(colorMode ? "#047857" : "#000000")};\">+{it.Bonus}B</div>"
+            var effectiveBonus = it.Bonus > 0 ? it.Bonus : it.BonusQuantity;
+            var qtyHtml = effectiveBonus > 0
+                ? $"<div style=\"font-weight:800;\">{Nf(it.Quantity)}</div><div style=\"font-size:7px;font-weight:700;color:{(colorMode ? "#047857" : "#000000")};\">+{Nf(effectiveBonus)}B</div>"
                 : $"<span style=\"font-weight:800;\">{Nf(it.Quantity)}</span>";
 
             string discHtml;
@@ -915,30 +962,38 @@ public sealed class PrintTemplateRenderer
         var totalBarStyle = isMinimal
             ? $"border-top:1.5px solid {pal.Primary};border-bottom:1.5px solid {pal.Primary};color:{pal.Primary};padding:5px 2px;margin:4px 0;"
             : $"background:{pal.Primary};color:#ffffff;border-radius:4px;padding:5.5px 7px;margin:4px 0;";
-        sb.AppendLine($"<div class=\"tot-row\" style=\"{totalBarStyle}font-size:11.5px;font-weight:900;\"><span>NET TOTAL</span><span class=\"tabular\">Rs. {F2(fin.NetTotal)}</span></div>");
+        sb.AppendLine($"<div class=\"tot-row\" style=\"{totalBarStyle}font-size:11.5px;font-weight:900;\"><span>{H(invoice.NetTotalLabel)}</span><span class=\"tabular\">Rs. {F2(fin.NetTotal)}</span></div>");
 
-        if (fin.TotalSaved > 0.009m)
+        if (invoice.ShowYouSaved && fin.TotalSaved > 0.009m)
         {
             sb.AppendLine($"<div class=\"tot-row\" style=\"background:{pal.SuccessBg};border:1px solid {pal.SuccessBorder};color:{pal.SuccessFg};border-radius:3px;padding:3px 6px;margin:3px 0;font-weight:800;font-size:8.4px;\"><span>You Saved</span><span class=\"tabular\">Rs. {F2(fin.TotalSaved)}</span></div>");
         }
 
-        sb.AppendLine($"<div style=\"padding-top:4px;border-top:1px dashed {pal.Border};margin-top:4px;\">");
-        sb.AppendLine($"<div class=\"tot-row\"><span style=\"color:{pal.Muted};\">Amount Paid</span><span class=\"tabular\" style=\"font-weight:800;color:{(colorMode ? "#047857" : "#000000")};\">Rs. {F2(fin.Received)}</span></div>");
-        if (fin.BalanceThis > 0.009m)
-            sb.AppendLine($"<div class=\"tot-row\" style=\"color:{pal.WarnFg};font-weight:800;\"><span>Balance Due (Bill)</span><span class=\"tabular\">Rs. {F2(fin.BalanceThis)}</span></div>");
-        else if (fin.ChangeDue > 0.009m)
-            sb.AppendLine($"<div class=\"tot-row\" style=\"color:{pal.SuccessFg};font-weight:800;\"><span>Change Returned</span><span class=\"tabular\">Rs. {F2(fin.ChangeDue)}</span></div>");
+        if (invoice.ShowPaymentBreakdown)
+        {
+            sb.AppendLine($"<div style=\"padding-top:4px;border-top:1px dashed {pal.Border};margin-top:4px;\">");
+            sb.AppendLine($"<div class=\"tot-row\"><span style=\"color:{pal.Muted};\">{H(invoice.PaidLabel)}</span><span class=\"tabular\" style=\"font-weight:800;color:{(colorMode ? "#047857" : "#000000")};\">Rs. {F2(fin.Received)}</span></div>");
+            if (fin.BalanceThis > 0.009m)
+                sb.AppendLine($"<div class=\"tot-row\" style=\"color:{pal.WarnFg};font-weight:800;\"><span>{H(invoice.BalanceLabel)}</span><span class=\"tabular\">Rs. {F2(fin.BalanceThis)}</span></div>");
+            else if (fin.ChangeDue > 0.009m)
+                sb.AppendLine($"<div class=\"tot-row\" style=\"color:{pal.SuccessFg};font-weight:800;\"><span>Change Returned</span><span class=\"tabular\">Rs. {F2(fin.ChangeDue)}</span></div>");
 
-        if (showTotalDue)
-            sb.AppendLine($"<div class=\"tot-row\" style=\"background:{pal.DangerBg};border:1px solid {pal.DangerBorder};border-radius:3px;padding:3px 5px;margin-top:3px;color:{pal.DangerFg};font-weight:900;\"><span>Total Account Due</span><span class=\"tabular\">Rs. {F2(customerTotalDue!.Value)}</span></div>");
-        sb.AppendLine("</div></div>");
+            if (showTotalDue)
+                sb.AppendLine($"<div class=\"tot-row\" style=\"background:{pal.DangerBg};border:1px solid {pal.DangerBorder};border-radius:3px;padding:3px 5px;margin-top:3px;color:{pal.DangerFg};font-weight:900;\"><span>{H(invoice.TotalDueLabel)}</span><span class=\"tabular\">Rs. {F2(customerTotalDue!.Value)}</span></div>");
+            sb.AppendLine("</div>");
+        }
+        else if (showTotalDue)
+        {
+            sb.AppendLine($"<div class=\"tot-row\" style=\"background:{pal.DangerBg};border:1px solid {pal.DangerBorder};border-radius:3px;padding:3px 5px;margin-top:3px;color:{pal.DangerFg};font-weight:900;\"><span>{H(invoice.TotalDueLabel)}</span><span class=\"tabular\">Rs. {F2(customerTotalDue!.Value)}</span></div>");
+        }
+        sb.AppendLine("</div>");
 
         if (!string.IsNullOrWhiteSpace(invoice.Remarks))
             sb.AppendLine($"<div style=\"margin-top:6px;padding:4px 6px;background:{pal.SoftBg};border-left:2.5px solid {pal.Primary};font-size:8.2px;color:{pal.Text};white-space:pre-wrap;overflow-wrap:anywhere;\"><strong>Note:</strong> {H(invoice.Remarks)}</div>");
 
         if (isBarcode)
         {
-            var verifyQr = GenerateQrSvg($"sale_invoice:{docNo}", 52);
+            var verifyQr = GenerateQrSvg($"{docKind}:{docNo}", 52);
             sb.AppendLine($"<div style=\"margin-top:6px;text-align:center;border-top:1px dotted {pal.Border};padding-top:5px;\"><div style=\"display:inline-block;\">{verifyQr}</div><div class=\"mono\" style=\"font-size:7.2px;font-weight:700;\">REF: {H(docNo)}</div></div>");
         }
 
@@ -951,7 +1006,9 @@ public sealed class PrintTemplateRenderer
             var isUrdu = ContainsUrdu(footerNote);
             sb.AppendLine($"<div class=\"{(isUrdu ? "urdu" : "")}\" style=\"font-size:{(isUrdu ? "9.5px" : "8px")};color:{pal.Text};text-align:{(isUrdu ? "right" : "center")};margin-bottom:6px;padding:4px 5px;background:{pal.SoftBg};border-radius:3px;white-space:pre-wrap;\">{H(footerNote)}</div>");
         }
-        sb.AppendLine($"<div style=\"text-align:center;font-size:8.8px;font-weight:800;color:{pal.Primary};margin-bottom:5px;\">Thank you for your business!</div>");
+        var thermalGreeting = invoice.ClosingGreeting ?? "Thank you for your business!";
+        if (!string.IsNullOrWhiteSpace(thermalGreeting))
+            sb.AppendLine($"<div style=\"text-align:center;font-size:8.8px;font-weight:800;color:{pal.Primary};margin-bottom:5px;\">{H(thermalGreeting)}</div>");
         sb.AppendLine($"<div style=\"background:{(isMinimal ? "#ffffff" : pal.SoftBg)};border:1px solid {(isMinimal ? pal.Primary : pal.Border)};border-top:2px solid {pal.Primary};border-radius:4px;padding:5px 6px;text-align:center;\">");
         sb.AppendLine($"<div style=\"font-size:7.8px;font-weight:800;letter-spacing:0.25px;color:{pal.Primary};\">{H(PdfDocumentGenerator.DeveloperCreditTitle)}</div>");
         sb.AppendLine($"<div class=\"mono\" style=\"font-size:8.2px;font-weight:800;color:{pal.Secondary};margin-top:1px;\">{H(PdfDocumentGenerator.DeveloperCreditPhone)}</div>");
@@ -992,15 +1049,25 @@ public sealed class PrintTemplateRenderer
         var showLogo = isSharePreview ? setting.ShareShowLogo : setting.PrintShowLogo;
         var logo = showLogo ? setting.LogoUrl : null;
 
+        var docKind = string.IsNullOrWhiteSpace(invoice.DocumentKind) ? "sale_invoice" : invoice.DocumentKind.Trim();
+        var statusText = !string.IsNullOrWhiteSpace(invoice.StatusOverrideText) ? invoice.StatusOverrideText.Trim() : fin.StatusText;
+        var statusKind = !string.IsNullOrWhiteSpace(invoice.StatusOverrideKind) ? invoice.StatusOverrideKind.Trim() : fin.StatusKind;
+        var partyLabel = string.IsNullOrWhiteSpace(invoice.PartyLabel) ? "Customer" : invoice.PartyLabel.Trim();
+        var partyFallback = string.IsNullOrWhiteSpace(invoice.PartyFallbackName) ? "Walk-in Customer" : invoice.PartyFallbackName.Trim();
+        var staffLabel = string.IsNullOrWhiteSpace(invoice.StaffLabel) ? "Cashier" : invoice.StaffLabel.Trim();
+
         var dateStr = invoice.Date?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) ?? "";
         var timeStr = invoice.Date?.ToString("hh:mm tt", CultureInfo.InvariantCulture) ?? "";
         var isWholesale = string.Equals(invoice.SaleType, "wholesale", StringComparison.OrdinalIgnoreCase);
-        var docTitle = isWholesale ? "WHOLESALE SALE INVOICE" : "SALE INVOICE";
+        var docTitle = !string.IsNullOrWhiteSpace(invoice.DocumentTitle)
+            ? invoice.DocumentTitle.Trim()
+            : (isWholesale ? "WHOLESALE SALE INVOICE" : "SALE INVOICE");
         var docNo = string.IsNullOrWhiteSpace(invoice.PostedNumber) ? "INV-0001" : invoice.PostedNumber.Trim();
-        var customerDisplay = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "Walk-in Customer" : invoice.CustomerName.Trim();
+        var customerDisplay = string.IsNullOrWhiteSpace(invoice.CustomerName) ? partyFallback : invoice.CustomerName.Trim();
         var saleModeLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase((invoice.SaleType ?? "retail").ToLowerInvariant());
         var invTypeRaw = (invoice.InvoiceType ?? "debit").Trim().ToLowerInvariant();
         var invTypeLabel = invTypeRaw == "credit" ? "Credit" : (invTypeRaw == "cash" ? "Cash" : "Debit");
+        var modeDisplay = !string.IsNullOrWhiteSpace(invoice.ModeValue) ? invoice.ModeValue.Trim() : $"{saleModeLabel} ({invTypeLabel})";
         var payMethodLabel = CultureInfo.InvariantCulture.TextInfo.ToTitleCase((invoice.PaymentMethod ?? "cash").Replace("_", " ").ToLowerInvariant());
         var itemCount = invoice.Items.Count;
 
@@ -1095,33 +1162,45 @@ public sealed class PrintTemplateRenderer
             if (!string.IsNullOrEmpty(logo))
                 sb.AppendLine($"<img src=\"{H(logo)}\" alt=\"Logo\" style=\"max-height:44px;max-width:115px;object-fit:contain;\"/>");
             sb.AppendLine($"<div><div style=\"font-size:19px;font-weight:900;color:{pal.Primary};\">{H(setting.StoreName)}</div>{(!string.IsNullOrEmpty(setting.Address) ? $"<div style=\"font-size:9.6px;color:{pal.Muted};margin-top:2px;\">{H(setting.Address)}</div>" : "")}{(!string.IsNullOrEmpty(contactLine) ? $"<div style=\"font-size:9.6px;color:{pal.Muted};\">{contactLine}</div>" : "")}</div></div>");
-            sb.AppendLine($"<div style=\"text-align:right;flex-shrink:0;\"><div style=\"display:inline-block;background:{pal.Primary};color:#ffffff;font-size:10.5px;font-weight:800;letter-spacing:0.7px;padding:3.5px 12px;border-radius:4px;\">{H(docTitle)}</div><div class=\"mono\" style=\"font-size:14.5px;font-weight:800;color:{pal.Primary};margin-top:4px;\">#{H(docNo)}</div><div style=\"font-size:9.2px;color:{pal.Muted};\">{H(dateStr)} &bull; {H(timeStr)}</div><div style=\"margin-top:4px;\">{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: false)}</div></div>");
+            sb.AppendLine($"<div style=\"text-align:right;flex-shrink:0;\"><div style=\"display:inline-block;background:{pal.Primary};color:#ffffff;font-size:10.5px;font-weight:800;letter-spacing:0.7px;padding:3.5px 12px;border-radius:4px;\">{H(docTitle)}</div><div class=\"mono\" style=\"font-size:14.5px;font-weight:800;color:{pal.Primary};margin-top:4px;\">#{H(docNo)}</div><div style=\"font-size:9.2px;color:{pal.Muted};\">{H(dateStr)} &bull; {H(timeStr)}</div><div style=\"margin-top:4px;\">{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: false)}</div></div>");
             sb.AppendLine("</div>");
         }
 
         // 2. COMPLETE INVOICE METADATA CARDS
+        var a4CardPartyTitle = docKind == "sale_invoice" ? "Billed To Customer" : $"{partyLabel} Details";
+        var a4CardInfoTitle = docKind == "sale_invoice" ? "Invoice Information" : "Document Information";
+        var a4ModeLabel = docKind == "sale_invoice" ? "Sale Mode" : invoice.ModeLabel;
+        var a4BilledToLabel = docKind == "sale_invoice" ? "Billed To" : partyLabel;
+
         if (isDetailed)
         {
             sb.AppendLine("<div style=\"display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:10px;margin-bottom:13px;font-size:9.5px;\">");
-            sb.AppendLine($"<div style=\"background:{pal.SoftBg};border:1px solid {pal.Border};border-left:3.5px solid {pal.Primary};border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Secondary};text-transform:uppercase;letter-spacing:0.5px;\">Billed To Customer</div><div style=\"font-size:11.5px;font-weight:800;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:{pal.Muted};margin-top:2px;\">Phone: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:{pal.Muted};font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}</div>");
-            sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-left:3.5px solid {pal.Accent};border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Muted};text-transform:uppercase;letter-spacing:0.5px;\">Invoice Information</div><div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Sale Mode:</span> <strong>{H(saleModeLabel)} ({H(invTypeLabel)})</strong></div><div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div><div><span style=\"color:#64748b;\">Cashier:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div><div style=\"margin-top:3px;\">{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: true)}</div></div>");
-            sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-left:3.5px solid #64748b;border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Muted};text-transform:uppercase;letter-spacing:0.5px;\">Clinical &amp; Order Ref</div><div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Doctor:</span> <strong>{H(string.IsNullOrWhiteSpace(invoice.DoctorName) ? "—" : invoice.DoctorName)}</strong></div><div><span style=\"color:#64748b;\">Patient:</span> <strong>{H(string.IsNullOrWhiteSpace(invoice.PatientName) ? "—" : invoice.PatientName)}</strong></div><div><span style=\"color:#64748b;\">Line Items:</span> <strong>{itemCount} items ({Nf(fin.TotalUnits)} qty)</strong></div></div>");
+            sb.AppendLine($"<div style=\"background:{pal.SoftBg};border:1px solid {pal.Border};border-left:3.5px solid {pal.Primary};border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Secondary};text-transform:uppercase;letter-spacing:0.5px;\">{H(a4CardPartyTitle)}</div><div style=\"font-size:11.5px;font-weight:800;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:{pal.Muted};margin-top:2px;\">Phone: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:{pal.Muted};font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}</div>");
+            sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-left:3.5px solid {pal.Accent};border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Muted};text-transform:uppercase;letter-spacing:0.5px;\">{H(a4CardInfoTitle)}</div><div style=\"margin-top:2px;\">{(invoice.ShowModeRow ? $"<span style=\"color:#64748b;\">{H(a4ModeLabel)}:</span> <strong>{H(modeDisplay)}</strong>" : "")}</div>{(invoice.ShowPayRow ? $"<div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">{H(staffLabel)}:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div><div style=\"margin-top:3px;\">{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: true)}</div></div>");
+            if (docKind == "sale_invoice")
+            {
+                sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-left:3.5px solid #64748b;border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Muted};text-transform:uppercase;letter-spacing:0.5px;\">Clinical &amp; Order Ref</div><div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Doctor:</span> <strong>{H(string.IsNullOrWhiteSpace(invoice.DoctorName) ? "—" : invoice.DoctorName)}</strong></div><div><span style=\"color:#64748b;\">Patient:</span> <strong>{H(string.IsNullOrWhiteSpace(invoice.PatientName) ? "—" : invoice.PatientName)}</strong></div><div><span style=\"color:#64748b;\">Line Items:</span> <strong>{itemCount} items ({Nf(fin.TotalUnits)} qty)</strong></div></div>");
+            }
+            else
+            {
+                sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-left:3.5px solid #64748b;border-radius:5px;padding:8px 10px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Muted};text-transform:uppercase;letter-spacing:0.5px;\">References &amp; Summary</div><div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">{H(invoice.ReferenceLabel ?? "Reference")}:</span> <strong>{H(string.IsNullOrWhiteSpace(invoice.ReferenceValue) ? "—" : invoice.ReferenceValue)}</strong></div>{(!string.IsNullOrWhiteSpace(invoice.SecondaryRefValue) ? $"<div><span style=\"color:#64748b;\">{H(invoice.SecondaryRefLabel ?? "Ref 2")}:</span> <strong>{H(invoice.SecondaryRefValue)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">Line Items:</span> <strong>{itemCount} items ({Nf(fin.TotalUnits)} qty)</strong></div></div>");
+            }
             sb.AppendLine("</div>");
         }
         else if (isBold)
         {
             sb.AppendLine("<div style=\"display:grid;grid-template-columns:1.3fr 1fr 0.95fr;gap:11px;margin-bottom:14px;font-size:9.5px;\">");
-            sb.AppendLine($"<div style=\"background:{pal.SoftBg};border:1px solid {pal.Border};border-radius:6px;padding:9px 11px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Secondary};text-transform:uppercase;\">Customer Details</div><div style=\"font-size:12px;font-weight:900;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#334155;margin-top:2px;\">Ph: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:#475569;font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}</div>");
-            sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:9px 11px;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;\">Invoice Details</div><div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Mode:</span> <strong>{H(saleModeLabel)} &bull; {H(invTypeLabel)}</strong></div><div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div><div><span style=\"color:#64748b;\">Cashier:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div>{(!string.IsNullOrWhiteSpace(invoice.DoctorName) ? $"<div><span style=\"color:#64748b;\">Doctor:</span> <strong>{H(invoice.DoctorName)}</strong></div>" : "")}</div>");
-            sb.AppendLine($"<div style=\"background:{pal.Primary};color:#ffffff;border-radius:6px;padding:9px 12px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;\"><div style=\"font-size:8px;font-weight:700;letter-spacing:0.6px;color:#a7f3d0;text-transform:uppercase;\">Net Invoice Total</div><div class=\"tabular\" style=\"font-size:17px;font-weight:900;margin-top:2px;\">Rs. {F2(fin.NetTotal)}</div><div style=\"margin-top:4px;\">{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: true)}</div></div>");
+            sb.AppendLine($"<div style=\"background:{pal.SoftBg};border:1px solid {pal.Border};border-radius:6px;padding:9px 11px;\"><div style=\"font-size:8px;font-weight:800;color:{pal.Secondary};text-transform:uppercase;\">{H(partyLabel)} Details</div><div style=\"font-size:12px;font-weight:900;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#334155;margin-top:2px;\">Ph: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:#475569;font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}</div>");
+            sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:9px 11px;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;\">{H(docKind == "sale_invoice" ? "Invoice Details" : "Document Details")}</div><div style=\"margin-top:2px;\">{(invoice.ShowModeRow ? $"<span style=\"color:#64748b;\">{H(invoice.ModeLabel)}:</span> <strong>{H(modeDisplay)}</strong>" : "")}</div>{(invoice.ShowPayRow ? $"<div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">{H(staffLabel)}:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div>{(!string.IsNullOrWhiteSpace(invoice.ReferenceValue) ? $"<div><span style=\"color:#64748b;\">{H(invoice.ReferenceLabel ?? "Ref")}:</span> <strong>{H(invoice.ReferenceValue)}</strong></div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.DoctorName) ? $"<div><span style=\"color:#64748b;\">Doctor:</span> <strong>{H(invoice.DoctorName)}</strong></div>" : "")}</div>");
+            sb.AppendLine($"<div style=\"background:{pal.Primary};color:#ffffff;border-radius:6px;padding:9px 12px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;\"><div style=\"font-size:8px;font-weight:700;letter-spacing:0.6px;color:#a7f3d0;text-transform:uppercase;\">{H(docKind == "sale_invoice" ? "Net Invoice Total" : invoice.A4NetTotalLabel)}</div><div class=\"tabular\" style=\"font-size:17px;font-weight:900;margin-top:2px;\">Rs. {F2(fin.NetTotal)}</div><div style=\"margin-top:4px;\">{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: true)}</div></div>");
             sb.AppendLine("</div>");
         }
         else if (isCompact)
         {
             sb.AppendLine($"<div style=\"background:{pal.SoftBg};border:1px solid {pal.Border};border-radius:4px;padding:6px 10px;margin-bottom:9px;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;font-size:8.8px;\">");
-            sb.AppendLine($"<div><span style=\"color:#64748b;font-weight:700;text-transform:uppercase;font-size:7.8px;\">Billed To:</span><div style=\"font-weight:800;font-size:10px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#475569;\">Ph: {H(invoice.CustomerPhone)}</div>" : "")}</div>");
-            sb.AppendLine($"<div><div><span style=\"color:#64748b;\">Mode:</span> <strong>{H(saleModeLabel)} / {H(invTypeLabel)}</strong></div><div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div><div><span style=\"color:#64748b;\">Cashier:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div></div>");
-            sb.AppendLine($"<div style=\"text-align:right;\"><div>{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: true)}</div>{(!string.IsNullOrWhiteSpace(invoice.DoctorName) ? $"<div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Dr:</span> <strong>{H(invoice.DoctorName)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">Items:</span> <strong>{itemCount} ({Nf(fin.TotalUnits)}u)</strong></div></div>");
+            sb.AppendLine($"<div><span style=\"color:#64748b;font-weight:700;text-transform:uppercase;font-size:7.8px;\">{H(a4BilledToLabel)}:</span><div style=\"font-weight:800;font-size:10px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#475569;\">Ph: {H(invoice.CustomerPhone)}</div>" : "")}</div>");
+            sb.AppendLine($"<div>{(invoice.ShowModeRow ? $"<div><span style=\"color:#64748b;\">{H(invoice.ModeLabel)}:</span> <strong>{H(modeDisplay)}</strong></div>" : "")}{(invoice.ShowPayRow ? $"<div><span style=\"color:#64748b;\">Payment:</span> <strong>{H(payMethodLabel)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">{H(staffLabel)}:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div></div>");
+            sb.AppendLine($"<div style=\"text-align:right;\"><div>{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: true)}</div>{(!string.IsNullOrWhiteSpace(invoice.ReferenceValue) ? $"<div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">{H(invoice.ReferenceLabel ?? "Ref")}:</span> <strong>{H(invoice.ReferenceValue)}</strong></div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.DoctorName) ? $"<div style=\"margin-top:2px;\"><span style=\"color:#64748b;\">Dr:</span> <strong>{H(invoice.DoctorName)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">Items:</span> <strong>{itemCount} ({Nf(fin.TotalUnits)}u)</strong></div></div>");
             sb.AppendLine("</div>");
         }
         else
@@ -1130,7 +1209,7 @@ public sealed class PrintTemplateRenderer
                 ? "border-bottom:1px solid #cbd5e1;padding:0 0 10px;margin-bottom:12px;"
                 : $"background:{pal.SoftBg};border:1px solid {pal.Border};border-left:4px solid {(isBarcode ? pal.Accent : pal.Primary)};border-radius:5px;padding:9px 12px;margin-bottom:12px;";
             sb.AppendLine($"<div style=\"{boxStyle}display:flex;justify-content:space-between;gap:16px;font-size:9.5px;\">");
-            sb.AppendLine($"<div style=\"flex:1.2;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;\">Billed To</div><div style=\"font-size:11.5px;font-weight:800;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#475569;\">Phone: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:#475569;font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}");
+            sb.AppendLine($"<div style=\"flex:1.2;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;\">{H(a4BilledToLabel)}</div><div style=\"font-size:11.5px;font-weight:800;margin-top:2px;\">{H(customerDisplay)}</div>{(!string.IsNullOrWhiteSpace(invoice.CustomerPhone) ? $"<div style=\"color:#475569;\">Phone: {H(invoice.CustomerPhone)}</div>" : "")}{(!string.IsNullOrWhiteSpace(invoice.CustomerAddress) ? $"<div style=\"color:#475569;font-size:8.8px;\">{H(invoice.CustomerAddress)}</div>" : "")}");
             if (!string.IsNullOrWhiteSpace(invoice.DoctorName) || !string.IsNullOrWhiteSpace(invoice.PatientName))
             {
                 var docPt = string.Join(" &bull; ", new[]
@@ -1140,8 +1219,17 @@ public sealed class PrintTemplateRenderer
                 }.Where(x => x != null));
                 sb.AppendLine($"<div style=\"color:#334155;font-size:8.8px;margin-top:2px;\">{docPt}</div>");
             }
+            if (!string.IsNullOrWhiteSpace(invoice.ReferenceValue) || !string.IsNullOrWhiteSpace(invoice.SecondaryRefValue))
+            {
+                var refLine = string.Join(" &bull; ", new[]
+                {
+                    !string.IsNullOrWhiteSpace(invoice.ReferenceValue) ? $"<strong>{H(invoice.ReferenceLabel ?? "Ref")}:</strong> {H(invoice.ReferenceValue)}" : null,
+                    !string.IsNullOrWhiteSpace(invoice.SecondaryRefValue) ? $"<strong>{H(invoice.SecondaryRefLabel ?? "Ref 2")}:</strong> {H(invoice.SecondaryRefValue)}" : null
+                }.Where(x => x != null));
+                sb.AppendLine($"<div style=\"color:#334155;font-size:8.8px;margin-top:2px;\">{refLine}</div>");
+            }
             sb.AppendLine("</div>");
-            sb.AppendLine($"<div style=\"flex:1;text-align:right;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:2px;\">Invoice Information</div><div><span style=\"color:#64748b;\">Sale Mode:</span> <strong>{H(saleModeLabel)} ({H(invTypeLabel)})</strong></div><div><span style=\"color:#64748b;\">Payment Method:</span> <strong>{H(payMethodLabel)}</strong></div><div><span style=\"color:#64748b;\">Cashier:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div><div><span style=\"color:#64748b;\">Items / Qty:</span> <strong>{itemCount} items ({Nf(fin.TotalUnits)} units)</strong></div>{(isMinimal || isBarcode ? $"<div style=\"margin-top:3px;\">{BuildStatusBadgeHtml(fin.StatusText, fin.StatusKind, pal, compact: true)}</div>" : "")}</div>");
+            sb.AppendLine($"<div style=\"flex:1;text-align:right;\"><div style=\"font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:2px;\">{H(a4CardInfoTitle)}</div>{(invoice.ShowModeRow ? $"<div><span style=\"color:#64748b;\">{H(a4ModeLabel)}:</span> <strong>{H(modeDisplay)}</strong></div>" : "")}{(invoice.ShowPayRow ? $"<div><span style=\"color:#64748b;\">Payment Method:</span> <strong>{H(payMethodLabel)}</strong></div>" : "")}<div><span style=\"color:#64748b;\">{H(staffLabel)}:</span> <strong>{H(invoice.UserName ?? "—")}</strong></div><div><span style=\"color:#64748b;\">Items / Qty:</span> <strong>{itemCount} items ({Nf(fin.TotalUnits)} units)</strong></div>{(isMinimal || isBarcode ? $"<div style=\"margin-top:3px;\">{BuildStatusBadgeHtml(statusText, statusKind, pal, compact: true)}</div>" : "")}</div>");
             sb.AppendLine("</div>");
         }
 
@@ -1190,8 +1278,9 @@ public sealed class PrintTemplateRenderer
                     : $"<span style=\"color:{pal.DiscountColor};font-weight:700;\">-Rs. {F2(lineDiscAmt)}</span>")
                 : "<span style=\"color:#94a3b8;\">—</span>";
 
-            var qtyCell = it.Bonus > 0
-                ? $"<div>{Nf(it.Quantity)}</div><div style=\"font-size:7.8px;color:#047857;\">+{it.Bonus} Bns</div>"
+            var effectiveBonus = it.Bonus > 0 ? it.Bonus : it.BonusQuantity;
+            var qtyCell = effectiveBonus > 0
+                ? $"<div>{Nf(it.Quantity)}</div><div style=\"font-size:7.8px;color:#047857;\">+{Nf(effectiveBonus)} Bns</div>"
                 : Nf(it.Quantity);
 
             sb.AppendLine($"<tr style=\"background:{bg};\">");
@@ -1228,13 +1317,13 @@ public sealed class PrintTemplateRenderer
         {
             sb.AppendLine($"<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:7px 10px;font-size:9.2px;\"><div style=\"font-size:7.8px;font-weight:800;text-transform:uppercase;color:#64748b;\">Invoice Remarks</div><div style=\"color:#334155;margin-top:2px;white-space:pre-wrap;\">{H(invoice.Remarks)}</div></div>");
         }
-        if (fin.TotalSaved > 0.009m)
+        if (invoice.ShowYouSaved && fin.TotalSaved > 0.009m)
         {
             sb.AppendLine($"<div style=\"margin-top:7px;padding:6px 10px;border-radius:5px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:9.2px;font-weight:700;display:flex;justify-content:space-between;align-items:center;\"><span>Total Discount Savings</span><span class=\"tabular\" style=\"font-size:10.5px;font-weight:900;\">Rs. {F2(fin.TotalSaved)}</span></div>");
         }
         if (isBarcode)
         {
-            var qrSvg = GenerateQrSvg($"sale_invoice:{docNo}", 46);
+            var qrSvg = GenerateQrSvg($"{docKind}:{docNo}", 46);
             sb.AppendLine($"<div style=\"margin-top:9px;border:1px dashed #a1a1aa;border-radius:5px;padding:7px 10px;background:#fafafa;display:flex;align-items:center;justify-content:space-between;gap:10px;\"><div><div style=\"font-size:7.8px;font-weight:800;text-transform:uppercase;color:#52525b;\">Document Verification Strip</div><div class=\"mono\" style=\"font-size:9.2px;font-weight:800;color:#18181b;margin-top:2px;\">REF: {H(docNo)} &bull; ITEMS: {itemCount}</div><div style=\"font-size:7.8px;color:#71717a;\">Scan QR / Barcode to verify invoice authenticity</div></div><div>{qrSvg}</div></div>");
         }
         sb.AppendLine("</div>");
@@ -1259,18 +1348,23 @@ public sealed class PrintTemplateRenderer
         if (fin.FbrFee > 0.009m)
             sb.AppendLine($"<tr><td style=\"padding:4.5px 9px;color:#475569;border-bottom:1px solid #e2e8f0;\">FBR POS Service Fee</td><td class=\"tabular\" style=\"padding:4.5px 9px;text-align:right;font-weight:700;border-bottom:1px solid #e2e8f0;\">Rs. {F2(fin.FbrFee)}</td></tr>");
 
-        sb.AppendLine($"<tr style=\"{grandRowStyle}\"><td style=\"padding:7px 9px;\">NET PAYABLE TOTAL</td><td class=\"tabular\" style=\"padding:7px 9px;text-align:right;\">Rs. {F2(fin.NetTotal)}</td></tr>");
-        sb.AppendLine($"<tr><td style=\"padding:4.5px 9px;color:#334155;border-bottom:1px solid #e2e8f0;\">Amount Received</td><td class=\"tabular\" style=\"padding:4.5px 9px;text-align:right;font-weight:700;color:#047857;border-bottom:1px solid #e2e8f0;\">Rs. {F2(fin.Received)}</td></tr>");
+        sb.AppendLine($"<tr style=\"{grandRowStyle}\"><td style=\"padding:7px 9px;\">{H(invoice.A4NetTotalLabel)}</td><td class=\"tabular\" style=\"padding:7px 9px;text-align:right;\">Rs. {F2(fin.NetTotal)}</td></tr>");
+        if (invoice.ShowPaymentBreakdown)
+        {
+            var a4PaidLabel = docKind == "sale_invoice" ? "Amount Received" : invoice.PaidLabel;
+            var a4BalanceLabel = docKind == "sale_invoice" ? "Balance Due (This Invoice)" : invoice.BalanceLabel;
+            sb.AppendLine($"<tr><td style=\"padding:4.5px 9px;color:#334155;border-bottom:1px solid #e2e8f0;\">{H(a4PaidLabel)}</td><td class=\"tabular\" style=\"padding:4.5px 9px;text-align:right;font-weight:700;color:#047857;border-bottom:1px solid #e2e8f0;\">Rs. {F2(fin.Received)}</td></tr>");
 
-        if (fin.BalanceThis > 0.009m)
-            sb.AppendLine($"<tr style=\"background:#fff7ed;\"><td style=\"padding:5px 9px;color:#9a3412;font-weight:800;border-bottom:1px solid #fed7aa;\">Balance Due (This Invoice)</td><td class=\"tabular\" style=\"padding:5px 9px;text-align:right;font-weight:900;color:#c2410c;border-bottom:1px solid #fed7aa;\">Rs. {F2(fin.BalanceThis)}</td></tr>");
-        else if (fin.ChangeDue > 0.009m)
-            sb.AppendLine($"<tr style=\"background:#f0fdf4;\"><td style=\"padding:5px 9px;color:#166534;font-weight:700;border-bottom:1px solid #bbf7d0;\">Change Returned</td><td class=\"tabular\" style=\"padding:5px 9px;text-align:right;font-weight:800;color:#166534;border-bottom:1px solid #bbf7d0;\">Rs. {F2(fin.ChangeDue)}</td></tr>");
-        else
-            sb.AppendLine("<tr style=\"background:#f0fdf4;\"><td style=\"padding:5px 9px;color:#166534;font-weight:700;border-bottom:1px solid #bbf7d0;\">Payment Status</td><td style=\"padding:5px 9px;text-align:right;font-weight:800;color:#166534;border-bottom:1px solid #bbf7d0;\">SETTLED</td></tr>");
+            if (fin.BalanceThis > 0.009m)
+                sb.AppendLine($"<tr style=\"background:#fff7ed;\"><td style=\"padding:5px 9px;color:#9a3412;font-weight:800;border-bottom:1px solid #fed7aa;\">{H(a4BalanceLabel)}</td><td class=\"tabular\" style=\"padding:5px 9px;text-align:right;font-weight:900;color:#c2410c;border-bottom:1px solid #fed7aa;\">Rs. {F2(fin.BalanceThis)}</td></tr>");
+            else if (fin.ChangeDue > 0.009m)
+                sb.AppendLine($"<tr style=\"background:#f0fdf4;\"><td style=\"padding:5px 9px;color:#166534;font-weight:700;border-bottom:1px solid #bbf7d0;\">Change Returned</td><td class=\"tabular\" style=\"padding:5px 9px;text-align:right;font-weight:800;color:#166534;border-bottom:1px solid #bbf7d0;\">Rs. {F2(fin.ChangeDue)}</td></tr>");
+            else
+                sb.AppendLine("<tr style=\"background:#f0fdf4;\"><td style=\"padding:5px 9px;color:#166534;font-weight:700;border-bottom:1px solid #bbf7d0;\">Payment Status</td><td style=\"padding:5px 9px;text-align:right;font-weight:800;color:#166534;border-bottom:1px solid #bbf7d0;\">SETTLED</td></tr>");
+        }
 
         if (showTotalDue)
-            sb.AppendLine($"<tr style=\"background:#fef2f2;\"><td style=\"padding:5.5px 9px;color:#991b1b;font-weight:800;\">Total Account Balance Due</td><td class=\"tabular\" style=\"padding:5.5px 9px;text-align:right;font-weight:900;color:#b91c1c;\">Rs. {F2(customerTotalDue!.Value)}</td></tr>");
+            sb.AppendLine($"<tr style=\"background:#fef2f2;\"><td style=\"padding:5.5px 9px;color:#991b1b;font-weight:800;\">{H(invoice.A4TotalDueLabel)}</td><td class=\"tabular\" style=\"padding:5.5px 9px;text-align:right;font-weight:900;color:#b91c1c;\">Rs. {F2(customerTotalDue!.Value)}</td></tr>");
         sb.AppendLine("</table></div></div>");
 
         sb.AppendLine(fbrFooterHtml);
@@ -1286,7 +1380,9 @@ public sealed class PrintTemplateRenderer
 
         if (isDetailed)
         {
-            sb.AppendLine($"<div style=\"display:flex;justify-content:space-between;align-items:flex-end;margin:12px 0 10px;padding:0 4px;\"><div style=\"width:170px;border-top:1px solid #94a3b8;padding-top:3px;font-size:8.8px;color:#64748b;text-align:center;\">Customer Signature</div><div style=\"font-size:9.5px;font-style:italic;color:#64748b;\">Thank you for trusting {H(setting.StoreName)}!</div><div style=\"width:170px;border-top:1px solid #94a3b8;padding-top:3px;font-size:8.8px;color:#64748b;text-align:center;\">Authorized Signature / Stamp</div></div>");
+            var leftSigLabel = docKind == "sale_invoice" ? "Customer Signature" : $"{partyLabel} Signature";
+            var a4Greeting = invoice.ClosingGreeting ?? $"Thank you for trusting {setting.StoreName}!";
+            sb.AppendLine($"<div style=\"display:flex;justify-content:space-between;align-items:flex-end;margin:12px 0 10px;padding:0 4px;\"><div style=\"width:170px;border-top:1px solid #94a3b8;padding-top:3px;font-size:8.8px;color:#64748b;text-align:center;\">{H(leftSigLabel)}</div><div style=\"font-size:9.5px;font-style:italic;color:#64748b;\">{H(a4Greeting)}</div><div style=\"width:170px;border-top:1px solid #94a3b8;padding-top:3px;font-size:8.8px;color:#64748b;text-align:center;\">Authorized Signature / Stamp</div></div>");
         }
 
         sb.AppendLine($"<div style=\"border-top:{(isMinimal ? "1.5px solid #1e293b" : $"2px solid {pal.Primary}")};background:{(isBold ? pal.Primary : (isMinimal ? "#ffffff" : pal.SoftBg))};color:{(isBold ? "#ffffff" : "#334155")};padding:8px 13px;border-radius:{(isMinimal ? "0" : "5px")};display:flex;align-items:center;justify-content:space-between;gap:12px;\">");
@@ -1642,10 +1738,273 @@ public sealed class PrintTemplateRenderer
         return inv;
     }
 
+    public static PrintInvoiceViewModel CreateSamplePreviewDocument(PrintSettingViewModel? setting = null, string? docType = null)
+    {
+        var kind = (docType ?? "sale_invoice").Trim().ToLowerInvariant();
+        if (kind is "" or "sale_invoice" or "sale" or "sale-invoice")
+            return CreateSamplePreviewInvoice(setting);
+
+        if (kind is "purchase_invoice" or "purchase" or "purchase-invoice")
+        {
+            return new PrintInvoiceViewModel
+            {
+                Id = 204,
+                DocumentKind = "purchase_invoice",
+                DocumentTitle = "PURCHASE INVOICE",
+                PostedNumber = "PI-2026-0041",
+                Date = DateTime.Now,
+                PartyLabel = "Supplier",
+                PartyFallbackName = "Walk-in Supplier",
+                StaffLabel = "Entered By",
+                UserName = "Inventory Manager",
+                CustomerName = "Getz Pharma Distributors (Pvt) Ltd",
+                CustomerPhone = "042-35881122",
+                CustomerAddress = "Kot Lakhpat Industrial Estate, Lahore",
+                InvoiceType = "credit",
+                PaymentMethod = "bank_transfer",
+                ShowModeRow = true,
+                ModeLabel = "Bill Type",
+                ModeValue = "Credit Purchase",
+                ReferenceLabel = "Supplier Bill",
+                ReferenceValue = "GP-99812",
+                SecondaryRefLabel = "PO Ref",
+                SecondaryRefValue = "PO-2026-0019",
+                GrossAmount = 14800.00m,
+                ItemDiscountTotal = 740.00m,
+                DiscountAmount = 300.00m,
+                DiscountPercentage = 2.0m,
+                TaxAmount = 0m,
+                Total = 13760.00m,
+                TotalReceive = 10000.00m,
+                PaidLabel = "Amount Paid",
+                BalanceLabel = "Balance Payable",
+                TotalDueLabel = "Total Supplier Payable",
+                A4TotalDueLabel = "Total Supplier Payable",
+                CustomerTotalDue = 45200.00m,
+                ShowYouSaved = false,
+                ClosingGreeting = "Goods received & verified against supplier bill.",
+                Items =
+                [
+                    new PrintInvoiceItemViewModel
+                    {
+                        ProductName = "Risek 40mg Capsules (Box x14)",
+                        ProductCode = "SKU-4110",
+                        PackSize = 14,
+                        Quantity = 20,
+                        BonusQuantity = 2,
+                        Price = 340.00m,
+                        ItemDiscountPercentage = 5,
+                        ItemDiscountAmount = 340.00m,
+                        SubTotal = 6460.00m,
+                        BatchNumber = "RSK81M",
+                        Expiry = "05/2028"
+                    },
+                    new PrintInvoiceItemViewModel
+                    {
+                        ProductName = "Surbex-Z Tablets (Bottle x30)",
+                        ProductCode = "SKU-5102",
+                        PackSize = 30,
+                        Quantity = 10,
+                        BonusQuantity = 1,
+                        Price = 800.00m,
+                        ItemDiscountPercentage = 5,
+                        ItemDiscountAmount = 400.00m,
+                        SubTotal = 7600.00m,
+                        BatchNumber = "SBX19K",
+                        Expiry = "09/2028"
+                    }
+                ]
+            };
+        }
+
+        if (kind is "sale_return" or "sale-return")
+        {
+            return new PrintInvoiceViewModel
+            {
+                Id = 312,
+                DocumentKind = "sale_return",
+                DocumentTitle = "SALE RETURN / CREDIT NOTE",
+                PostedNumber = "SR-2026-0018",
+                Date = DateTime.Now,
+                PartyLabel = "Customer",
+                PartyFallbackName = "Walk-in Customer",
+                StaffLabel = "Processed By",
+                UserName = "Cashier Ali",
+                CustomerName = "Muhammad Usman",
+                CustomerPhone = "0321-7654321",
+                CustomerAddress = "Gulberg III, Lahore",
+                PaymentMethod = "cash",
+                ShowModeRow = true,
+                ModeLabel = "Settlement",
+                ModeValue = "Cash Refund",
+                ReferenceLabel = "Orig Invoice",
+                ReferenceValue = "INV-00104",
+                SecondaryRefLabel = "Refund Mode",
+                SecondaryRefValue = "Cash Refund",
+                GrossAmount = 960.00m,
+                ItemDiscountTotal = 96.00m,
+                DiscountAmount = 0m,
+                TaxAmount = 0m,
+                Total = 864.00m,
+                TotalReceive = 864.00m,
+                PaidLabel = "Refunded / Credited",
+                BalanceLabel = "Remaining Credit",
+                NetTotalLabel = "NET RETURN TOTAL",
+                A4NetTotalLabel = "NET CREDIT NOTE TOTAL",
+                StatusOverrideText = "REFUNDED",
+                StatusOverrideKind = "paid",
+                ShowYouSaved = false,
+                Remarks = "Customer returned unopened strips within 48h return window.",
+                ClosingGreeting = "Return processed. Please retain this credit note.",
+                Items =
+                [
+                    new PrintInvoiceItemViewModel
+                    {
+                        ProductName = "Augmentin 625mg Tablets",
+                        ProductCode = "SKU-1042",
+                        PackSize = 6,
+                        Quantity = 2,
+                        Price = 480.00m,
+                        ItemDiscountPercentage = 10,
+                        ItemDiscountAmount = 96.00m,
+                        SubTotal = 864.00m,
+                        BatchNumber = "AUG26B",
+                        Expiry = "08/2027"
+                    }
+                ]
+            };
+        }
+
+        if (kind is "purchase_return" or "purchase-return")
+        {
+            return new PrintInvoiceViewModel
+            {
+                Id = 409,
+                DocumentKind = "purchase_return",
+                DocumentTitle = "PURCHASE RETURN / DEBIT NOTE",
+                PostedNumber = "PR-2026-0009",
+                Date = DateTime.Now,
+                PartyLabel = "Supplier",
+                PartyFallbackName = "Walk-in Supplier",
+                StaffLabel = "Returned By",
+                UserName = "Inventory Manager",
+                CustomerName = "Getz Pharma Distributors (Pvt) Ltd",
+                CustomerPhone = "042-35881122",
+                CustomerAddress = "Kot Lakhpat Industrial Estate, Lahore",
+                PaymentMethod = "ledger_credit",
+                ShowModeRow = true,
+                ModeLabel = "Settlement",
+                ModeValue = "Supplier Ledger Credit",
+                ReferenceLabel = "Orig Purchase",
+                ReferenceValue = "PI-2026-0041",
+                SecondaryRefLabel = "Adjustment",
+                SecondaryRefValue = "Ledger Credit",
+                GrossAmount = 3400.00m,
+                ItemDiscountTotal = 170.00m,
+                DiscountAmount = 0m,
+                TaxAmount = 0m,
+                Total = 3230.00m,
+                TotalReceive = 3230.00m,
+                PaidLabel = "Credited / Settled",
+                BalanceLabel = "Pending Claim",
+                NetTotalLabel = "NET DEBIT TOTAL",
+                A4NetTotalLabel = "NET DEBIT NOTE TOTAL",
+                StatusOverrideText = "CREDITED",
+                StatusOverrideKind = "paid",
+                ShowYouSaved = false,
+                Remarks = "Damaged outer cartons returned to distributor for credit.",
+                ClosingGreeting = "Debit note issued to supplier.",
+                Items =
+                [
+                    new PrintInvoiceItemViewModel
+                    {
+                        ProductName = "Risek 40mg Capsules (Box x14)",
+                        ProductCode = "SKU-4110",
+                        PackSize = 14,
+                        Quantity = 10,
+                        Price = 340.00m,
+                        ItemDiscountPercentage = 5,
+                        ItemDiscountAmount = 170.00m,
+                        SubTotal = 3230.00m,
+                        BatchNumber = "RSK81M",
+                        Expiry = "05/2028"
+                    }
+                ]
+            };
+        }
+
+        // purchase_order
+        return new PrintInvoiceViewModel
+        {
+            Id = 505,
+            DocumentKind = "purchase_order",
+            DocumentTitle = "PURCHASE ORDER",
+            PostedNumber = "PO-2026-0027",
+            Date = DateTime.Now,
+            PartyLabel = "Supplier",
+            PartyFallbackName = "Supplier",
+            StaffLabel = "Prepared By",
+            UserName = "Purchasing Officer",
+            CustomerName = "Muller & Phipps Pakistan (Pvt) Ltd",
+            CustomerPhone = "042-111-627-627",
+            CustomerAddress = "Johar Town, Lahore",
+            ShowModeRow = true,
+            ModeLabel = "Order Status",
+            ModeValue = "Ordered",
+            ShowPayRow = false,
+            ReferenceLabel = "Order Ref",
+            ReferenceValue = "REQ-MAY-04",
+            SecondaryRefLabel = "Expected",
+            SecondaryRefValue = DateTime.Now.AddDays(3).ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+            GrossAmount = 18500.00m,
+            ItemDiscountTotal = 925.00m,
+            DiscountAmount = 0m,
+            TaxAmount = 0m,
+            Total = 17575.00m,
+            TotalReceive = 0m,
+            NetTotalLabel = "EXPECTED ORDER TOTAL",
+            A4NetTotalLabel = "EXPECTED ORDER TOTAL",
+            StatusOverrideText = "ORDERED",
+            StatusOverrideKind = "partial",
+            ShowPaymentBreakdown = false,
+            ShowYouSaved = false,
+            Remarks = "Please supply fresh stock with minimum 12 months expiry.",
+            ClosingGreeting = "Authorized Purchase Order — subject to quantity & expiry verification upon delivery.",
+            Items =
+            [
+                new PrintInvoiceItemViewModel
+                {
+                    ProductName = "Augmentin 625mg Tablets (Box x6)",
+                    ProductCode = "SKU-1042",
+                    PackSize = 6,
+                    Quantity = 25,
+                    BonusQuantity = 3,
+                    Price = 420.00m,
+                    ItemDiscountPercentage = 5,
+                    ItemDiscountAmount = 525.00m,
+                    SubTotal = 9975.00m
+                },
+                new PrintInvoiceItemViewModel
+                {
+                    ProductName = "Panadol Extra 500mg Box",
+                    ProductCode = "SKU-2018",
+                    PackSize = 10,
+                    Quantity = 20,
+                    BonusQuantity = 2,
+                    Price = 400.00m,
+                    ItemDiscountPercentage = 5,
+                    ItemDiscountAmount = 400.00m,
+                    SubTotal = 7600.00m
+                }
+            ]
+        };
+    }
+
     public string RenderThermalPreview(
         string template,
         PrintSettingViewModel? dbSetting = null,
-        IDictionary<string, string>? queryParams = null)
+        IDictionary<string, string>? queryParams = null,
+        string? docType = null)
     {
         var normalized = (template ?? "").Trim().ToLowerInvariant();
         if (!ValidInvoiceTemplates.Contains(normalized))
@@ -1662,14 +2021,20 @@ public sealed class PrintTemplateRenderer
         {
             setting.Note = customNote;
         }
-        var sampleInvoice = CreateSamplePreviewInvoice(setting);
+        var effectiveDocType = docType;
+        if (string.IsNullOrWhiteSpace(effectiveDocType) && queryParams != null && queryParams.TryGetValue("doc_type", out var qdt))
+        {
+            effectiveDocType = qdt;
+        }
+        var sampleInvoice = CreateSamplePreviewDocument(setting, effectiveDocType);
         return RenderThermalSaleInvoice(normalized, sampleInvoice, setting, queryParams);
     }
 
     public string RenderA4Preview(
         string template,
         PrintSettingViewModel? dbSetting = null,
-        IDictionary<string, string>? queryParams = null)
+        IDictionary<string, string>? queryParams = null,
+        string? docType = null)
     {
         var normalized = (template ?? "").Trim().ToLowerInvariant();
         if (!ValidInvoiceTemplates.Contains(normalized))
@@ -1686,7 +2051,12 @@ public sealed class PrintTemplateRenderer
         {
             setting.Note = customNote;
         }
-        var sampleInvoice = CreateSamplePreviewInvoice(setting);
+        var effectiveDocType = docType;
+        if (string.IsNullOrWhiteSpace(effectiveDocType) && queryParams != null && queryParams.TryGetValue("doc_type", out var qdt))
+        {
+            effectiveDocType = qdt;
+        }
+        var sampleInvoice = CreateSamplePreviewDocument(setting, effectiveDocType);
         return RenderA4SaleInvoice(normalized, sampleInvoice, setting, queryParams);
     }
 
@@ -1746,7 +2116,8 @@ public sealed class PrintTemplateRenderer
         string size,
         string template,
         PrintSettingViewModel? dbSetting = null,
-        IDictionary<string, string>? queryParams = null)
+        IDictionary<string, string>? queryParams = null,
+        string? docType = null)
     {
         var normSize = (size ?? "").Trim().ToLowerInvariant();
         var normTpl = (template ?? "").Trim().ToLowerInvariant();
@@ -1766,9 +2137,18 @@ public sealed class PrintTemplateRenderer
             setting.Note = noteVal;
         }
 
-        var sampleInvoice = CreateSamplePreviewInvoice(setting);
-        sampleInvoice.PostedNumber = "INV-00104";
-        sampleInvoice.CustomerName = "Muhammad Usman";
+        var effectiveDocType = docType;
+        if (string.IsNullOrWhiteSpace(effectiveDocType) && queryParams != null && queryParams.TryGetValue("doc_type", out var qdt))
+        {
+            effectiveDocType = qdt;
+        }
+        var sampleInvoice = CreateSamplePreviewDocument(setting, effectiveDocType);
+        if (string.IsNullOrWhiteSpace(effectiveDocType) ||
+            effectiveDocType.Trim().ToLowerInvariant() is "sale_invoice" or "sale" or "sale-invoice")
+        {
+            sampleInvoice.PostedNumber = "INV-00104";
+            sampleInvoice.CustomerName = "Muhammad Usman";
+        }
 
         return normSize == "thermal"
             ? RenderThermalSaleInvoice(normTpl, sampleInvoice, setting, queryParams, colorMode: true)

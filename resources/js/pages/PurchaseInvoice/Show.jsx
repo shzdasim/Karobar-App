@@ -28,7 +28,7 @@ import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
-import { printCurrentView } from "@/utils/printHelper.js";
+import { printSlipUrl } from "@/utils/printHelper.js";
 
 const to2 = (n) => Number(parseFloat(n || 0).toFixed(2));
 
@@ -283,6 +283,20 @@ export default function PurchaseInvoiceShow() {
     }
   };
 
+  const handlePrint = async () => {
+    if (!id) return;
+    try {
+      const { data } = await axios.get(`/api/purchase-invoices/${id}/print-url`);
+      if (!data?.url && !data?.html) {
+        toast.error("Failed to generate print link.");
+        return;
+      }
+      await printSlipUrl(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
@@ -298,7 +312,7 @@ export default function PurchaseInvoiceShow() {
       }
       if (k === "p" || e.code === "KeyP") {
         e.preventDefault();
-        printCurrentView();
+        handlePrint();
       }
       if (k === "e" || e.code === "KeyE") {
         if (!can.update || inv?.status === "reversed") return;
@@ -447,7 +461,7 @@ export default function PurchaseInvoiceShow() {
 
             <button
               type="button"
-              onClick={() => printCurrentView()}
+              onClick={handlePrint}
               className={`h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${btnSuccess.className} flex items-center gap-1 active:scale-95 cursor-pointer`}
               style={btnSuccess.style}
               title="Print GRN / Purchase Invoice (Ctrl+P)"

@@ -188,7 +188,9 @@ public class WebRoutesController : ApiControllerBase
         }
 
         var setting = await PrintViewModelMapper.LoadPrintSettingAsync(Db);
-        var html = _renderer.RenderThermalPreview(template, setting, PrintViewModelMapper.QueryToDict(Request.Query));
+        var q = PrintViewModelMapper.QueryToDict(Request.Query);
+        q.TryGetValue("doc_type", out var docType);
+        var html = _renderer.RenderThermalPreview(template, setting, q, docType);
         return Content(html, "text/html; charset=UTF-8");
     }
 
@@ -201,7 +203,9 @@ public class WebRoutesController : ApiControllerBase
         }
 
         var setting = await PrintViewModelMapper.LoadPrintSettingAsync(Db);
-        var html = _renderer.RenderA4Preview(template, setting, PrintViewModelMapper.QueryToDict(Request.Query));
+        var q = PrintViewModelMapper.QueryToDict(Request.Query);
+        q.TryGetValue("doc_type", out var docType);
+        var html = _renderer.RenderA4Preview(template, setting, q, docType);
         return Content(html, "text/html; charset=UTF-8");
     }
 
@@ -224,7 +228,9 @@ public class WebRoutesController : ApiControllerBase
         }
 
         var setting = await PrintViewModelMapper.LoadPrintSettingAsync(Db);
-        var html = _renderer.RenderSharePreview(size, template, setting, PrintViewModelMapper.QueryToDict(Request.Query));
+        var q = PrintViewModelMapper.QueryToDict(Request.Query);
+        q.TryGetValue("doc_type", out var docType);
+        var html = _renderer.RenderSharePreview(size, template, setting, q, docType);
         return Content(html, "text/html; charset=UTF-8");
     }
 

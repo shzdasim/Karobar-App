@@ -34,7 +34,7 @@ import {
 import SupplierSearch from "../components/SupplierSearch";
 import ShareDocumentModal from "../components/ShareDocumentModal";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
-import { printCurrentView } from "@/utils/printHelper.js";
+import { printSlipUrl } from "@/utils/printHelper.js";
 
 const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), expected_received_date: '', notes: '', reference: '', supplier_id: '', items: [] });
 const orderRow = (row) => ({ ...row,
@@ -324,6 +324,20 @@ export default function PurchaseOrders() {
     }, supplierQuery.trim() ? 250 : 0);
     return () => clearTimeout(timer);
   }, [supplierQuery]);
+  const handlePrintOrder = useCallback(async (orderId) => {
+    if (!orderId) return;
+    try {
+      const { data } = await axios.get(`/api/purchase-orders/${orderId}/print-url`);
+      if (!data?.url && !data?.html) {
+        toast.error("Failed to generate print link.");
+        return;
+      }
+      await printSlipUrl(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
+  }, []);
+
   useEffect(() => {
     if (!order || editing) return;
     const onKeyDown = (e) => {
@@ -331,7 +345,7 @@ export default function PurchaseOrders() {
       const key = (e.key || '').toLowerCase();
       if (key === 'p' || e.code === 'KeyP') {
         e.preventDefault();
-        printCurrentView();
+        handlePrintOrder(order.id);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -1482,7 +1496,7 @@ export default function PurchaseOrders() {
           {order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : 'Receive Order'}</button>}
           {(has('barcode.view') || has('barcode.print')) && <Link className="g-btn-ghost theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" to={`/barcode-labels?purchase_order_id=${order.id}`} title="Print Barcode Labels for this order"><QrCodeIcon className="w-4 h-4" /><span>Print Barcodes</span></Link>}
           <button type="button" className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => setSharingPoId(order.id)}><ShareIcon className="w-4 h-4" /><span>Share / Email PDF</span></button>
-          <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => printCurrentView()}>Print Order</button>
+          <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => handlePrintOrder(order.id)}>Print Order</button>
         </div>
       </> : null}
     </div>

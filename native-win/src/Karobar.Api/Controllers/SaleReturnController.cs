@@ -1,9 +1,12 @@
 using System.Data;
 using System.Text.Json;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
 using Karobar.Background;
 using Karobar.Data;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -23,11 +26,13 @@ public class SaleReturnController : ApiControllerBase
     private readonly OperatorPinService _operatorPinService;
     private readonly FbrFiscalizationEngine? _fbrEngine;
     private readonly KarobarDbContext? _dbContext;
+    private readonly PrintTemplateRenderer _renderer;
 
     public SaleReturnController(
         KarobarDb db,
         FbrFiscalizationEngine? fbrEngine = null,
-        KarobarDbContext? dbContext = null) : base(db)
+        KarobarDbContext? dbContext = null,
+        PrintTemplateRenderer? renderer = null) : base(db)
     {
         _sequenceService = new DocumentSequenceService(db);
         _calculationService = new InvoiceCalculationService(db);
@@ -37,6 +42,7 @@ public class SaleReturnController : ApiControllerBase
         _operatorPinService = new OperatorPinService(db);
         _fbrEngine = fbrEngine;
         _dbContext = dbContext;
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     [HttpGet("new-code")]
@@ -746,6 +752,40 @@ public class SaleReturnController : ApiControllerBase
     {
         var l = ToLong(val);
         return l > 0 ? l : null;
+    }
+
+    [HttpGet("{saleReturn:long}/print-url")]
+    public async Task<IActionResult> PrintUrl(long saleReturn, [FromQuery] string? type = null)
+    {
+        if (!await CanAsync("sale-return.view", "sale-return.create"))
+        {
+            return Forbidden();
+        }
+
+        var vm = await PrintViewModelMapper.LoadSaleReturnPrintVmAsync(Db, saleReturn);
+        if (vm == null) return NotFound(new { message = "Sale return not found." });
+
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (!string.IsNullOrWhiteSpace(type)) qParams["type"] = type;
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/sale-returns/{saleReturn}", qParams, TimeSpan.FromMinutes(15));
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["html"] = html
+        });
+    }
+
+    [AllowAnonymous]
+    [HttpGet("/print/sale-returns/{saleReturn:long}")]
+    public async Task<IActionResult> PrintWeb(long saleReturn, [FromQuery] string? type = null)
+    {
+        var vm = await PrintViewModelMapper.LoadSaleReturnPrintVmAsync(Db, saleReturn);
+        if (vm == null) return NotFound("Sale return not found.");
+
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+        return Content(html, "text/html; charset=utf-8");
     }
 
     private static double ToDouble(object? val)

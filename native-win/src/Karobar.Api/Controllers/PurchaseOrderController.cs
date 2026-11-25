@@ -2,7 +2,10 @@ using System.Data;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
+using Karobar.Api.Helpers;
 using Karobar.Api.Infrastructure;
+using Karobar.Api.Middleware;
+using Karobar.Printing;
 using Karobar.Services;
 using Karobar.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -15,10 +18,12 @@ namespace Karobar.Api.Controllers;
 public class PurchaseOrderController : ApiControllerBase
 {
     private readonly SupplierProductSortingService _sortingService;
+    private readonly PrintTemplateRenderer _renderer;
 
-    public PurchaseOrderController(KarobarDb db) : base(db)
+    public PurchaseOrderController(KarobarDb db, PrintTemplateRenderer? renderer = null) : base(db)
     {
         _sortingService = new SupplierProductSortingService(db);
+        _renderer = renderer ?? new PrintTemplateRenderer();
     }
 
     [HttpGet]
@@ -1193,6 +1198,40 @@ public class PurchaseOrderController : ApiControllerBase
         if (val is long l) return l;
         if (val is int i) return i;
         return long.TryParse(val.ToString(), out var p) ? p : 0;
+    }
+
+    [HttpGet("{purchaseOrder:long}/print-url")]
+    public async Task<IActionResult> PrintUrl(long purchaseOrder, [FromQuery] string? type = null)
+    {
+        if (!await CanAsync("purchase-order.view", "purchase-order.create", "purchase-invoice.view"))
+        {
+            return Forbidden();
+        }
+
+        var vm = await PrintViewModelMapper.LoadPurchaseOrderPrintVmAsync(Db, purchaseOrder);
+        if (vm == null) return NotFound(new { message = "Purchase order not found." });
+
+        var qParams = new Dictionary<string, string?> { ["silent_print"] = "1" };
+        if (!string.IsNullOrWhiteSpace(type)) qParams["type"] = type;
+        var url = SignedUrlMiddleware.CreateSignedUrl(Request, $"/print/purchase-orders/{purchaseOrder}", qParams, TimeSpan.FromMinutes(15));
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["html"] = html
+        });
+    }
+
+    [AllowAnonymous]
+    [HttpGet("/print/purchase-orders/{purchaseOrder:long}")]
+    public async Task<IActionResult> PrintWeb(long purchaseOrder, [FromQuery] string? type = null)
+    {
+        var vm = await PrintViewModelMapper.LoadPurchaseOrderPrintVmAsync(Db, purchaseOrder);
+        if (vm == null) return NotFound("Purchase order not found.");
+
+        var html = await PrintViewModelMapper.RenderDocumentHtmlAsync(Db, _renderer, vm, type, PrintViewModelMapper.QueryToDict(Request.Query));
+        return Content(html, "text/html; charset=utf-8");
     }
 
     private static double ToDouble(object? val)

@@ -228,6 +228,7 @@ export default function DocumentSharingSetting({
   const { isDark } = useTheme();
   const [subTab, setSubTab] = useState(initialSubTab || "pdf_design");
   const [previewTemplate, setPreviewTemplate] = useState(null);
+  const [previewDocType, setPreviewDocType] = useState("sale_invoice");
   const [activeMessageField, setActiveMessageField] = useState("whatsapp_message_en");
   const [showLivePreview, setShowLivePreview] = useState(false);
   const [localLogoPreview, setLocalLogoPreview] = useState(null);
@@ -1405,7 +1406,19 @@ export default function DocumentSharingSetting({
                   Exact shared PDF layout preview ({showLogo ? "Store Logo Enabled" : "Store Logo Hidden"})
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <select
+                  aria-label="Preview Document Type"
+                  value={previewDocType}
+                  onChange={(e) => setPreviewDocType(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-semibold text-gray-800 dark:text-slate-100"
+                >
+                  <option value="sale_invoice">Sale Invoice</option>
+                  <option value="purchase_invoice">Purchase Invoice</option>
+                  <option value="sale_return">Sale Return</option>
+                  <option value="purchase_return">Purchase Return</option>
+                  <option value="purchase_order">Purchase Order</option>
+                </select>
                 {!disableInputs && selectedTemplate !== previewTemplate && (
                   <button
                     type="button"
@@ -1431,7 +1444,9 @@ export default function DocumentSharingSetting({
               <iframe
                 src={`/print/share-preview/${activePaperSize}/${previewTemplate}?show_logo=${
                   showLogo ? 1 : 0
-                }&note=${encodeURIComponent(form.note ?? "")}`}
+                }&note=${encodeURIComponent(form.note ?? "")}&doc_type=${encodeURIComponent(
+                  previewDocType
+                )}`}
                 title="Shared PDF Template Preview"
                 className="w-full h-full rounded-xl bg-white border border-gray-200 dark:border-slate-700"
               />

@@ -277,6 +277,7 @@ export default function PrinterSetting({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
   const [previewingType, setPreviewingType] = useState("thermal"); // 'thermal', 'a4', 'sticker'
+  const [previewDocType, setPreviewDocType] = useState("sale_invoice");
   const [installedPrinters, setInstalledPrinters] = useState([]);
   const [preferredDeviceName, setPreferredDeviceName] = useState(() =>
     getPreferredPrinter()
@@ -498,6 +499,7 @@ export default function PrinterSetting({
     params.set("contrast_mode", contrastMode);
     params.set("scale_mode", scaleMode);
     params.set("print_show_logo", showLogo);
+    params.set("doc_type", previewDocType || "sale_invoice");
 
     if (customForm?.note) {
       params.set("note", String(customForm.note));
@@ -2542,21 +2544,37 @@ export default function PrinterSetting({
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                 {/* Left Column: Live Preview */}
                 <div className="lg:col-span-5 flex flex-col items-center bg-slate-100 dark:bg-slate-900/70 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                  <div className="w-full flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">
+                  <div className="w-full flex items-center justify-between gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">
                     <span>
                       {previewingType === "sticker"
                         ? "Live Calibrated Sticker Preview"
                         : "Live Calibrated Receipt Preview"}
                     </span>
-                    <span>
-                      {previewingType === "sticker"
-                        ? `${form.dosage_sticker_config?.width_mm || 72}×${
-                            form.dosage_sticker_config?.height_mm || 35
-                          }mm`
-                        : Number(form.print_paper_width_mm || 0) > 0
-                        ? `${form.print_paper_width_mm}mm`
-                        : "Default Width"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {previewingType !== "sticker" && (
+                        <select
+                          aria-label="Preview Document Type"
+                          value={previewDocType}
+                          onChange={(e) => setPreviewDocType(e.target.value)}
+                          className="px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                        >
+                          <option value="sale_invoice">Sale Invoice</option>
+                          <option value="purchase_invoice">Purchase Invoice</option>
+                          <option value="sale_return">Sale Return</option>
+                          <option value="purchase_return">Purchase Return</option>
+                          <option value="purchase_order">Purchase Order</option>
+                        </select>
+                      )}
+                      <span>
+                        {previewingType === "sticker"
+                          ? `${form.dosage_sticker_config?.width_mm || 72}×${
+                              form.dosage_sticker_config?.height_mm || 35
+                            }mm`
+                          : Number(form.print_paper_width_mm || 0) > 0
+                          ? `${form.print_paper_width_mm}mm`
+                          : "Default Width"}
+                      </span>
+                    </div>
                   </div>
                   <div
                     className="settings-template-frame bg-white rounded-lg shadow-sm w-full"

@@ -85,6 +85,14 @@ public class EnsureLicensedMiddleware
 
         if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) &&
             !path.StartsWith("/print/sale-invoices", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-invoices", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/sale-returns", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-returns", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-orders", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-invoices", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/sale-returns", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-returns", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/print/purchase-orders", StringComparison.OrdinalIgnoreCase) &&
             !path.StartsWith("/print/cash-drawer", StringComparison.OrdinalIgnoreCase) &&
             !path.StartsWith("/print/shared-pdf", StringComparison.OrdinalIgnoreCase) &&
             !path.StartsWith("/supplier-ledger/print", StringComparison.OrdinalIgnoreCase) &&
