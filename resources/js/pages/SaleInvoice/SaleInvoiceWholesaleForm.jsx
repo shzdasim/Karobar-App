@@ -3,6 +3,7 @@ import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../co
 import { lazy, Suspense, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Select from "react-select";
 import { TrashIcon, PlusIcon, CheckIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
@@ -715,6 +716,48 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       dangerHover: "#dc2626",
     };
   }, [theme]);
+
+  const paymentSelectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: "28px",
+      height: "28px",
+      borderRadius: 6,
+      backgroundColor: isDark ? "#334155" : "#ffffff",
+      borderColor: state.isFocused
+        ? (themeColors.primary || "#3b82f6")
+        : (isDark ? "#475569" : "#e2e8f0"),
+      boxShadow: "none",
+      fontSize: "11px",
+      fontWeight: 600,
+    }),
+    valueContainer: (base) => ({ ...base, padding: "0 6px", height: "26px" }),
+    indicatorsContainer: (base) => ({ ...base, height: "26px" }),
+    dropdownIndicator: (base) => ({ ...base, padding: 1 }),
+    input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "11px" }),
+    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.2)",
+      borderRadius: 8,
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      backgroundColor: state.isSelected
+        ? (themeColors.primary || "#3b82f6")
+        : state.isFocused
+        ? (isDark ? "#334155" : "#f1f5f9")
+        : "transparent",
+      color: state.isSelected ? "#ffffff" : (isDark ? "#f8fafc" : "#1e293b"),
+      fontSize: "11px",
+      padding: "4px 8px",
+      cursor: "pointer",
+    }),
+  }), [isDark, themeColors]);
 
   const buttonStyle = theme?.button_style || "modern";
   const getButtonClasses = useMemo(
