@@ -56,6 +56,12 @@ public abstract class ApiControllerBase : ControllerBase
     {
         var uid = CurrentUserId;
         if (uid == null) return false;
+        if (HttpContext?.Items != null &&
+            HttpContext.Items.TryGetValue(Middleware.SanctumAuthenticationHandler.UserRolesItemKey, out var rolesObj) &&
+            rolesObj is IReadOnlyList<string> cachedRoles)
+        {
+            return cachedRoles.Any(KarobarDb.IsAdminRoleName);
+        }
         return await Db.UserHasRoleAsync(uid.Value, KarobarDb.AdminRoleNames);
     }
 
@@ -63,7 +69,14 @@ public abstract class ApiControllerBase : ControllerBase
     {
         var uid = CurrentUserId;
         if (uid == null) return false;
-        return await Db.UserCanAsync(uid.Value, permissions);
+        IReadOnlyList<string>? cachedRoles = null;
+        if (HttpContext?.Items != null &&
+            HttpContext.Items.TryGetValue(Middleware.SanctumAuthenticationHandler.UserRolesItemKey, out var rolesObj) &&
+            rolesObj is IReadOnlyList<string> r)
+        {
+            cachedRoles = r;
+        }
+        return await Db.UserCanWithKnownRolesAsync(uid.Value, cachedRoles, permissions);
     }
 
     protected IActionResult Unprocessable(string message, Dictionary<string, string[]>? errors = null)
