@@ -102,6 +102,8 @@ public sealed class NetworkConfigManager
     private readonly string _appRoot;
     private readonly string? _userDataDirOverride;
     private NetworkConfig? _networkConfigCache;
+    private Dictionary<string, string>? _cachedDefaultHeaders;
+    private string? _cachedDefaultHeadersVersion;
     private int _activePort = DefaultPort;
 
     private static readonly JsonSerializerOptions JsonWriteOptions = new()
@@ -393,6 +395,8 @@ public sealed class NetworkConfigManager
             };
 
             _networkConfigCache = next;
+            _cachedDefaultHeaders = null;
+            _cachedDefaultHeadersVersion = null;
             PersistConfigToDisk(next);
             return CloneConfig(next);
         }
@@ -556,25 +560,36 @@ public sealed class NetworkConfigManager
     public Dictionary<string, string> GetTerminalIdentityHeaders(string? appVersion = null)
     {
         var resolvedVersion = string.IsNullOrWhiteSpace(appVersion) ? ResolveInstalledAppVersion() : appVersion.Trim();
-        var cfg = LoadNetworkConfig();
-        var hostname = GetSanitizedHostname();
-        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        lock (_syncLock)
         {
-            ["X-Terminal-Id"] = cfg.TerminalId,
-            ["X-Terminal-Name"] = cfg.TerminalName,
-            ["X-Terminal-Mode"] = cfg.Mode,
-            ["X-Terminal-Hostname"] = hostname,
-            ["X-Terminal-OS"] = $"win32-{Environment.OSVersion.Version}",
-            ["X-Terminal-Version"] = resolvedVersion
-        };
+            if (_cachedDefaultHeaders != null &&
+                string.Equals(_cachedDefaultHeadersVersion, resolvedVersion, StringComparison.Ordinal))
+            {
+                return _cachedDefaultHeaders;
+            }
 
-        if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
-        {
-            headers["X-Network-Token"] = cfg.PairingToken;
-            headers["X-Terminal-Token"] = cfg.PairingToken;
+            var cfg = LoadNetworkConfig();
+            var hostname = GetSanitizedHostname();
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["X-Terminal-Id"] = cfg.TerminalId,
+                ["X-Terminal-Name"] = cfg.TerminalName,
+                ["X-Terminal-Mode"] = cfg.Mode,
+                ["X-Terminal-Hostname"] = hostname,
+                ["X-Terminal-OS"] = $"win32-{Environment.OSVersion.Version}",
+                ["X-Terminal-Version"] = resolvedVersion
+            };
+
+            if (!string.IsNullOrWhiteSpace(cfg.PairingToken))
+            {
+                headers["X-Network-Token"] = cfg.PairingToken;
+                headers["X-Terminal-Token"] = cfg.PairingToken;
+            }
+
+            _cachedDefaultHeaders = headers;
+            _cachedDefaultHeadersVersion = resolvedVersion;
+            return headers;
         }
-
-        return headers;
     }
 
     public async Task<ServerConnectionTestResult> TestServerConnectionAsync(

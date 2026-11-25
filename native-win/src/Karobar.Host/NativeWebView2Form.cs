@@ -969,7 +969,10 @@ public sealed class NativeWebView2Form : Form
 
             // Inject terminal identity & LAN pairing token headers on every request to the active Store Server origin
             // so Multi-PC LAN Terminal Mode authenticates seamlessly without relying on local Kestrel.
-            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            var resourceFilter = !string.IsNullOrWhiteSpace(_baseOrigin)
+                ? $"{_baseOrigin.TrimEnd('/')}/*"
+                : "*";
+            core.AddWebResourceRequestedFilter(resourceFilter, CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += (_, reqArgs) =>
             {
                 try

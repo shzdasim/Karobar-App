@@ -665,14 +665,15 @@ public class ReportsController : ApiControllerBase
         var supplierId = Request.Query["supplier_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
 
+        var toNextDayStr = NextDayString(toStr);
         var sql = @"
             SELECT pi.*, s.name AS supplier_name
             FROM purchase_invoices pi
             LEFT JOIN suppliers s ON s.id = pi.supplier_id
-            WHERE DATE(pi.posted_date) BETWEEN @fromStr AND @toStr
+            WHERE pi.posted_date >= @fromStr AND pi.posted_date < @toNextDayStr
               AND (pi.status IS NULL OR pi.status != 'reversed')";
 
-        var dyn = new DynamicParameters(new { fromStr, toStr });
+        var dyn = new DynamicParameters(new { fromStr, toNextDayStr });
         if (!string.IsNullOrWhiteSpace(supplierId))
         {
             sql += " AND pi.supplier_id = @supplierId";
@@ -687,23 +688,32 @@ public class ReportsController : ApiControllerBase
         sql += " ORDER BY pi.posted_date ASC, pi.id ASC";
         var invoices = await Db.QueryListAsync(sql, dyn);
 
-        var rows = new List<Dictionary<string, object?>>();
+        var invIds = invoices.Select(inv => ToLong(inv, "id")).Where(id => id > 0).Distinct().ToList();
+        var itemSql = @"
+            SELECT pii.id, pii.purchase_invoice_id, pii.product_id, p.name AS product_name,
+                   pii.batch, pii.expiry, pii.pack_quantity, pii.pack_size, pii.unit_quantity,
+                   pii.pack_purchase_price, pii.unit_purchase_price, pii.pack_sale_price, pii.unit_sale_price,
+                   pii.pack_bonus, pii.unit_bonus, pii.item_discount_percentage, pii.margin, pii.sub_total, pii.quantity
+            FROM purchase_invoice_items pii
+            LEFT JOIN products p ON p.id = pii.product_id
+            WHERE pii.purchase_invoice_id IN @ids";
+        if (!string.IsNullOrWhiteSpace(productId))
+        {
+            itemSql += " AND pii.product_id = @productId";
+        }
+        itemSql += " ORDER BY pii.purchase_invoice_id ASC, pii.id ASC";
+
+        var itemsByInvId = await QueryItemsGroupedByParentIdAsync(
+            itemSql,
+            "purchase_invoice_id",
+            invIds,
+            !string.IsNullOrWhiteSpace(productId) ? p => p.Add("productId", productId) : null);
+
+        var rows = new List<Dictionary<string, object?>>(invoices.Count);
         foreach (var inv in invoices)
         {
             var invId = ToLong(inv, "id");
-            var itemSql = @"
-                SELECT pii.*, p.name AS product_name
-                FROM purchase_invoice_items pii
-                LEFT JOIN products p ON p.id = pii.product_id
-                WHERE pii.purchase_invoice_id = @invId";
-            var itemParams = new DynamicParameters(new { invId });
-            if (!string.IsNullOrWhiteSpace(productId))
-            {
-                itemSql += " AND pii.product_id = @productId";
-                itemParams.Add("productId", productId);
-            }
-
-            var items = await Db.QueryListAsync(itemSql, itemParams);
+            var items = itemsByInvId.TryGetValue(invId, out var groupedItems) ? groupedItems : new List<Dictionary<string, object?>>();
             var mappedItems = items.Select(it => new Dictionary<string, object?>
             {
                 ["id"] = ToLong(it, "id"),
@@ -840,15 +850,16 @@ public class ReportsController : ApiControllerBase
         var customerId = Request.Query["customer_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
 
+        var toNextDayStr = NextDayString(toStr);
         var sql = @"
             SELECT si.*, c.name AS customer_name, u.name AS user_name
             FROM sale_invoices si
             LEFT JOIN customers c ON c.id = si.customer_id
             LEFT JOIN users u ON u.id = si.user_id
-            WHERE DATE(si.date) BETWEEN @fromStr AND @toStr
+            WHERE si.date >= @fromStr AND si.date < @toNextDayStr
               AND (si.status IS NULL OR si.status != 'reversed')";
 
-        var dyn = new DynamicParameters(new { fromStr, toStr });
+        var dyn = new DynamicParameters(new { fromStr, toNextDayStr });
         if (!string.IsNullOrWhiteSpace(customerId))
         {
             sql += " AND si.customer_id = @customerId";
@@ -863,23 +874,32 @@ public class ReportsController : ApiControllerBase
         sql += " ORDER BY si.date ASC, si.id ASC";
         var invoices = await Db.QueryListAsync(sql, dyn);
 
-        var rows = new List<Dictionary<string, object?>>();
+        var invIds = invoices.Select(inv => ToLong(inv, "id")).Where(id => id > 0).Distinct().ToList();
+        var itemSql = @"
+            SELECT sii.id, sii.sale_invoice_id, sii.product_id, p.name AS product_name,
+                   sii.pack_size, sii.batch_number, sii.expiry, sii.current_quantity,
+                   sii.pack_quantity, sii.unit_quantity, sii.quantity, sii.bonus,
+                   sii.price, sii.item_discount_percentage, sii.sub_total
+            FROM sale_invoice_items sii
+            LEFT JOIN products p ON p.id = sii.product_id
+            WHERE sii.sale_invoice_id IN @ids";
+        if (!string.IsNullOrWhiteSpace(productId))
+        {
+            itemSql += " AND sii.product_id = @productId";
+        }
+        itemSql += " ORDER BY sii.sale_invoice_id ASC, sii.id ASC";
+
+        var itemsByInvId = await QueryItemsGroupedByParentIdAsync(
+            itemSql,
+            "sale_invoice_id",
+            invIds,
+            !string.IsNullOrWhiteSpace(productId) ? p => p.Add("productId", productId) : null);
+
+        var rows = new List<Dictionary<string, object?>>(invoices.Count);
         foreach (var inv in invoices)
         {
             var invId = ToLong(inv, "id");
-            var itemSql = @"
-                SELECT sii.*, p.name AS product_name
-                FROM sale_invoice_items sii
-                LEFT JOIN products p ON p.id = sii.product_id
-                WHERE sii.sale_invoice_id = @invId";
-            var itemParams = new DynamicParameters(new { invId });
-            if (!string.IsNullOrWhiteSpace(productId))
-            {
-                itemSql += " AND sii.product_id = @productId";
-                itemParams.Add("productId", productId);
-            }
-
-            var items = await Db.QueryListAsync(itemSql, itemParams);
+            var items = itemsByInvId.TryGetValue(invId, out var groupedItems) ? groupedItems : new List<Dictionary<string, object?>>();
             var mappedItems = items.Select(it => new Dictionary<string, object?>
             {
                 ["id"] = ToLong(it, "id"),
@@ -1183,15 +1203,28 @@ public class ReportsController : ApiControllerBase
             Request.Query["to"].FirstOrDefault(),
             true);
 
+        var toNextDayStr = NextDayString(toStr);
         var adjustments = await Db.QueryListAsync(@"
             SELECT sa.*, u.name AS user_name
             FROM stock_adjustments sa
             LEFT JOIN users u ON u.id = sa.user_id
-            WHERE DATE(sa.posted_date) BETWEEN @fromStr AND @toStr
+            WHERE sa.posted_date >= @fromStr AND sa.posted_date < @toNextDayStr
             ORDER BY sa.posted_date ASC, sa.id ASC",
-            new { fromStr, toStr });
+            new { fromStr, toNextDayStr });
 
-        var rows = new List<Dictionary<string, object?>>();
+        var adjIds = adjustments.Select(adj => ToLong(adj, "id")).Where(id => id > 0).Distinct().ToList();
+        var itemsByAdjId = await QueryItemsGroupedByParentIdAsync(@"
+            SELECT sai.id, sai.stock_adjustment_id, sai.product_id, p.product_code, p.name AS product_name,
+                   sai.batch_number, sai.expiry, sai.pack_size, sai.previous_qty, sai.actual_qty,
+                   sai.diff_qty, sai.unit_purchase_price, sai.worth_adjusted
+            FROM stock_adjustment_items sai
+            LEFT JOIN products p ON p.id = sai.product_id
+            WHERE sai.stock_adjustment_id IN @ids
+            ORDER BY sai.stock_adjustment_id ASC, sai.id ASC",
+            "stock_adjustment_id",
+            adjIds);
+
+        var rows = new List<Dictionary<string, object?>>(adjustments.Count);
         int totalItems = 0;
         double totalWorth = 0;
         double positiveAdj = 0;
@@ -1200,13 +1233,7 @@ public class ReportsController : ApiControllerBase
         foreach (var adj in adjustments)
         {
             var adjId = ToLong(adj, "id");
-            var items = await Db.QueryListAsync(@"
-                SELECT sai.*, p.product_code, p.name AS product_name
-                FROM stock_adjustment_items sai
-                LEFT JOIN products p ON p.id = sai.product_id
-                WHERE sai.stock_adjustment_id = @adjId
-                ORDER BY sai.id ASC",
-                new { adjId });
+            var items = itemsByAdjId.TryGetValue(adjId, out var groupedItems) ? groupedItems : new List<Dictionary<string, object?>>();
 
             var mappedItems = new List<Dictionary<string, object?>>();
             foreach (var it in items)
@@ -1863,6 +1890,7 @@ public class ReportsController : ApiControllerBase
         var supplierId = Request.Query["supplier_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
 
+        var toNextDayStr = NextDayString(to);
         var sql = @"
             SELECT pr.*,
                    s.name AS supplier_name,
@@ -1870,9 +1898,9 @@ public class ReportsController : ApiControllerBase
             FROM purchase_returns pr
             LEFT JOIN suppliers s ON s.id = pr.supplier_id
             LEFT JOIN purchase_invoices pi ON pi.id = pr.purchase_invoice_id
-            WHERE DATE(pr.date) BETWEEN @from AND @to";
+            WHERE pr.date >= @from AND pr.date < @toNextDayStr";
 
-        var dyn = new DynamicParameters(new { from, to });
+        var dyn = new DynamicParameters(new { from, toNextDayStr });
         if (!string.IsNullOrWhiteSpace(supplierId))
         {
             sql += " AND pr.supplier_id = @supplierId";
@@ -1887,7 +1915,27 @@ public class ReportsController : ApiControllerBase
         sql += " ORDER BY pr.date ASC, pr.id ASC";
         var returns = await Db.QueryListAsync(sql, dyn);
 
-        var rows = new List<Dictionary<string, object?>>();
+        var retIds = returns.Select(ret => ToLong(ret, "id")).Where(id => id > 0).Distinct().ToList();
+        var itemSql = @"
+            SELECT pri.id, pri.purchase_return_id, pri.product_id, p.name AS product_name, p.product_code,
+                   pri.batch, pri.expiry, pri.pack_size, pri.return_pack_quantity, pri.return_unit_quantity,
+                   pri.unit_purchase_price, pri.item_discount_percentage, pri.sub_total
+            FROM purchase_return_items pri
+            LEFT JOIN products p ON p.id = pri.product_id
+            WHERE pri.purchase_return_id IN @ids";
+        if (!string.IsNullOrWhiteSpace(productId))
+        {
+            itemSql += " AND pri.product_id = @productId";
+        }
+        itemSql += " ORDER BY pri.purchase_return_id ASC, pri.id ASC";
+
+        var itemsByRetId = await QueryItemsGroupedByParentIdAsync(
+            itemSql,
+            "purchase_return_id",
+            retIds,
+            !string.IsNullOrWhiteSpace(productId) ? p => p.Add("productId", productId) : null);
+
+        var rows = new List<Dictionary<string, object?>>(returns.Count);
         int itemCount = 0;
         int totalQty = 0;
         double sumTotal = 0;
@@ -1895,20 +1943,8 @@ public class ReportsController : ApiControllerBase
         foreach (var ret in returns)
         {
             var retId = ToLong(ret, "id");
-            var itemSql = @"
-                SELECT pri.*, p.name AS product_name, p.product_code
-                FROM purchase_return_items pri
-                LEFT JOIN products p ON p.id = pri.product_id
-                WHERE pri.purchase_return_id = @retId";
-            var itemParams = new DynamicParameters(new { retId });
-            if (!string.IsNullOrWhiteSpace(productId))
-            {
-                itemSql += " AND pri.product_id = @productId";
-                itemParams.Add("productId", productId);
-            }
-
-            var items = await Db.QueryListAsync(itemSql, itemParams);
-            var mappedItems = new List<Dictionary<string, object?>>();
+            var items = itemsByRetId.TryGetValue(retId, out var groupedItems) ? groupedItems : new List<Dictionary<string, object?>>();
+            var mappedItems = new List<Dictionary<string, object?>>(items.Count);
 
             foreach (var it in items)
             {
@@ -2032,6 +2068,7 @@ public class ReportsController : ApiControllerBase
         var customerId = Request.Query["customer_id"].FirstOrDefault();
         var productId = Request.Query["product_id"].FirstOrDefault();
 
+        var toNextDayStr = NextDayString(to);
         var sql = @"
             SELECT sr.*,
                    c.name AS customer_name,
@@ -2041,9 +2078,9 @@ public class ReportsController : ApiControllerBase
             LEFT JOIN customers c ON c.id = sr.customer_id
             LEFT JOIN users u ON u.id = sr.user_id
             LEFT JOIN sale_invoices si ON si.id = sr.sale_invoice_id
-            WHERE DATE(sr.date) BETWEEN @from AND @to";
+            WHERE sr.date >= @from AND sr.date < @toNextDayStr";
 
-        var dyn = new DynamicParameters(new { from, to });
+        var dyn = new DynamicParameters(new { from, toNextDayStr });
         if (!string.IsNullOrWhiteSpace(customerId))
         {
             sql += " AND sr.customer_id = @customerId";
@@ -2058,7 +2095,27 @@ public class ReportsController : ApiControllerBase
         sql += " ORDER BY sr.date ASC, sr.id ASC";
         var returns = await Db.QueryListAsync(sql, dyn);
 
-        var rows = new List<Dictionary<string, object?>>();
+        var retIds = returns.Select(ret => ToLong(ret, "id")).Where(id => id > 0).Distinct().ToList();
+        var itemSql = @"
+            SELECT sri.id, sri.sale_return_id, sri.product_id, p.name AS product_name, p.product_code,
+                   sri.batch_number, sri.expiry, sri.unit_return_quantity, sri.unit_sale_price,
+                   sri.item_discount_percentage, sri.sub_total
+            FROM sale_return_items sri
+            LEFT JOIN products p ON p.id = sri.product_id
+            WHERE sri.sale_return_id IN @ids";
+        if (!string.IsNullOrWhiteSpace(productId))
+        {
+            itemSql += " AND sri.product_id = @productId";
+        }
+        itemSql += " ORDER BY sri.sale_return_id ASC, sri.id ASC";
+
+        var itemsByRetId = await QueryItemsGroupedByParentIdAsync(
+            itemSql,
+            "sale_return_id",
+            retIds,
+            !string.IsNullOrWhiteSpace(productId) ? p => p.Add("productId", productId) : null);
+
+        var rows = new List<Dictionary<string, object?>>(returns.Count);
         int itemCount = 0;
         int totalQty = 0;
         double sumTotal = 0;
@@ -2066,20 +2123,8 @@ public class ReportsController : ApiControllerBase
         foreach (var ret in returns)
         {
             var retId = ToLong(ret, "id");
-            var itemSql = @"
-                SELECT sri.*, p.name AS product_name, p.product_code
-                FROM sale_return_items sri
-                LEFT JOIN products p ON p.id = sri.product_id
-                WHERE sri.sale_return_id = @retId";
-            var itemParams = new DynamicParameters(new { retId });
-            if (!string.IsNullOrWhiteSpace(productId))
-            {
-                itemSql += " AND sri.product_id = @productId";
-                itemParams.Add("productId", productId);
-            }
-
-            var items = await Db.QueryListAsync(itemSql, itemParams);
-            var mappedItems = new List<Dictionary<string, object?>>();
+            var items = itemsByRetId.TryGetValue(retId, out var groupedItems) ? groupedItems : new List<Dictionary<string, object?>>();
+            var mappedItems = new List<Dictionary<string, object?>>(items.Count);
 
             foreach (var it in items)
             {
@@ -4559,6 +4604,50 @@ public class ReportsController : ApiControllerBase
     {
         if (row == null || !row.TryGetValue(key, out var val) || val == null) return "";
         return val.ToString() ?? "";
+    }
+
+    private const int SqliteInChunkSize = 400;
+
+    private async Task<Dictionary<long, List<Dictionary<string, object?>>>> QueryItemsGroupedByParentIdAsync(
+        string sqlWithIdsPlaceholder,
+        string parentIdColumn,
+        IReadOnlyList<long> parentIds,
+        Action<DynamicParameters>? bindExtraParams = null)
+    {
+        var grouped = new Dictionary<long, List<Dictionary<string, object?>>>();
+        if (parentIds.Count == 0) return grouped;
+
+        await using var conn = await Db.OpenConnectionAsync();
+        for (int offset = 0; offset < parentIds.Count; offset += SqliteInChunkSize)
+        {
+            var chunk = parentIds.Skip(offset).Take(SqliteInChunkSize).ToArray();
+            var dyn = new DynamicParameters();
+            dyn.Add("ids", chunk);
+            bindExtraParams?.Invoke(dyn);
+
+            var rows = await Db.QueryListAsync(sqlWithIdsPlaceholder, dyn, conn);
+            foreach (var row in rows)
+            {
+                var pid = ToLong(row, parentIdColumn);
+                if (!grouped.TryGetValue(pid, out var list))
+                {
+                    list = new List<Dictionary<string, object?>>();
+                    grouped[pid] = list;
+                }
+                list.Add(row);
+            }
+        }
+
+        return grouped;
+    }
+
+    private static string NextDayString(string yyyyMmDd)
+    {
+        if (DateTime.TryParseExact(yyyyMmDd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+        {
+            return dt.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+        return yyyyMmDd + "Z";
     }
 
     private static string? GetNullableStr(Dictionary<string, object?>? row, string key)

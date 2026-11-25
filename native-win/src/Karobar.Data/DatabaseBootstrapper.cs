@@ -289,6 +289,7 @@ public sealed class DatabaseBootstrapper
         if (tableCount == 0)
         {
             await context.Database.EnsureCreatedAsync(cancellationToken);
+            await EnsurePerformanceIndexesAsync(conn, cancellationToken);
             await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
             await SeedTradeSchemePermissionsAsync(conn, cancellationToken);
             return;
@@ -300,6 +301,28 @@ public sealed class DatabaseBootstrapper
         var existingTables = (await conn.QueryAsync<string>(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Fetch all existing columns across all tables in a single query instead of 79+ PRAGMA round trips.
+        var columnsByTable = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var allColsRows = await conn.QueryAsync<(string tbl, string col)>(
+                "SELECT m.name AS tbl, p.name AS col FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%'");
+            foreach (var (tbl, col) in allColsRows)
+            {
+                if (string.IsNullOrWhiteSpace(tbl) || string.IsNullOrWhiteSpace(col)) continue;
+                if (!columnsByTable.TryGetValue(tbl, out var set))
+                {
+                    set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    columnsByTable[tbl] = set;
+                }
+                set.Add(col);
+            }
+        }
+        catch
+        {
+            // Fallback to per-table PRAGMA table_info below if pragma_table_info() table-valued function is unavailable.
+        }
 
         foreach (var entityType in context.Model.GetEntityTypes())
         {
@@ -377,15 +400,18 @@ public sealed class DatabaseBootstrapper
             }
 
             // Existing table: inspect columns and add any missing columns non-destructively
-            var pragmaRows = await conn.QueryAsync($"PRAGMA table_info(\"{escapedTable}\")");
-            var actualCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var row in pragmaRows)
+            if (!columnsByTable.TryGetValue(tableName, out var actualCols))
             {
-                if (row is IDictionary<string, object> dict &&
-                    dict.TryGetValue("name", out var colNameObj) &&
-                    colNameObj != null)
+                actualCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var pragmaRows = await conn.QueryAsync($"PRAGMA table_info(\"{escapedTable}\")");
+                foreach (var row in pragmaRows)
                 {
-                    actualCols.Add(colNameObj.ToString()!);
+                    if (row is IDictionary<string, object> dict &&
+                        dict.TryGetValue("name", out var colNameObj) &&
+                        colNameObj != null)
+                    {
+                        actualCols.Add(colNameObj.ToString()!);
+                    }
                 }
             }
 
@@ -411,8 +437,61 @@ public sealed class DatabaseBootstrapper
         }
 
         await EnsurePurchaseInvoiceUniqueIndexAsync(conn, cancellationToken);
+        await EnsurePerformanceIndexesAsync(conn, cancellationToken);
         await ApplyNativeWhatsAppPortMigrationAsync(conn, cancellationToken);
         await SeedTradeSchemePermissionsAsync(conn, cancellationToken);
+    }
+
+    private static async Task EnsurePerformanceIndexesAsync(DbConnection conn, CancellationToken cancellationToken)
+    {
+        var specs = new (string Table, string[] RequiredCols, string Sql)[]
+        {
+            ("sale_invoices", ["date", "status"],
+                "CREATE INDEX IF NOT EXISTS \"IX_sale_invoices_date_status\" ON \"sale_invoices\" (\"date\", \"status\");"),
+            ("purchase_invoices", ["posted_date", "status"],
+                "CREATE INDEX IF NOT EXISTS \"IX_purchase_invoices_posted_date_status\" ON \"purchase_invoices\" (\"posted_date\", \"status\");"),
+            ("products", ["name"],
+                "CREATE INDEX IF NOT EXISTS \"IX_products_name_nocase\" ON \"products\" (\"name\" COLLATE NOCASE);"),
+            ("batches", ["expiry_date", "quantity"],
+                "CREATE INDEX IF NOT EXISTS \"IX_batches_expiry_qty\" ON \"batches\" (\"expiry_date\", \"quantity\") WHERE \"quantity\" > 0;")
+        };
+
+        foreach (var (table, reqCols, sql) in specs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var hasTable = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = @name",
+                    new { name = table }) > 0;
+                if (!hasTable) continue;
+
+                var escapedTable = table.Replace("\"", "\"\"");
+                var actualCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in await conn.QueryAsync($"PRAGMA table_info(\"{escapedTable}\")"))
+                {
+                    if (row is IDictionary<string, object> dict &&
+                        dict.TryGetValue("name", out var nameObj) &&
+                        nameObj != null)
+                    {
+                        actualCols.Add(nameObj.ToString()!);
+                    }
+                }
+
+                if (reqCols.All(c => actualCols.Contains(c)))
+                {
+                    await conn.ExecuteAsync(sql);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Minimal / custom test DBs should not fail schema bootstrap.
+            }
+        }
     }
 
     public const string MigrateNativeWhatsAppPort3002MigrationName = "2026_11_22_000001_migrate_native_whatsapp_agent_port_3002";

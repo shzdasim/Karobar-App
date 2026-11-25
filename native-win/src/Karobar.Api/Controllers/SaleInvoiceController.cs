@@ -2800,14 +2800,30 @@ public class SaleInvoiceController : ApiControllerBase
         {
             var cid = ToLong(cust["id"]);
             var regItems = await Db.QueryListAsync("SELECT * FROM customer_regular_items WHERE customer_id = @cid", new { cid });
+            var regProdIds = regItems
+                .Select(ri => ToLong(ri.GetValueOrDefault("product_id")))
+                .Where(pid => pid > 0)
+                .Distinct()
+                .ToList();
+            var regProducts = new Dictionary<long, Dictionary<string, object?>>();
+            if (regProdIds.Count > 0 && await Db.HasTableAsync("products"))
+            {
+                for (int offset = 0; offset < regProdIds.Count; offset += 400)
+                {
+                    var chunk = regProdIds.Skip(offset).Take(400).ToArray();
+                    var rows = await Db.QueryListAsync(
+                        "SELECT id, name, product_code, quantity, pack_size, unit_sale_price, pack_sale_price FROM products WHERE id IN @ids",
+                        new { ids = chunk });
+                    foreach (var p in rows)
+                    {
+                        regProducts[ToLong(p["id"])] = p;
+                    }
+                }
+            }
             foreach (var ri in regItems)
             {
                 var rpid = ToLong(ri.GetValueOrDefault("product_id"));
-                ri["product"] = rpid > 0
-                    ? await Db.QuerySingleOrDefaultAsync(
-                        "SELECT id, name, product_code, quantity, pack_size, unit_sale_price, pack_sale_price FROM products WHERE id = @pid",
-                        new { pid = rpid })
-                    : null;
+                ri["product"] = rpid > 0 && regProducts.TryGetValue(rpid, out var rp) ? rp : null;
             }
             cust["regular_items"] = regItems;
             cust["regularItems"] = regItems;

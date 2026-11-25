@@ -230,6 +230,7 @@ public class DashboardController : ApiControllerBase
 
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var to = DateTime.UtcNow.AddMonths(months).ToString("yyyy-MM-dd");
+        var toNextDay = DateTime.UtcNow.AddMonths(months).AddDays(1).ToString("yyyy-MM-dd");
 
         var sql = @"
             SELECT b.id AS batch_id,
@@ -248,12 +249,13 @@ public class DashboardController : ApiControllerBase
             LEFT JOIN suppliers s ON s.id = p.supplier_id
             LEFT JOIN brands br ON br.id = p.brand_id
             WHERE b.expiry_date IS NOT NULL
-              AND DATE(b.expiry_date) BETWEEN @today AND @to
-              AND b.quantity > 0";
+              AND b.quantity > 0
+              AND b.expiry_date >= @today
+              AND b.expiry_date < @toNextDay";
 
         var dyn = new DynamicParameters();
         dyn.Add("today", today);
-        dyn.Add("to", to);
+        dyn.Add("toNextDay", toNextDay);
 
         if (!string.IsNullOrWhiteSpace(supplierId))
         {
@@ -508,7 +510,8 @@ public class DashboardController : ApiControllerBase
         var pendingDemandsSubquery = hasUserDemands
             ? "(SELECT COUNT(*) FROM user_demands WHERE status = 'pending')"
             : "0";
-        var threeMonthsOut = DateTime.UtcNow.AddMonths(3).ToString("yyyy-MM-dd");
+        var todayNextDay = DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd");
+        var threeMonthsNextDay = DateTime.UtcNow.AddMonths(3).AddDays(1).ToString("yyyy-MM-dd");
         var counts = await Db.QuerySingleOrDefaultAsync($@"
             SELECT
                 (SELECT COUNT(*) FROM suppliers) AS suppliers,
@@ -518,8 +521,8 @@ public class DashboardController : ApiControllerBase
                 (SELECT COUNT(*) FROM users) AS users,
                 (SELECT COUNT(*) FROM stock_adjustments) AS stock_adjustments,
                 {pendingDemandsSubquery} AS pending_demands,
-                (SELECT COUNT(*) FROM batches b WHERE b.expiry_date IS NOT NULL AND b.quantity > 0 AND DATE(b.expiry_date) > @today AND DATE(b.expiry_date) <= @threeMonthsOut) AS near_expiry",
-            new { today, threeMonthsOut });
+                (SELECT COUNT(*) FROM batches b WHERE b.expiry_date IS NOT NULL AND b.quantity > 0 AND b.expiry_date >= @todayNextDay AND b.expiry_date < @threeMonthsNextDay) AS near_expiry",
+            new { todayNextDay, threeMonthsNextDay });
 
         var lowStockCount = await Db.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*)
