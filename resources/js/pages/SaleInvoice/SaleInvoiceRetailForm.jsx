@@ -828,23 +828,24 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     }
   };
 
+  const normalizeBatch = (b) => ({
+    id: b?.id,
+    batch_number: String(b?.batch_number ?? b?.batch ?? b?.number ?? "").trim(),
+    expiry: b?.expiry ?? b?.expiration_date ?? b?.expiry_date ?? "",
+    expiry_date: b?.expiry_date ?? b?.expiry ?? "",
+    available_units: Number(b?.available_units ?? b?.available_quantity ?? b?.quantity ?? 0),
+    pack_size: Number(b?.pack_size ?? 0),
+    unit_sale_price: b?.unit_sale_price != null ? Number(b.unit_sale_price) : null,
+    pack_sale_price: b?.pack_sale_price != null ? Number(b.pack_sale_price) : null,
+    is_expired: Boolean(b?.is_expired || (b?.expiry_date && b?.expiry_date < new Date().toISOString().slice(0, 10))),
+    is_fefo_recommended: Boolean(b?.is_fefo_recommended),
+    is_unbatched: Boolean(b?.is_unbatched),
+  });
+
   const fetchBatches = async (productId, forceFresh = false) => {
     if (!productId) return [];
     const key = String(productId);
     if (!forceFresh && batchesByProduct[key]) return batchesByProduct[key];
-    const normalizeBatch = (b) => ({
-      id: b?.id,
-      batch_number: String(b?.batch_number ?? b?.batch ?? b?.number ?? "").trim(),
-      expiry: b?.expiry ?? b?.expiration_date ?? b?.expiry_date ?? "",
-      expiry_date: b?.expiry_date ?? b?.expiry ?? "",
-      available_units: Number(b?.available_units ?? b?.available_quantity ?? b?.quantity ?? 0),
-      pack_size: Number(b?.pack_size ?? 0),
-      unit_sale_price: b?.unit_sale_price != null ? Number(b.unit_sale_price) : null,
-      pack_sale_price: b?.pack_sale_price != null ? Number(b.pack_sale_price) : null,
-      is_expired: Boolean(b?.is_expired || (b?.expiry_date && b?.expiry_date < new Date().toISOString().slice(0, 10))),
-      is_fefo_recommended: Boolean(b?.is_fefo_recommended),
-      is_unbatched: Boolean(b?.is_unbatched),
-    });
     try {
       const res = await axios.get(`/api/products/${productId}/batches?include_unbatched=1`, {
         cache: false,
@@ -889,72 +890,85 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     if (isRefreshingStockRef.current) return;
     isRefreshingStockRef.current = true;
     try {
-      // 1. Fetch fresh product catalog list
-      let freshCatalog = [];
-      try {
-        const { data } = await axios.get("/api/products/search", {
-          params: { limit: 150 },
-          cache: false,
-        });
-        freshCatalog = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-        if (freshCatalog.length > 0) {
-          upsertProducts(freshCatalog);
-        }
-      } catch {}
-
-      // 2. Identify all products currently in the invoice rows
       const currentItems = formRef.current?.items || [];
       const productIds = Array.from(
-        new Set(currentItems.map((it) => it.product_id).filter(Boolean))
+        new Set(currentItems.map((it) => Number(it.product_id)).filter((id) => Number.isFinite(id) && id > 0))
       );
 
       if (productIds.length === 0) return;
 
-      // 3. For each active product, fetch fresh batches and fresh product details
+      let batchStockData = null;
+      try {
+        const { data } = await axios.post(
+          "/api/products/batch-stock",
+          { product_ids: productIds },
+          { cache: false }
+        );
+        batchStockData = data;
+      } catch {
+        // Do not overwrite known stock with zero if refresh fails
+        return;
+      }
+
+      if (!batchStockData || typeof batchStockData !== "object") return;
+
       const freshBatchMap = {};
       const freshProdMap = {};
+      const returnedProducts = batchStockData.products || {};
+      const returnedBatches = batchStockData.batches || {};
 
-      await Promise.all(
-        productIds.map(async (pid) => {
-          try {
-            const batches = await fetchBatches(pid, true);
-            freshBatchMap[String(pid)] = batches;
-          } catch {}
+      const cacheUpdates = {};
+      const batchCacheUpdates = {};
 
-          try {
-            const { data } = await axios.get(`/api/products/${pid}`, { cache: false });
-            if (data?.id) {
-              freshProdMap[String(pid)] = data;
-              setProductDataCache((prev) => ({
-                ...prev,
-                [pid]: {
-                  pack_purchase_price: data?.pack_purchase_price || 0,
-                  unit_sale_price: data?.unit_sale_price || 0,
-                  margin:
-                    data?.margin ||
-                    data?.margin_percentage ||
-                    data?.default_margin ||
-                    "",
-                },
-              }));
-            }
-          } catch {}
-        })
-      );
+      for (const pid of productIds) {
+        const pKey = String(pid);
+        const prod = returnedProducts[pKey];
+        if (prod?.id) {
+          freshProdMap[pKey] = prod;
+          cacheUpdates[pid] = {
+            pack_purchase_price: prod?.pack_purchase_price || 0,
+            unit_sale_price: prod?.unit_sale_price || 0,
+            margin:
+              prod?.margin ||
+              prod?.margin_percentage ||
+              prod?.default_margin ||
+              "",
+          };
+        }
 
+        if (Array.isArray(returnedBatches[pKey])) {
+          const normalizedList = returnedBatches[pKey]
+            .map(normalizeBatch)
+            .filter((x) => (x.batch_number || x.is_unbatched) && x.available_units > 0);
+          freshBatchMap[pKey] = normalizedList;
+          batchCacheUpdates[pKey] = normalizedList;
+        }
+      }
+
+      if (Object.keys(cacheUpdates).length > 0) {
+        setProductDataCache((prev) => ({ ...prev, ...cacheUpdates }));
+      }
+      if (Object.keys(batchCacheUpdates).length > 0) {
+        setBatchesByProduct((prev) => ({ ...prev, ...batchCacheUpdates }));
+      }
       if (Object.keys(freshProdMap).length > 0) {
         upsertProducts(Object.values(freshProdMap));
       }
 
-      // 4. Update current_quantity and product snapshot on active rows
+      // Update current_quantity and product snapshot on active rows (only for products returned by server)
       setForm((prev) => {
         let changed = false;
         const updatedItems = (prev.items || []).map((row) => {
           if (!row.product_id) return row;
           const pKey = String(row.product_id);
-          const batches = freshBatchMap[pKey] || [];
           const freshProd = freshProdMap[pKey];
+          const hasBatchData = Object.prototype.hasOwnProperty.call(freshBatchMap, pKey);
+          if (!freshProd && !hasBatchData) {
+            // Partial failure / missing product: preserve existing stock rather than treating unknown as zero
+            return row;
+          }
 
+          const batches = freshBatchMap[pKey] || [];
           let matchingBatch = null;
           if (row.is_unbatched) {
             matchingBatch = batches.find((b) => b.is_unbatched);
@@ -1854,17 +1868,22 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       (typeof productIdOrObj === "object" ? productIdOrObj : {}) ||
       {};
 
-    // Ensure we have the narcotic field - fetch from API if not present
+    // Fetch fresh product details and FEFO batches in parallel
     let isNarcotic = selected?.narcotic === "yes";
     let freshProductData = null;
-    
+    let batchList = [];
+
     if (productId) {
-      try {
-        const { data } = await axios.get(`/api/products/${productId}`);
+      const [prodRes, batchesRes] = await Promise.all([
+        axios.get(`/api/products/${productId}`).catch(() => null),
+        fetchBatches(productId, true).catch(() => []),
+      ]);
+      batchList = batchesRes || [];
+
+      if (prodRes?.data) {
+        const data = prodRes.data;
         isNarcotic = data?.narcotic === "yes";
         freshProductData = data;
-        
-        // Cache the product data for validation and live profit/margin calculation
         setProductDataCache(prev => ({
           ...prev,
           [productId]: {
@@ -1877,22 +1896,19 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             margin: data?.margin || data?.margin_percentage || data?.default_margin || "",
           }
         }));
-      } catch {
-        // If API fails, use cached data
-        if (selected) {
-          setProductDataCache(prev => ({
-            ...prev,
-            [productId]: {
-              ...selected,
-              pack_purchase_price: selected?.pack_purchase_price || 0,
-              unit_purchase_price: selected?.unit_purchase_price || 0,
-              avg_price: selected?.avg_price || 0,
-              pack_size: selected?.pack_size || 1,
-              unit_sale_price: selected?.unit_sale_price || 0,
-              margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
-            }
-          }));
-        }
+      } else if (selected) {
+        setProductDataCache(prev => ({
+          ...prev,
+          [productId]: {
+            ...selected,
+            pack_purchase_price: selected?.pack_purchase_price || 0,
+            unit_purchase_price: selected?.unit_purchase_price || 0,
+            avg_price: selected?.avg_price || 0,
+            pack_size: selected?.pack_size || 1,
+            unit_sale_price: selected?.unit_sale_price || 0,
+            margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
+          }
+        }));
       }
     }
 
@@ -1913,7 +1929,6 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     let price = freshProductData?.unit_sale_price ?? selected?.unit_sale_price ?? "";
     let isCustomPrice = false;
 
-    const batchList = await fetchBatches(productId, true);
     const assignedBatches = (batchList || []).filter(
       (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
     );

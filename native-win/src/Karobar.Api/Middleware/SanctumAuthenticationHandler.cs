@@ -14,6 +14,7 @@ namespace Karobar.Api.Middleware;
 public class SanctumAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     public const string SchemeName = "Sanctum";
+    public const string UserRolesItemKey = "KarobarUserRoles";
     private readonly KarobarDb _db;
 
     public SanctumAuthenticationHandler(
@@ -40,24 +41,33 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         }
 
         Dictionary<string, object?>? tokenRow = null;
+        Dictionary<string, object?>? user = null;
+        const string joinCols = @"
+            pat.id AS __pat_id, pat.tokenable_type AS __pat_tokenable_type, pat.tokenable_id AS __pat_tokenable_id,
+            pat.name AS __pat_name, pat.token AS __pat_token, pat.abilities AS __pat_abilities,
+            pat.last_used_at AS __pat_last_used_at, pat.expires_at AS __pat_expires_at,
+            pat.created_at AS __pat_created_at, pat.updated_at AS __pat_updated_at,
+            u.*";
+
+        Dictionary<string, object?>? joinedRow = null;
         if (token.Contains('|'))
         {
             var parts = token.Split('|', 2);
             if (long.TryParse(parts[0], out var tokenId))
             {
                 var row = await _db.QuerySingleOrDefaultAsync(
-                    "SELECT * FROM personal_access_tokens WHERE id = @id",
+                    $"SELECT {joinCols} FROM personal_access_tokens pat LEFT JOIN users u ON u.id = pat.tokenable_id WHERE pat.id = @id",
                     new { id = tokenId });
 
                 if (row != null)
                 {
                     var expectedHash = ComputeSha256Hex(parts[1]);
-                    var storedHash = row.GetValueOrDefault("token")?.ToString() ?? "";
+                    var storedHash = row.GetValueOrDefault("__pat_token")?.ToString() ?? "";
                     if (CryptographicOperations.FixedTimeEquals(
                             Encoding.UTF8.GetBytes(expectedHash.ToLowerInvariant()),
                             Encoding.UTF8.GetBytes(storedHash.ToLowerInvariant())))
                     {
-                        tokenRow = row;
+                        joinedRow = row;
                     }
                 }
             }
@@ -65,14 +75,28 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         else
         {
             var hash = ComputeSha256Hex(token);
-            tokenRow = await _db.QuerySingleOrDefaultAsync(
-                "SELECT * FROM personal_access_tokens WHERE token = @hash",
+            joinedRow = await _db.QuerySingleOrDefaultAsync(
+                $"SELECT {joinCols} FROM personal_access_tokens pat LEFT JOIN users u ON u.id = pat.tokenable_id WHERE pat.token = @hash",
                 new { hash });
         }
 
-        if (tokenRow == null)
+        if (joinedRow == null)
         {
             return AuthenticateResult.Fail("Invalid access token.");
+        }
+
+        tokenRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        user = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in joinedRow)
+        {
+            if (kv.Key.StartsWith("__pat_", StringComparison.OrdinalIgnoreCase))
+            {
+                tokenRow[kv.Key.Substring(6)] = kv.Value;
+            }
+            else
+            {
+                user[kv.Key] = kv.Value;
+            }
         }
 
         if (tokenRow.TryGetValue("expires_at", out var expObj) && expObj != null &&
@@ -87,8 +111,7 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         }
 
         var userId = Convert.ToInt64(tokenRow["tokenable_id"]);
-        var user = await _db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id = userId });
-        if (user == null)
+        if (!user.TryGetValue("id", out var uidVal) || uidVal == null)
         {
             return AuthenticateResult.Fail("User not found.");
         }
@@ -107,6 +130,7 @@ public class SanctumAuthenticationHandler : AuthenticationHandler<Authentication
         };
 
         var roleNames = await _db.GetUserRoleNamesAsync(userId);
+        Context.Items[UserRolesItemKey] = (IReadOnlyList<string>)roleNames;
         foreach (var r in roleNames)
         {
             claims.Add(new Claim(ClaimTypes.Role, r));

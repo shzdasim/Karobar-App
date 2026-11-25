@@ -111,6 +111,236 @@ public class ProductController : ApiControllerBase
         return Ok(rows);
     }
 
+    public const int MaxBatchStockProducts = 200;
+
+    [HttpPost("batch-stock")]
+    public async Task<IActionResult> BatchStock()
+    {
+        if (!await CanAsync(LookupPermissions)) return Forbidden();
+
+        var body = await ReadJsonBodyAsync();
+        if (!body.TryGetValue("product_ids", out var idsEl) && !body.TryGetValue("ids", out idsEl))
+        {
+            return Unprocessable("product_ids is required.", new Dictionary<string, string[]>
+            {
+                ["product_ids"] = new[] { "The product_ids field is required." }
+            });
+        }
+
+        if (idsEl.ValueKind != JsonValueKind.Array)
+        {
+            return Unprocessable("product_ids must be an array.", new Dictionary<string, string[]>
+            {
+                ["product_ids"] = new[] { "The product_ids field must be an array." }
+            });
+        }
+
+        var rawIds = new List<long>();
+        foreach (var item in idsEl.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var numId) && numId > 0)
+            {
+                rawIds.Add(numId);
+            }
+            else if (item.ValueKind == JsonValueKind.String && long.TryParse(item.GetString()?.Trim(), out var strId) && strId > 0)
+            {
+                rawIds.Add(strId);
+            }
+            else
+            {
+                return Unprocessable("All product_ids must be positive integers.", new Dictionary<string, string[]>
+                {
+                    ["product_ids"] = new[] { "All product_ids must be positive integers." }
+                });
+            }
+        }
+
+        var distinctIds = rawIds.Distinct().ToList();
+        if (distinctIds.Count == 0)
+        {
+            return Unprocessable("At least one valid product_id is required.", new Dictionary<string, string[]>
+            {
+                ["product_ids"] = new[] { "At least one valid product_id is required." }
+            });
+        }
+
+        if (distinctIds.Count > MaxBatchStockProducts)
+        {
+            return Unprocessable($"Cannot request more than {MaxBatchStockProducts} products at once.", new Dictionary<string, string[]>
+            {
+                ["product_ids"] = new[] { $"Cannot request more than {MaxBatchStockProducts} products at once." }
+            });
+        }
+
+        var hasBatchesTable = await Db.HasTableAsync("batches");
+        var hasLocations = hasBatchesTable &&
+                           await Db.HasTableAsync("storage_locations") &&
+                           await Db.HasColumnAsync("batches", "storage_location_id");
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+        var productsMap = new Dictionary<string, Dictionary<string, object?>>(distinctIds.Count);
+        var batchesMap = new Dictionary<string, List<Dictionary<string, object?>>>(distinctIds.Count);
+        var missingIds = new List<long>();
+
+        await using var conn = await Db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var foundProducts = new Dictionary<long, Dictionary<string, object?>>();
+        var rawBatchesByProd = new Dictionary<long, List<Dictionary<string, object?>>>();
+
+        for (int offset = 0; offset < distinctIds.Count; offset += 400)
+        {
+            var chunk = distinctIds.Skip(offset).Take(400).ToArray();
+            var pRows = await Db.QueryListAsync(
+                "SELECT p.* FROM products p WHERE p.id IN @ids",
+                new { ids = chunk },
+                conn,
+                tx);
+            foreach (var p in pRows)
+            {
+                var pid = Convert.ToInt64(p["id"] ?? 0);
+                if (pid > 0) foundProducts[pid] = p;
+            }
+
+            if (hasBatchesTable)
+            {
+                var bSql = $@"
+                    SELECT b.*
+                           {(hasLocations ? ", sl.code AS __loc_code, sl.name AS __loc_name, sl.type AS __loc_type, sl.default_rack AS __loc_rack" : "")}
+                    FROM batches b
+                    {(hasLocations ? "LEFT JOIN storage_locations sl ON sl.id = b.storage_location_id" : "")}
+                    WHERE b.product_id IN @ids";
+                var bRows = await Db.QueryListAsync(bSql, new { ids = chunk }, conn, tx);
+                foreach (var b in bRows)
+                {
+                    var pid = Convert.ToInt64(b.GetValueOrDefault("product_id") ?? 0);
+                    if (pid <= 0) continue;
+                    if (!rawBatchesByProd.TryGetValue(pid, out var list))
+                    {
+                        list = new List<Dictionary<string, object?>>();
+                        rawBatchesByProd[pid] = list;
+                    }
+                    list.Add(b);
+                }
+            }
+        }
+
+        await tx.CommitAsync();
+
+        foreach (var pid in distinctIds)
+        {
+            if (!foundProducts.TryGetValue(pid, out var prodRow))
+            {
+                missingIds.Add(pid);
+                continue;
+            }
+
+            var prodBatches = rawBatchesByProd.TryGetValue(pid, out var rawList)
+                ? rawList
+                : new List<Dictionary<string, object?>>();
+
+            foreach (var b in prodBatches)
+            {
+                if (hasLocations)
+                {
+                    b["storage_location"] = b.TryGetValue("storage_location_id", out var lid) && lid != null
+                        ? new Dictionary<string, object?>
+                        {
+                            ["id"] = lid,
+                            ["code"] = b["__loc_code"],
+                            ["name"] = b["__loc_name"],
+                            ["type"] = b["__loc_type"],
+                            ["default_rack"] = b["__loc_rack"]
+                        }
+                        : null;
+                    b.Remove("__loc_code");
+                    b.Remove("__loc_name");
+                    b.Remove("__loc_type");
+                    b.Remove("__loc_rack");
+                }
+                BatchController.EnrichBatchModelAttributes(b, prodRow);
+            }
+
+            // Preserve exact BatchController.Index FEFO + storage_location ordering
+            prodBatches = prodBatches.OrderBy(b =>
+            {
+                var exp = b["expiry_date"]?.ToString();
+                return !string.IsNullOrEmpty(exp) && string.CompareOrdinal(exp, today) >= 0 ? 0 : 1;
+            }).ThenBy(b => b["expiry_date"]?.ToString() ?? "9999-12-31", StringComparer.Ordinal)
+            .ThenBy(b =>
+            {
+                if (!hasLocations) return 0;
+                var loc = b.TryGetValue("storage_location", out var lObj) ? lObj as Dictionary<string, object?> : null;
+                var lType = loc?["type"]?.ToString();
+                return lType == "shop" ? 0 : (lType == "cold_storage" ? 1 : 2);
+            }).ThenBy(b => Convert.ToInt64(b["id"] ?? 0)).ToList();
+
+            bool fefoRecommendedFound = false;
+            int totalBatchedQty = 0;
+            foreach (var b in prodBatches)
+            {
+                var isExpired = b["is_expired"] is true;
+                var qty = Convert.ToInt32(b["quantity"] ?? 0);
+                totalBatchedQty += qty;
+                if (!isExpired && qty > 0 && !fefoRecommendedFound)
+                {
+                    b["is_fefo_recommended"] = true;
+                    fefoRecommendedFound = true;
+                }
+                else
+                {
+                    b["is_fefo_recommended"] = false;
+                }
+            }
+
+            var totalProductQty = Convert.ToInt32(prodRow["quantity"] ?? 0);
+            var unbatchedQty = Math.Max(0, totalProductQty - totalBatchedQty);
+
+            if (unbatchedQty > 0)
+            {
+                prodBatches.Add(new Dictionary<string, object?>
+                {
+                    ["id"] = null,
+                    ["product_id"] = pid,
+                    ["batch_number"] = "",
+                    ["expiry_date"] = null,
+                    ["expiry"] = null,
+                    ["quantity"] = unbatchedQty,
+                    ["available_units"] = unbatchedQty,
+                    ["is_expired"] = false,
+                    ["days_remaining"] = null,
+                    ["storage_location_id"] = prodRow.GetValueOrDefault("storage_location_id"),
+                    ["rack"] = prodRow.GetValueOrDefault("rack"),
+                    ["unit_sale_price"] = prodRow.GetValueOrDefault("unit_sale_price"),
+                    ["pack_sale_price"] = prodRow.GetValueOrDefault("pack_sale_price"),
+                    ["unit_purchase_price"] = prodRow.GetValueOrDefault("unit_purchase_price"),
+                    ["pack_purchase_price"] = prodRow.GetValueOrDefault("pack_purchase_price"),
+                    ["whole_sale_unit_price"] = prodRow.GetValueOrDefault("whole_sale_unit_price"),
+                    ["whole_sale_pack_price"] = prodRow.GetValueOrDefault("whole_sale_pack_price"),
+                    ["is_unbatched"] = true,
+                    ["display_label"] = "Unbatched Stock",
+                    ["is_fefo_recommended"] = false
+                });
+            }
+
+            prodRow["total_units"] = totalProductQty;
+            prodRow["batched_units"] = totalBatchedQty;
+            prodRow["unbatched_units"] = unbatchedQty;
+            prodRow["available_units"] = totalProductQty;
+
+            var key = pid.ToString();
+            productsMap[key] = prodRow;
+            batchesMap[key] = prodBatches;
+        }
+
+        return Ok(new Dictionary<string, object?>
+        {
+            ["products"] = productsMap,
+            ["batches"] = batchesMap,
+            ["missing_ids"] = missingIds
+        });
+    }
+
     [HttpGet("new-code")]
     public async Task<IActionResult> GenerateNewCode()
     {

@@ -742,14 +742,17 @@ public class KarobarDb
                trimmed.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<List<string>> GetUserAllPermissionNamesAsync(long userId)
+    public Task<List<string>> GetUserAllPermissionNamesAsync(long userId)
+        => GetUserAllPermissionNamesAsync(userId, null);
+
+    public async Task<List<string>> GetUserAllPermissionNamesAsync(long userId, IReadOnlyList<string>? knownRoleNames)
     {
         if (!await HasTableAsync("permissions"))
         {
             return new List<string>();
         }
 
-        var roleNames = await GetUserRoleNamesAsync(userId);
+        var roleNames = knownRoleNames ?? await GetUserRoleNamesAsync(userId);
         if (roleNames.Any(IsAdminRoleName))
         {
             var allPerms = await QueryListAsync("SELECT name FROM permissions WHERE guard_name = 'sanctum' ORDER BY name ASC");
@@ -786,15 +789,19 @@ public class KarobarDb
         return roles.Any(req => userRoles.Any(ur => ur.Equals(req, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public async Task<bool> UserCanAsync(long userId, params string[] permissions)
+    public Task<bool> UserCanAsync(long userId, params string[] permissions)
+        => UserCanWithKnownRolesAsync(userId, null, permissions);
+
+    public async Task<bool> UserCanWithKnownRolesAsync(long userId, IReadOnlyList<string>? knownRoleNames, params string[] permissions)
     {
         if (permissions == null || permissions.Length == 0) return true;
-        if (await UserHasRoleAsync(userId, AdminRoleNames))
+        var userRoles = knownRoleNames ?? await GetUserRoleNamesAsync(userId);
+        if (userRoles.Any(IsAdminRoleName))
         {
             return true;
         }
 
-        var userPerms = await GetUserAllPermissionNamesAsync(userId);
+        var userPerms = await GetUserAllPermissionNamesAsync(userId, userRoles);
         return permissions.Any(req => userPerms.Any(up => up.Equals(req, StringComparison.OrdinalIgnoreCase)));
     }
 

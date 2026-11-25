@@ -36,7 +36,16 @@ public class SpatiePermissionAuthorizationFilter : Attribute, IAsyncActionFilter
         }
 
         var db = context.HttpContext.RequestServices.GetRequiredService<KarobarDb>();
-        if (await db.UserHasRoleAsync(userId, KarobarDb.AdminRoleNames))
+        IReadOnlyList<string>? cachedRoles = null;
+        if (context.HttpContext.Items.TryGetValue(SanctumAuthenticationHandler.UserRolesItemKey, out var rolesObj) &&
+            rolesObj is IReadOnlyList<string> r)
+        {
+            cachedRoles = r;
+        }
+
+        if (cachedRoles != null
+            ? cachedRoles.Any(KarobarDb.IsAdminRoleName)
+            : await db.UserHasRoleAsync(userId, KarobarDb.AdminRoleNames))
         {
             await next();
             return;
@@ -45,12 +54,16 @@ public class SpatiePermissionAuthorizationFilter : Attribute, IAsyncActionFilter
         bool allowed;
         if (RequireRoleOnly)
         {
-            allowed = await db.UserHasRoleAsync(userId, PermissionsOrRoles);
+            allowed = cachedRoles != null
+                ? PermissionsOrRoles.Any(req => cachedRoles.Any(ur => ur.Equals(req, StringComparison.OrdinalIgnoreCase)))
+                : await db.UserHasRoleAsync(userId, PermissionsOrRoles);
         }
         else
         {
-            allowed = await db.UserCanAsync(userId, PermissionsOrRoles) ||
-                      await db.UserHasRoleAsync(userId, PermissionsOrRoles);
+            allowed = await db.UserCanWithKnownRolesAsync(userId, cachedRoles, PermissionsOrRoles) ||
+                      (cachedRoles != null
+                          ? PermissionsOrRoles.Any(req => cachedRoles.Any(ur => ur.Equals(req, StringComparison.OrdinalIgnoreCase)))
+                          : await db.UserHasRoleAsync(userId, PermissionsOrRoles));
         }
 
         if (!allowed)
