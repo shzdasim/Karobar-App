@@ -20,9 +20,53 @@ const PREF_KEY_POS = "productSearchModalPos";
 const PREF_KEY_SIZE = "productSearchModalSize";
 
 const globalProductQueryCache = new Map();
+const globalProductByIdCache = new Map();
+const pendingProductByIdFetches = new Map();
+
+function cacheProductsById(list) {
+  if (!Array.isArray(list)) return;
+  for (const p of list) {
+    if (p && p.id != null && (p.name || p.product_name)) {
+      globalProductByIdCache.set(String(p.id), p);
+    }
+  }
+}
+
+async function resolveProductById(id) {
+  const key = String(id);
+  const cached = globalProductByIdCache.get(key);
+  if (cached) return cached;
+
+  if (pendingProductByIdFetches.has(key)) {
+    return pendingProductByIdFetches.get(key);
+  }
+
+  const promise = (async () => {
+    try {
+      const { data } = await axios.get("/api/products/by-ids", {
+        params: { ids: key },
+      });
+      const list = Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+      cacheProductsById(list);
+      return globalProductByIdCache.get(key) || list.find((p) => String(p?.id) === key) || null;
+    } catch {
+      return null;
+    } finally {
+      pendingProductByIdFetches.delete(key);
+    }
+  })();
+
+  pendingProductByIdFetches.set(key, promise);
+  return promise;
+}
 
 export function invalidateProductSearchCache() {
   globalProductQueryCache.clear();
+  globalProductByIdCache.clear();
 }
 
 function getInitialModalGeometry() {
@@ -136,6 +180,12 @@ const ProductSearchInput = forwardRef(
       };
     }, [onRefreshProducts]);
 
+    const effectiveRefreshProductsRef = useRef(effectiveRefreshProducts);
+    effectiveRefreshProductsRef.current = effectiveRefreshProducts;
+    const skipNextEffectQueryRef = useRef(null);
+    const searchValRef = useRef(search);
+    searchValRef.current = search;
+
     const items = useMemo(() => {
       if (typeof onRefreshProducts !== "function" && Array.isArray(internalProducts)) {
         return internalProducts;
@@ -144,6 +194,10 @@ const ProductSearchInput = forwardRef(
       if (products && Array.isArray(products.data)) return products.data;
       return Array.isArray(internalProducts) ? internalProducts : [];
     }, [products, internalProducts, onRefreshProducts]);
+
+    useEffect(() => {
+      cacheProductsById(items);
+    }, [items]);
 
     // Clear refs when results change
     useEffect(() => {
@@ -154,29 +208,71 @@ const ProductSearchInput = forwardRef(
       if (highlightIndex >= items.length) setHighlightIndex(0);
     }, [items.length, highlightIndex]);
 
-    // Sync display + selectedProduct from value (resolves fresh matching product from items)
+    // Sync display + selectedProduct from value (resolves fresh matching product from items/cache/API)
     useEffect(() => {
       if (!value) {
         setDisplay("");
         setSelectedProduct(null);
         return;
       }
-      const valId = typeof value === "object" ? value?.id : value;
-      const matchingProduct = items.find((p) => String(p?.id) === String(valId));
 
-      if (matchingProduct) {
-        setDisplay(matchingProduct.name || "");
+      const valId = typeof value === "object" ? value?.id : value;
+      const matchingProduct = valId != null ? items.find((p) => String(p?.id) === String(valId)) : null;
+
+      if (matchingProduct && (matchingProduct.name || matchingProduct.product_name)) {
+        const name = matchingProduct.name || matchingProduct.product_name || "";
+        setDisplay(name);
         setSelectedProduct(matchingProduct);
         return;
       }
 
       if (typeof value === "object") {
         const objName = value?.name || value?.product_name || "";
-        setDisplay(objName);
-        setSelectedProduct(value);
+        if (objName) {
+          cacheProductsById([value]);
+          setDisplay(objName);
+          setSelectedProduct(value);
+          return;
+        }
+      }
+
+      if (
+        valId != null &&
+        selectedProduct &&
+        String(selectedProduct.id) === String(valId) &&
+        (selectedProduct.name || selectedProduct.product_name)
+      ) {
+        setDisplay(selectedProduct.name || selectedProduct.product_name || "");
         return;
       }
-      setDisplay(String(value));
+
+      const cached = valId != null ? globalProductByIdCache.get(String(valId)) : null;
+      if (cached && (cached.name || cached.product_name)) {
+        setDisplay(cached.name || cached.product_name || "");
+        setSelectedProduct(cached);
+        return;
+      }
+
+      // Never render raw numeric product IDs/codes as the product name; resolve asynchronously
+      if (valId == null || String(valId).trim() === "") {
+        setDisplay("");
+        setSelectedProduct(null);
+        return;
+      }
+
+      let cancelled = false;
+      setDisplay("");
+      resolveProductById(valId).then((resolved) => {
+        if (cancelled || !resolved) return;
+        const resolvedName = resolved.name || resolved.product_name || "";
+        if (resolvedName) {
+          setDisplay(resolvedName);
+          setSelectedProduct(resolved);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }, [value, items]);
 
     useImperativeHandle(ref, () => ({
@@ -204,13 +300,14 @@ const ProductSearchInput = forwardRef(
       setHighlightIndex(0);
       const initialSearch =
         typeof seedChar === "string" && seedChar.length === 1
-          ? (search + seedChar).toLowerCase()
+          ? seedChar.toLowerCase()
           : (display || "");
       setSearch(initialSearch);
 
       // Only refresh if items are empty or we have a specific non-empty search query
-      if (effectiveRefreshProducts && (items.length === 0 || initialSearch)) {
-        Promise.resolve(effectiveRefreshProducts(initialSearch)).catch(() => {});
+      if (effectiveRefreshProductsRef.current && (items.length === 0 || initialSearch)) {
+        skipNextEffectQueryRef.current = initialSearch;
+        Promise.resolve(effectiveRefreshProductsRef.current(initialSearch)).catch(() => {});
       }
     };
     const closeModal = () => setIsOpen(false);
@@ -232,11 +329,10 @@ const ProductSearchInput = forwardRef(
 
     // Live inventory sync: re-fetch products when inventory changes across tabs (only if modal is open)
     useEffect(() => {
-      if (!effectiveRefreshProducts) return undefined;
       const handler = () => {
         globalProductQueryCache.clear();
-        if (isOpen && (typeof document === "undefined" || !document.hidden)) {
-          Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
+        if (isOpen && effectiveRefreshProductsRef.current && (typeof document === "undefined" || !document.hidden)) {
+          Promise.resolve(effectiveRefreshProductsRef.current(searchValRef.current)).catch(() => {});
         }
       };
       window.addEventListener("product:created", handler);
@@ -247,42 +343,37 @@ const ProductSearchInput = forwardRef(
         window.removeEventListener("karobar:inventory-changed", handler);
         window.removeEventListener("karobar:products-updated", handler);
       };
-    }, [effectiveRefreshProducts, search, isOpen]);
+    }, [isOpen]);
 
     useEffect(() => {
-      if (!effectiveRefreshProducts || !isOpen) return;
+      if (!isOpen) {
+        skipNextEffectQueryRef.current = null;
+        return;
+      }
+      if (!effectiveRefreshProductsRef.current) return;
+      if (skipNextEffectQueryRef.current === search) {
+        skipNextEffectQueryRef.current = null;
+        return;
+      }
+      skipNextEffectQueryRef.current = null;
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => effectiveRefreshProducts(search), 60);
+      debounceRef.current = setTimeout(() => effectiveRefreshProductsRef.current?.(search), 60);
       return () => clearTimeout(debounceRef.current);
-    }, [search, effectiveRefreshProducts, isOpen]);
+    }, [search, isOpen]);
 
-    // Local filter (matches product name only, in typing order / starts-with) — limit to top 50 for instantaneous rendering
+    // Local filter (matches product name only, sorted consistently) — limit to top 50 for instantaneous rendering
     const filtered = useMemo(() => {
       if (!isOpen) return [];
       const q = (search || "").toLowerCase().trim();
-      if (!q) return items.slice(0, 50);
-      return items
-        .filter((p) =>
-          (p?.name ?? "").toString().toLowerCase().startsWith(q)
+      const matched = !q
+        ? items
+        : items.filter((p) => (p?.name ?? "").toString().toLowerCase().startsWith(q));
+      return [...matched]
+        .sort((a, b) =>
+          (a?.name ?? "").toString().localeCompare((b?.name ?? "").toString(), undefined, { sensitivity: "base" })
         )
         .slice(0, 50);
     }, [isOpen, items, search]);
-
-    // Infinite scroll
-    useEffect(() => {
-      const container = listRef.current;
-      if (!container) return;
-      const handleScroll = () => {
-        if (
-          container.scrollTop + container.clientHeight >=
-          container.scrollHeight - 80
-        ) {
-          effectiveRefreshProducts?.(search);
-        }
-      };
-      container.addEventListener("scroll", handleScroll);
-      return () => container.removeEventListener("scroll", handleScroll);
-    }, [effectiveRefreshProducts, search, isOpen]);
 
     const getPackSize = (p) => p?.pack_size ?? p?.packSize ?? p?.packsize ?? "";
     const getSupplierName = (p) => p?.supplier?.name || p?.supplier_name || "";
@@ -305,7 +396,8 @@ const ProductSearchInput = forwardRef(
     };
 
     const handleSelect = (product) => {
-      setDisplay(product?.name || "");
+      if (product) cacheProductsById([product]);
+      setDisplay(product?.name || product?.product_name || "");
       setSelectedProduct(product);
       onChange?.(product);
       closeModal();

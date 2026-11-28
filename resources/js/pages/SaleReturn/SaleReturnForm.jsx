@@ -186,7 +186,20 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     if (form.sale_invoice_id) return;
     try {
       const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
-      setProducts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
+      const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+      setProducts((prev) => {
+        const selectedIds = new Set((form.items || []).map((it) => String(it?.product_id || "")).filter(Boolean));
+        const map = new Map();
+        (prev || []).forEach((p) => {
+          if (p?.id != null && selectedIds.has(String(p.id))) {
+            map.set(String(p.id), p);
+          }
+        });
+        list.forEach((p) => {
+          if (p?.id != null) map.set(String(p.id), p);
+        });
+        return Array.from(map.values());
+      });
     } catch (e) {}
   };
 
@@ -373,6 +386,8 @@ const [saleInvoices, setSaleInvoices] = useState([]);
                 return {
                   ...defaultItem,
                   product_id: it.product_id,
+                  product_name: it.product?.name || it.product_name || "",
+                  product: it.product || null,
                   batch_number: isUnb ? "" : b,
                   expiry: isUnb ? "" : (it.expiry || ""),
                   is_unbatched: isUnb,
@@ -1553,7 +1568,11 @@ const handleSelectChange = async (field, value) => {
                       <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                     <div ref={(el) => (productRefs.current[i] = el)}>
                         <ProductSearchInput
-                          value={products.find((p) => eqId(p.id, item.product_id)) || item.product_id}
+                          value={
+                            products.find((p) => eqId(p.id, item.product_id)) ||
+                            item.product ||
+                            (item.product_name ? { id: item.product_id, name: item.product_name } : item.product_id)
+                          }
                           onChange={(val) => handleProductSelect(i, val)}
                           onRefreshProducts={refreshProducts}
                           products={products}

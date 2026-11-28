@@ -784,7 +784,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   };
 
   const upsertProducts = (list) => {
-    if (!Array.isArray(list)) return;
+    if (!Array.isArray(list) || list.length === 0) return;
     setProducts((prev) => {
       const map = new Map((prev || []).map((p) => [String(p.id), p]));
       list.forEach((p) => p?.id != null && map.set(String(p.id), p));

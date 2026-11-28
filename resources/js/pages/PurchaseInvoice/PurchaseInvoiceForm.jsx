@@ -863,7 +863,7 @@ const contRect = container.getBoundingClientRect();
 
   // Merge new products into state (by id, dedup)
   const upsertProducts = (list) => {
-    if (!Array.isArray(list)) return;
+    if (!Array.isArray(list) || list.length === 0) return;
     setProducts((prev) => {
       const map = new Map((prev || []).filter(Boolean).map((p) => [String(p.id), p]));
       list.forEach((p) => { if (p?.id) map.set(String(p.id), { ...map.get(String(p.id)), ...p }); });

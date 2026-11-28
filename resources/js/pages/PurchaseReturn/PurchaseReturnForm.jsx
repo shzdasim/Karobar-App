@@ -83,7 +83,20 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     if (form.purchase_invoice_id) return;
     try {
       const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
-      setProducts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
+      const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+      setProducts((prev) => {
+        const selectedIds = new Set((form.items || []).map((it) => String(it?.product_id || "")).filter(Boolean));
+        const map = new Map();
+        (prev || []).forEach((p) => {
+          if (p?.id != null && selectedIds.has(String(p.id))) {
+            map.set(String(p.id), p);
+          }
+        });
+        list.forEach((p) => {
+          if (p?.id != null) map.set(String(p.id), p);
+        });
+        return Array.from(map.values());
+      });
     } catch (e) {}
   };
 
@@ -1948,7 +1961,11 @@ const handleSelectChange = async (field, value) => {
                       className={rowErrors[i]?.product ? "ring-2 ring-red-500 rounded-sm" : ""}
                     >
                       <ProductSearchInput
-                        value={item.product_id}
+                        value={
+                          products.find((p) => eqId(p.id, item.product_id)) ||
+                          item.product ||
+                          (item.product_name ? { id: item.product_id, name: item.product_name } : item.product_id)
+                        }
                         onChange={(val) => handleProductSelect(i, val)}
                         onKeyDown={(e) => handleProductKeyDown(e, i)}
                         products={products}
